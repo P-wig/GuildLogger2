@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cloud-native-backend"
+version = "0.1.0"
+description = "Flask + MongoDB starter for the cloud-native team project."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "Flask==3.1.2",
+  "flask-cors==6.0.2",
+  "pymongo==4.16.0",
+  "python-dotenv==1.2.1",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
