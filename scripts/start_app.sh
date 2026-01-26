@@ -5,6 +5,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -75,8 +76,16 @@ echo ""
 echo -e "${BLUE}═══════════════════════════════════════${NC}"
 echo -e "${GREEN}✨ Application is running!${NC}"
 echo -e "${BLUE}═══════════════════════════════════════${NC}"
+echo ""
+echo -e "${CYAN}🌐 Application URLs:${NC}"
+echo -e "${YELLOW}Frontend:${NC} http://localhost:5173"
+echo -e "${YELLOW}Backend:${NC}  http://localhost:5000"
+echo -e "${YELLOW}API Health:${NC} http://localhost:5000/api/health"
+echo ""
+echo -e "${CYAN}📋 Logs:${NC}"
 echo -e "${YELLOW}Backend logs:${NC}  tail -f /tmp/backend.log"
 echo -e "${YELLOW}Frontend logs:${NC} tail -f /tmp/frontend.log"
+echo ""
 echo -e "${YELLOW}Press Ctrl+C to stop all services${NC}"
 echo ""
 
