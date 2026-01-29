@@ -6,6 +6,7 @@ Thumbs.db
 .idea/
 
 __pycache__/
+.python-version
 *.py[cod]
 .venv/
 venv/
