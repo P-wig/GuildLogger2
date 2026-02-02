@@ -57,11 +57,13 @@ def login():
     data = request.get_json()
     userid = data.get("userid")
     password = data.get("password")
+    # Validate no missing fields
+    if userid is None or password is None:
+        return jsonify({"ok": False, "error": "Missing userid or password"}), 400
+
     encrypt_userid = _encrypt(userid, 3, 1)
     encrypt_password = _encrypt(password, 3, 1)
-    # MOCKING DATABASE
-    # Username = asamant & Password = Temp123
-    # Username = skharel & Password = Life15$
+
     db = get_db()
     user = db["users"].find_one({
         "userid": encrypt_userid,
