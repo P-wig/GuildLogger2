@@ -61,7 +61,7 @@ def get_user(user_id: str):
     doc = users_col().find_one({"_id": _id})
     if not doc:
         return jsonify({"error": "Not found"}), 404
-    return jsonify(serialize_doc(doc))
+    return jsonify(serialize_doc(sanitize_user(doc)))
 
 
 @bp.put("/<user_id>")
