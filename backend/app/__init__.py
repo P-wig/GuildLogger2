@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import atexit
+
 from flask import Flask
 from flask_cors import CORS
 
@@ -22,9 +24,7 @@ def create_app() -> Flask:
 
     init_mongo(app)
 
-    @app.teardown_appcontext
-    def _teardown(_exc):
-        close_mongo(app)
+    atexit.register(lambda: close_mongo(app))
 
     app.register_blueprint(root_bp)
     app.register_blueprint(health_bp)

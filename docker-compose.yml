@@ -1,0 +1,28 @@
+name: cloudnative
+
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "5001:5001"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017
+      - MONGO_DB=cloudnative
+      - CORS_ORIGINS=http://localhost:5173
+      - FLASK_DEBUG=1
+    depends_on:
+      - mongo
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/run.py:/app/run.py
+
+volumes:
+  mongo_data:

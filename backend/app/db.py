@@ -6,7 +6,10 @@ from pymongo.database import Database
 
 
 def init_mongo(app) -> None:
-    app.extensions["mongo_client"] = MongoClient(app.config["MONGO_URI"])
+    app.extensions["mongo_client"] = MongoClient(
+        app.config["MONGO_URI"],
+        serverSelectionTimeoutMS=5000,
+    )
 
 
 def get_db() -> Database:
