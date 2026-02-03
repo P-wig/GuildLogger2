@@ -37,6 +37,9 @@ def create_user():
         error_message = f"Missing fields: {', '.join(missing_fields)}"
         return jsonify({"error": error_message}), 400
     else:
+        # Check if username already exists
+        if users_col().find_one({"username": data["username"]}):
+            return jsonify({"error": "Username already exists"}), 409
         # Create Hashed Password and UserID
         hash_userid = _encrypt(data["userid"], 3, 1)
         hash_password = _encrypt(data["password"], 3, 1)
