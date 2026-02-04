@@ -14,8 +14,8 @@ if ! pushd "$FRONTEND_DIR" > /dev/null 2>&1; then
   exit 1
 fi
 
-# Install dependencies if node_modules doesn't exist
-if [ ! -d "node_modules" ]; then
+# Install dependencies if node_modules doesn't exist or package-lock.json is newer
+if [ ! -d "node_modules" ] || [ "package-lock.json" -nt "node_modules" ]; then
   echo -e "${YELLOW}⚙️  Installing dependencies...${NC}"
   if ! npm install; then
     echo -e "${RED}❌ Error: npm install failed${NC}"

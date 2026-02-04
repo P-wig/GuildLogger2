@@ -6,6 +6,7 @@ from pymongo.collection import Collection
 from app.db import get_db
 from app.mongo_utils import serialize_doc, to_object_id
 
+from .auth import _encrypt
 bp = Blueprint("users", __name__)
 
 
