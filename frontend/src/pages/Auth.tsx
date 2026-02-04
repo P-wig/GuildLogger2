@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import Alert from "@mui/material/Alert";
@@ -22,8 +21,8 @@ interface LoginForm {
 export const Auth = () => {
   const { login } = useAuth();
   const [formData, setFormData] = useState<LoginForm>({
-    userId: '',
-    password: ''
+    userId: "",
+    password: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,11 +37,11 @@ export const Auth = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
-    
+
     // Clear error when user starts typing
     if (error) {
       setError(null);
@@ -57,31 +56,30 @@ export const Auth = () => {
     try {
       // Basic validation
       if (!formData.userId.trim()) {
-        throw new Error('User ID is required');
+        throw new Error("User ID is required");
       }
-      
+
       if (!formData.password.trim()) {
-        throw new Error('Password is required');
+        throw new Error("Password is required");
       }
 
       // Call login API (POST /api/auth/login)
       const response = await usersApi.login(formData);
-      
+
       // Update auth context
       login(response.data.user.userId);
-      
+
       // Navigate to redirect destination
       navigate(redirectTo, { replace: true });
-      
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Login failed');
+      setError(err.response?.data?.message || err.message || "Login failed");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Box sx={{ maxWidth: 420, mx: 'auto', mt: 4 }}>
+    <Box sx={{ maxWidth: 420, mx: "auto", mt: 4 }}>
       <Typography variant="h4" gutterBottom>
         Sign In
       </Typography>
