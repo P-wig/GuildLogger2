@@ -12,50 +12,59 @@ export const Home = () => {
   const { isAuthenticated, user } = useAuth();
 
   return (
-    <Box>
-      <Typography variant="h4" gutterBottom>
+    <Box sx={{ mt: 0, pt: 0 }}>
+      <Typography variant="h4" gutterBottom sx={{ mt: 0 }}>
         Home
       </Typography>
 
-      <Typography color="text.secondary" sx={{ mb: 2 }}>
-        Yoooooo.
+      <Typography color="text.secondary" sx={{ mb: 3 }}>
+        Welcome to the Cloud Native Team Project.
       </Typography>
 
-      <Card variant="outlined">
-        <CardContent>
-          <Stack spacing={1}>
-            <Typography variant="h6">Status</Typography>
-
-            {isAuthenticated ? (
-              <Typography>
-                Signed in as <strong>{user?.email}</strong>
+      <Stack spacing={3}>
+        {/* Quick Links Card - Only show if authenticated */}
+        {isAuthenticated && (
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Quick Actions
               </Typography>
-            ) : (
-              <Typography>You’re not signed in.</Typography>
-            )}
+              <Typography color="text.secondary" sx={{ mb: 2 }}>
+                Welcome back, <strong>{user?.userId}</strong>! Access your account and project features below.
+              </Typography>
+            </CardContent>
 
-            <Typography color="text.secondary">
-              Use the buttons below to navigate.
-            </Typography>
-          </Stack>
-        </CardContent>
+            <CardActions>
+              <Button variant="contained" component={RouterLink} to="/account">
+                Go to Account
+              </Button>
+              <Button variant="outlined" component={RouterLink} to="/projects">
+                View Projects
+              </Button>
+            </CardActions>
+          </Card>
+        )}
 
-        <CardActions>
-          {!isAuthenticated ? (
-            <Button variant="contained" component={RouterLink} to="/auth">
-              Sign in
-            </Button>
-          ) : (
-            <Button variant="contained" component={RouterLink} to="/account">
-              Go to account
-            </Button>
-          )}
+        {/* Sign In Prompt - Only show if not authenticated */}
+        {!isAuthenticated && (
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Get Started
+              </Typography>
+              <Typography color="text.secondary" sx={{ mb: 2 }}>
+                Please sign in to access your account and manage projects.
+              </Typography>
+            </CardContent>
 
-          <Button variant="outlined" component={RouterLink} to="/account">
-            Account (protected)
-          </Button>
-        </CardActions>
-      </Card>
+            <CardActions sx={{ justifyContent: 'center' }}>
+              <Button variant="contained" component={RouterLink} to="/auth">
+                Sign In
+              </Button>
+            </CardActions>
+          </Card>
+        )}
+      </Stack>
     </Box>
   );
 };
