@@ -1,11 +1,11 @@
-import {api} from "./http";
+import { api } from "./http";
 
 export type Project = {
-    _id:string; // MongoDB id 
-    projectId:string; // required project id
-    name:string; // required name
-    description:string; // required description
-    ownerUserId:string; // optional owner user id
+    _id: string; // MongoDB id 
+    projectId: string; // required project id
+    name: string; // required name
+    description: string; // required description
+    ownerUserId?: string; // optional owner user id
 };
 
 // projects api wrapper
@@ -14,7 +14,7 @@ export const projectsApi = {
         api.get<Project[]>("/projects", { // http get to /api/projects
             params: ownerUserId ? { ownerUserId } : {}, // include param only if provided 
     }),
-    // payload requried to create a project 
+    // payload required to create a project 
     create: (project: {
         projectId: string; //required
         name: string;//required
