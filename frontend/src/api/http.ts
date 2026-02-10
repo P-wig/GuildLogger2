@@ -21,7 +21,7 @@ api.interceptors.request.use(
     
     // Log requests in development
     if (import.meta.env.DEV) {
-      console.log(`🚀 API Request: ${config.method?.toUpperCase()} ${config.url}`, config.data);
+      console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`, config.data);
     }
     
     return config;
@@ -38,7 +38,7 @@ api.interceptors.response.use(
   (response: AxiosResponse) => {
     // Log successful responses in development
     if (import.meta.env.DEV) {
-      console.log(`✅ API Response: ${response.config.method?.toUpperCase()} ${response.config.url}`, response.data);
+      console.log(`API Response: ${response.config.method?.toUpperCase()} ${response.config.url}`, response.data);
     }
     
     return response;
@@ -46,7 +46,7 @@ api.interceptors.response.use(
   (error: AxiosError) => {
     // Handle response errors
     if (import.meta.env.DEV) {
-      console.error(`❌ API Error: ${error.config?.method?.toUpperCase()} ${error.config?.url}`, error.response?.data);
+      console.error(`API Error: ${error.config?.method?.toUpperCase()} ${error.config?.url}`, error.response?.data);
     }
     
     // Handle specific error cases - check if response exists first
