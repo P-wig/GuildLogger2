@@ -102,7 +102,7 @@ export const Auth = () => {
         navigate(redirectTo, { replace: true });
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || `${mode === 'login' ? 'Login' : 'Registration'} failed`);
+      setError(err.response?.data?.error || err.message || `${mode === 'login' ? 'Login' : 'Registration'} failed`);
     } finally {
       setLoading(false);
     }
