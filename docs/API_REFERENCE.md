@@ -156,7 +156,6 @@ Get specific user details.
 ```json
 {
   "userId": "string",
-  "username": "string",
   "email": "string (optional)"
 }
 ```

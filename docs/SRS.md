@@ -315,22 +315,22 @@ The system MUST provide the following high-level functions:
 #### 3.1.1 User Registration (FR-UM-001)
 **Requirement**: The system MUST allow users to create a new account.
 
-- **Description**: Users SHALL provide username, userid, and password to register
-- **Input**: JSON object with required fields: `username`, `userid`, `password`
+- **Description**: Users SHALL provide userId and password to register (per professor clarification)
+- **Input**: JSON object with required fields: `userId`, `password`
 - **Validation**:
   - All required fields MUST be present and non-empty
-  - `username` MUST be unique across the system
-  - `password` MUST be hashed using encryption algorithm (F3/E1 cipher with 3 iterations)
-  - `userid` MUST be hashed using same encryption algorithm
-- **Output**: HTTP 200 with created user document (MongoDB _id)
+  - `userId` MUST be unique across the system
+  - `password` MUST be encrypted using cyclic cipher algorithm (shift 3, direction 1)
+  - `userId` MUST be encrypted using same encryption algorithm
+- **Output**: HTTP 201 with created user document
 - **Error Handling**:
   - Return 400 if required fields are missing
   - Return 400 if request body is not valid JSON
-  - Return 409 if username already exists
-- **API Endpoint**: `POST /api/users`
+  - Return 409 if userId already exists
+- **API Endpoint**: `POST /api/auth/register`
 
 #### 3.1.2 User Authentication (FR-UM-002)
-**Requirement**: The system MUST authenticate users with username and password.
+**Requirement**: The system MUST authenticate users with userId and password.
 
 - **Description**: Frontend auth module SHOULD handle login flow
 - **Security**: Credentials MUST be transmitted securely (HTTPS in production)
@@ -732,8 +732,8 @@ The system MUST provide the following high-level functions:
 - **Route**: `/auth`
 - **Component**: `/src/pages/Auth.tsx`
 - **Features**:
-  - Login form with username/password
-  - Registration form with user details
+  - Login form with userId/password
+  - Registration form with userId and password
   - Form validation
   - Error message display
 
@@ -777,9 +777,9 @@ The system MUST provide the following high-level functions:
   - Response: Array of user objects (limited to 200)
   
 - **Create User**: `POST /api/users`
-  - Request Body: `{username, userid, password}`
+  - Request Body: `{userId, password}`
   - Response: User object with inserted _id
-  - Status Codes: 200, 400, 409
+  - Status Codes: 201, 400, 409
 
 #### Project Endpoints
 - **List Projects**: `GET /api/projects?ownerUserId=<userId>`
@@ -925,8 +925,7 @@ The system MUST provide the following high-level functions:
 ```
 {
   _id: ObjectId,
-  username: String (unique),
-  userid: String (encrypted),
+  userId: String (unique, encrypted),
   password: String (encrypted),
   createdAt: Date (auto)
 }
@@ -1015,7 +1014,7 @@ The system MUST persist the following entities in MongoDB:
 
 1. **User Accounts** - User credentials and account information
    - Collection: `users`
-   - Fields: username (unique), encrypted userid, encrypted password, createdAt
+   - Fields: encrypted userId (unique), encrypted password, createdAt
    - Used by: SR-01, SR-02, SR-03
 
 2. **Projects** - Project definitions and ownership information
@@ -1039,7 +1038,7 @@ The system MUST persist the following entities in MongoDB:
    - Used by: SR-08, SR-09, SR-10, SR-14
 
 ### 7.3 Data Validation Rules
-- **Username**: MUST be unique, non-empty, minimum 3 characters (recommendation)
+- **UserId**: MUST be unique, non-empty, encrypted in database
 - **ProjectId**: MUST be unique, non-empty
 - **Passwords**: MUST be encrypted, minimum 6 characters (recommendation)
 - **Timestamps**: MUST be ISO 8601 format
@@ -1071,10 +1070,10 @@ The system MUST persist the following entities in MongoDB:
 
 #### Use Case: User Registration
 1. User navigates to authentication page
-2. User enters username, userid, and password
-3. System validates input and checks username uniqueness
-4. System encrypts credentials and stores in database
-5. System returns confirmation with user ID
+2. User enters userId and password
+3. System validates input and checks userId uniqueness
+4. System encrypts both userId and password, stores in database
+5. System returns confirmation with userId
 
 #### Use Case: Creating a Project
 1. Authenticated user navigates to project creation form

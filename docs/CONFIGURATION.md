@@ -210,21 +210,19 @@ mongodb://host1:27017,host2:27017,host3:27017/hardware_checkout?replicaSet=rs0
 db.createCollection('users', {
   schema: {
     bsonType: 'object',
-    required: ['userid', 'password_hash'],
+    required: ['userId', 'password'],
     properties: {
       _id: { bsonType: 'objectId' },
-      userid: { bsonType: 'string' },
-      username: { bsonType: 'string' },
-      password_hash: { bsonType: 'string' },
-      email: { bsonType: 'string' },
+      userId: { bsonType: 'string' },  // Encrypted per SR3
+      password: { bsonType: 'string' },  // Encrypted per SR3
       createdAt: { bsonType: 'date' },
       updatedAt: { bsonType: 'date' }
     }
   }
 })
 
-// Create unique index on userid
-db.users.createIndex({ userid: 1 }, { unique: true })
+// Create unique index on userId (encrypted value)
+db.users.createIndex({ userId: 1 }, { unique: true })
 ```
 
 #### Projects Collection
