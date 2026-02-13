@@ -2,7 +2,7 @@
 ## Cloud-Native Team Project
 
 **Project Name:** Cloud-Native Team Project  
-**Version:** 0.1.0  
+**Version:** 0.2.0  
 **Date:** February 2026  
 **Status:** In Development  
 **Course:** ECE 382V: Cloud Native App Development  
@@ -123,7 +123,7 @@
 ---
 
 **Project Name:** Cloud-Native Team Project  
-**Version:** 0.1.0  
+**Version:** 0.2.0  
 **Date:** February 2026  
 **Status:** In Development  
 **Course:** ECE 382V: Cloud Native App Development  

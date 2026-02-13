@@ -547,34 +547,34 @@ npm test -- --ui
 
 ## Best Practices
 
-### Do's ✅
+### Do's
 
 1. **Test behavior, not implementation**
    ```python
-   # ✅ Good - tests the behavior
+   # Good - tests the behavior
    def test_password_is_hashed():
        user = create_user("test", "plaintext_password")
        assert user['password_hash'] != "plaintext_password"
    
-   # ❌ Bad - tests the implementation
+   # Bad - tests the implementation
    def test_uses_bcrypt():
        assert 'bcrypt' in imports
    ```
 
 2. **Use descriptive test names**
    ```python
-   # ✅ Good
+   # Good
    def test_checkout_prevents_overallocation_with_insufficient_units():
        pass
    
-   # ❌ Bad
+   # Bad
    def test_checkout():
        pass
    ```
 
 3. **One assertion per test (when possible)**
    ```python
-   # ✅ Better - focused tests
+   # Better - focused tests
    def test_user_creation_sets_userid():
        user = create_user("id123", username="test")
        assert user['userId'] == "id123"
@@ -583,7 +583,7 @@ npm test -- --ui
        user = create_user("id123", password="plain")
        assert user['password_hash'] != "plain"
    
-   # ❌ Less ideal - multiple assertions
+   # Less ideal - multiple assertions
    def test_user_creation():
        user = create_user("id123", "test")
        assert user['userId'] == "id123"
@@ -593,7 +593,7 @@ npm test -- --ui
 
 4. **Use fixtures for common setup**
    ```python
-   # ✅ Good - DRY
+   # Good - DRY
    @pytest.fixture
    def test_user(db):
        return db['users'].insert_one({...})
@@ -604,7 +604,7 @@ npm test -- --ui
 
 5. **Test edge cases and error conditions**
    ```python
-   # ✅ Good - comprehensive
+   # Good - comprehensive
    def test_negative_units_rejected():
        pass
    
@@ -615,38 +615,38 @@ npm test -- --ui
        pass
    ```
 
-### Don'ts ❌
+### Don'ts
 
 1. **Don't test the testing framework**
    ```python
-   # ❌ Pointless
+   # Pointless
    def test_assert_works():
        assert 1 == 1
    ```
 
 2. **Don't share state between tests**
    ```python
-   # ❌ Bad - tests affect each other
+   # Bad - tests affect each other
    test_counter = 0
    
    def test_first():
        global test_counter
        test_counter += 1
    
-   # ❌ Bad - test order matters
+   # Bad - test order matters
    def test_second():
        assert test_counter == 1  # Fails if test_first didn't run
    ```
 
 3. **Don't make tests too brittle**
    ```python
-   # ❌ Bad - breaks on implementation changes
+   # Bad - breaks on implementation changes
    def test_user_uses_database():
        with patch('pymongo.MongoClient') as mock:
            create_user(...)
            mock.assert_called_once()
    
-   # ✅ Good - tests the behavior
+   # Good - tests the behavior
    def test_user_persisted(db):
        create_user(...)
        user = db['users'].find_one()
@@ -671,6 +671,6 @@ Recommended:
 
 ---
 
-**Last Updated:** February 10, 2026  
-**Version:** 1.0  
+**Last Updated:** February 13, 2026  
+**Version:** 1.1  
 **Status:** In Development (Framework Selection Pending)

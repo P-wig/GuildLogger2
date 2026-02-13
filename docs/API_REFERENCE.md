@@ -11,6 +11,7 @@ Complete API endpoint specification for the Team Project Hardware Checkout Syste
 5. [Health Check](#health-check)
 6. [Error Codes](#error-codes)
 7. [Response Formats](#response-formats)
+8. [Design Decisions](#design-decisions)
 
 ---
 
@@ -19,24 +20,23 @@ Complete API endpoint specification for the Team Project Hardware Checkout Syste
 ### POST /api/auth/login
 Login endpoint for user authentication.
 
-**Status:**  NEED TO BUILD
+**Status:** IMPLEMENTED
 
 **Request:**
 ```json
 {
-  "userid": "string (unique login identifier)",
-  "password": "string (plaintext, hashed on backend)"
+  "userId": "string (unique login identifier)",
+  "password": "string (plaintext, encrypted on backend)"
 }
 ```
 
 **Response (200):**
 ```json
 {
-  "token": "JWT or session token",
+  "ok": true,
+  "message": "Login successful",
   "user": {
-    "userId": "string",
-    "username": "string",
-    "email": "string (optional)"
+    "userId": "string"
   }
 }
 ```
@@ -50,10 +50,46 @@ Login endpoint for user authentication.
 ```
 
 **Implementation Notes:**
-- Password hashing required (bcrypt or hashlib)
-- Return JWT token for subsequent requests
-- TODO: Determine token expiration time
-- TODO: Implement refresh token mechanism
+- Only password is encrypted using cyclic cipher algorithm
+- userId stored and matched in plaintext
+- Returns user object with userId for client use
+- Frontend stores full User object in auth context with 24hr session persistence
+
+### POST /api/auth/register
+Register a new user account.
+
+**Status:** IMPLEMENTED (Casey's PR)
+
+**Request:**
+```json
+{
+  "userId": "string (unique login identifier)",
+  "password": "string (plaintext, encrypted on backend)"
+}
+```
+
+**Response (201):**
+```json
+{
+  "user": {
+    "userId": "string"
+  }
+}
+```
+
+**Error Response (409):**
+```json
+{
+  "error": "userId already exists"
+}
+```
+
+**Implementation Notes:**
+- Only `userId` and `password` required (per professor clarification)
+- `userId` must be unique (enforced in code)
+- Both `userId` and `password` encrypted using cyclic cipher before storage
+- Response returns decrypted userId for frontend auth context
+- Frontend passes full User object to `login()` function
 
 ---
 
@@ -72,7 +108,6 @@ List all users.
 [
   {
     "userId": "string",
-    "username": "string",
     "email": "string (optional)"
   }
 ]
@@ -81,40 +116,36 @@ List all users.
 ### POST /api/users
 Create a new user account.
 
-**Status:** [IMPLEMENTED] (needs username field update)
+**Status:** IMPLEMENTED
 
 **Request:**
 ```json
 {
-  "userid": "string (unique, 3-20 characters)",
-  "username": "string (display name, may need uniqueness discussion)",
-  "password": "string (plaintext, hashed on backend)"
+  "userId": "string (unique login identifier)",
+  "password": "string (plaintext, encrypted on backend)"
 }
 ```
 
 **Response (201):**
 ```json
 {
-  "userId": "string",
-  "username": "string",
-  "createdAt": "ISO8601 timestamp"
+  "_id": "string (MongoDB ObjectId)",
+  "userId": "string"
 }
 ```
 
 **Error Response (409):**
 ```json
 {
-  "error": "User already exists",
-  "code": 409
+  "error": "userId already exists"
 }
 ```
 
 **Implementation Notes:**
-- `userid` must be unique (database index required)
-- Password must be hashed using bcrypt/hashlib before storage
-- TODO: Username uniqueness requirement - need to discuss
-- Validate required fields before creating user
-- Return sanitized user data (exclude password_hash)
+- Only `userId` and `password` required (per professor clarification)
+- `userId` must be unique (enforced in code)
+- Both `userId` and `password` are encrypted using cyclic cipher before storage
+- Return sanitized user data (excludes `password`)
 
 ### GET /api/users/{userId}
 Get specific user details.
@@ -135,9 +166,9 @@ Get specific user details.
 ## Project Endpoints
 
 ### GET /api/projects
-List projects for authenticated user.
+List all projects with associated users and hardware allocations.
 
-**Status:** IMPLEMENTED
+**Status:** IMPLEMENTED (response format needs update)
 
 **Query Parameters:**
 - `?ownerUserId={userId}` - Filter by project owner
@@ -149,15 +180,24 @@ List projects for authenticated user.
     "projectId": "string (unique)",
     "name": "string",
     "description": "string",
-    "ownerUserId": "string or ObjectId",
+    "ownerUserId": "string",
+    "assignedUsers": ["userid1", "userid2"],
+    "hardwareAllocations": [
+      {
+        "hardwareId": "string",
+        "checkedOut": "integer"
+      }
+    ],
     "createdAt": "ISO8601 timestamp"
   }
 ]
 ```
 
 **Implementation Notes:**
-- TODO: Clarify whether to use `ownerUserId` (single owner) or `assignedUsers[]` (multiple owners)
-- Filter results based on user permissions if needed
+- Response includes `assignedUsers[]` - list of user identifiers authorized for the project
+- Response includes `hardwareAllocations[]` - hardware currently checked out by this project
+- For UI simplicity, return denormalized/assembled data in single call
+- Filter results based on user permissions if authentication is implemented
 
 ### POST /api/projects
 Create a new project.
@@ -297,17 +337,20 @@ Create a hardware request (for approval workflow).
 - TODO: Implement approval workflow if needed
 - Validate available capacity before approval
 
-### POST /api/hardware/checkout
-Check out hardware units.
+### POST /api/hardware/{hardwareId}/checkout
+Check out hardware units from shared inventory.
 
-**Status:** NEED TO BUILD
+**Status:** NEEDS IMPLEMENTATION
+
+**Path Parameters:**
+- `hardwareId` - Hardware set identifier (e.g., "HWSet1")
 
 **Request:**
 ```json
 {
   "projectId": "string (project checking out hardware)",
-  "hardwareSet": "string (e.g., HWSet1)",
-  "units": "integer (quantity to checkout)"
+  "qty": "integer (quantity to checkout)",
+  "userId": "string (user performing checkout)"
 }
 ```
 
@@ -316,10 +359,11 @@ Check out hardware units.
 {
   "allocationId": "string",
   "projectId": "string",
-  "hardwareSet": "string",
-  "units": "integer",
+  "hardwareId": "string",
+  "qty": "integer",
   "type": "checkout",
-  "checkedOutAt": "ISO8601 timestamp"
+  "checkedOutAt": "ISO8601 timestamp",
+  "available": "integer (remaining availability)"
 }
 ```
 
@@ -328,28 +372,31 @@ Check out hardware units.
 {
   "error": "Insufficient hardware available",
   "available": "integer",
-  "requested": "integer",
-  "code": 409
+  "requested": "integer"
 }
 ```
 
 **Implementation Notes:**
-- Use MongoDB `$inc` operator for atomic updates (prevent overallocation)
-- Check available capacity before checkout
+- Hardware is a shared global inventory (not per-project)
+- Backend validates: user is authorized for project, qty > 0, availability >= qty
+- Use MongoDB `$inc` operator for atomic updates (prevent race conditions)
 - Record allocation in `allocations` collection
-- TODO: Add per-unit tracking if needed
+- Return updated availability in response
 
-### POST /api/hardware/checkin
-Check in hardware units.
+### POST /api/hardware/{hardwareId}/checkin
+Check in hardware units back to shared inventory.
 
-**Status:**  NEED TO BUILD
+**Status:** NEEDS IMPLEMENTATION
+
+**Path Parameters:**
+- `hardwareId` - Hardware set identifier (e.g., "HWSet1")
 
 **Request:**
 ```json
 {
-  "projectId": "string",
-  "hardwareSet": "string (e.g., HWSet1)",
-  "units": "integer (quantity to return)"
+  "projectId": "string (project returning hardware)",
+  "qty": "integer (quantity to return)",
+  "userId": "string (user performing checkin)"
 }
 ```
 
@@ -358,18 +405,19 @@ Check in hardware units.
 {
   "allocationId": "string",
   "projectId": "string",
-  "hardwareSet": "string",
-  "units": "integer",
+  "hardwareId": "string",
+  "qty": "integer",
   "type": "checkin",
-  "checkedInAt": "ISO8601 timestamp"
+  "checkedInAt": "ISO8601 timestamp",
+  "available": "integer (updated availability)"
 }
 ```
 
 **Implementation Notes:**
+- Backend validates: user exists, qty > 0
 - Use MongoDB `$inc` operator for atomic updates
 - Validate that project has checked out the requested quantity
 - Record return in `allocations` collection
-- Update `projectAllotments` in hardware_sets collection
 
 ### GET /api/hardware/allocations
 Get allocation history for a project.
@@ -479,24 +527,73 @@ For list endpoints that return many results:
 
 ---
 
+## Design Decisions
+
+Key architectural decisions agreed upon by the team:
+
+### Authentication Fields
+- Only `userId` and `password` required (per professor clarification - no username needed)
+- **`userId`** is the canonical login identifier (camelCase in backend response)
+- Both `userId` and `password` are encrypted using cyclic cipher before storage
+- Auth responses return decrypted `user.userId` for frontend display
+- Frontend passes full `User` object to auth context (not just userId string)
+
+### Session Persistence
+- Sessions stored in localStorage with base64 encoding
+- Session TTL: 24 hours
+- Session includes full User object and expiration timestamp
+
+### Hardware Inventory Model
+- Hardware is a **shared global inventory** (not per-project)
+- Projects check out from a single shared pool
+- Availability decreases when any project checks out; increases on check-in
+- Backend enforces validation and atomic updates to prevent race conditions
+- Checkout/check-in logic must be on backend (not frontend arithmetic)
+
+### Projects Data Model
+- Projects include `assignedUsers[]` array of authorized user identifiers
+- GET /api/projects returns denormalized data (users + hardware allocations included)
+- Single API call should provide all data needed for Projects UI
+
+### Response Consistency
+- All auth endpoints return `ok: boolean` and `user` object
+- Error responses include descriptive `error` message
+- Frontend should not assume field existence without checking
+
+### Database Architecture
+- Use 3 separate databases (Users, Projects, Hardware) - NOT 3 collections
+- Professor advised this design for Part 2 microservices
+- Each entity references others via foreign keys (e.g., projects store user IDs, hardware IDs)
+- Mongo Compass recommended for database visualization
+
+### Security Notes
+- Both `userId` and `password` MUST be encrypted (per professor confirmation of SR3)
+- Current code only encrypts password - needs fix
+- Store encrypted values in database, return decrypted userId for UI display
+- Remove console.log statements that print credentials (Auth.tsx)
+- Remove console.log in Account.tsx (Casey added for debugging)
+- Credentials should not be visible in browser DevTools console
+
+---
+
 ## Implementation Status Summary
 
-| Endpoint | Method | Status | Priority |
-|----------|--------|--------|----------|
-| /api/auth/login | POST | [NEED] | HIGH |
-| /api/users | GET | [DONE] | - |
-| /api/users | POST | [DONE] (update needed) | HIGH |
-| /api/users/{userId} | GET | [BUILD] | MEDIUM |
-| /api/projects | GET | [DONE] | - |
-| /api/projects | POST | [DONE] (validation) | MEDIUM |
-| /api/projects/{projectId} | GET | [BUILD] | MEDIUM |
-| /api/hardware | GET | [NEED] | HIGH |
-| /api/hardware/availability | GET | [NEED] | HIGH |
-| /api/hardware/request | POST | [NEED] | HIGH |
-| /api/hardware/checkout | POST | [NEED] | HIGH |
-| /api/hardware/checkin | POST | [NEED] | HIGH |
-| /api/hardware/allocations | GET | [NEED] | HIGH |
-| /api/health | GET | [DONE] | - |
+| Endpoint | Method | Status | Priority | Owner |
+|----------|--------|--------|----------|-------|
+| /api/auth/login | POST | IMPLEMENTED | - | - |
+| /api/auth/register | POST | IMPLEMENTED | - | Casey |
+| /api/users | GET | IMPLEMENTED | - | - |
+| /api/users | POST | IMPLEMENTED | - | - |
+| /api/users/{userId} | GET | NEEDS BUILD | MEDIUM | - |
+| /api/projects | GET | IMPLEMENTED (update response) | HIGH | Yuri |
+| /api/projects | POST | IMPLEMENTED | - | - |
+| /api/projects/{projectId} | GET | NEEDS BUILD | MEDIUM | - |
+| /api/hardware | GET | NEEDS BUILD | HIGH | Yuri |
+| /api/hardware/availability | GET | NEEDS BUILD | HIGH | Yuri |
+| /api/hardware/{id}/checkout | POST | NEEDS BUILD | HIGH | Yuri |
+| /api/hardware/{id}/checkin | POST | NEEDS BUILD | HIGH | Yuri |
+| /api/hardware/allocations | GET | NEEDS BUILD | MEDIUM | - |
+| /api/health | GET | IMPLEMENTED | - | - |
 
 ---
 
@@ -509,6 +606,6 @@ For list endpoints that return many results:
 
 ---
 
-**Last Updated:** February 10, 2026  
-**Version:** 1.0  
+**Last Updated:** February 13, 2026  
+**Version:** 1.2  
 **Status:** In Development

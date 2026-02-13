@@ -2,7 +2,7 @@
 ## Team Project
 
 **Project Name:** Team Project
-**Version:** 1.0.0
+**Version:** 1.1.0
 **Date:** February 2026
 **Status:** In Development
 **Course:** ECE 382V: Cloud Native App Development  
