@@ -13,15 +13,20 @@ export const AppLayout = () => {
 
   return (
     <ProjectProvider>
-      <Box sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100vh'
-      }}>
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          minHeight: "100vh",
+        }}
+      >
         {/* Header AppBar */}
-        <AppBar position="fixed" sx={{ top: 0, left: 0, right: 0, zIndex: 1200 }}>
-          <Toolbar sx={{ justifyContent: 'space-between' }}>
-            <Box sx={{ display: 'flex', gap: 2 }}>
+        <AppBar
+          position="fixed"
+          sx={{ top: 0, left: 0, right: 0, zIndex: 1200 }}
+        >
+          <Toolbar sx={{ justifyContent: "space-between" }}>
+            <Box sx={{ display: "flex", gap: 2 }}>
               <Button color="inherit" component={Link} to="/">
                 Home
               </Button>
@@ -30,16 +35,14 @@ export const AppLayout = () => {
               </Button>
             </Box>
 
-
-
             {/* Center - App Title */}
             <Typography
               variant="h6"
               sx={{
-                position: 'absolute',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                fontWeight: 600
+                position: "absolute",
+                left: "50%",
+                transform: "translateX(-50%)",
+                fontWeight: 600,
               }}
             >
               Hardware Checkout App
@@ -53,7 +56,7 @@ export const AppLayout = () => {
                 </Button>
               ) : (
                 <Button color="inherit" onClick={logout}>
-                  Sign out ({user?.email || user?.userId})
+                  Sign out ({user?.userId})
                 </Button>
               )}
             </Box>
@@ -78,22 +81,25 @@ export const AppLayout = () => {
           component="footer"
           position="fixed"
           sx={{
-            top: 'auto',
+            top: "auto",
             bottom: 0,
             backgroundColor: (theme) =>
-              theme.palette.mode === 'light'
+              theme.palette.mode === "light"
                 ? theme.palette.grey[800]
-                : theme.palette.grey[900]
+                : theme.palette.grey[900],
           }}
         >
-          <Toolbar sx={{ justifyContent: 'center', minHeight: '48px !important' }}>
+          <Toolbar
+            sx={{ justifyContent: "center", minHeight: "48px !important" }}
+          >
             <Typography
               variant="body2"
               color="inherit"
               align="center"
               sx={{ opacity: 0.8 }}
             >
-              © {new Date().getFullYear()} Cloud Native Team Project. All rights reserved.
+              © {new Date().getFullYear()} Cloud Native Team Project. All rights
+              reserved.
             </Typography>
           </Toolbar>
         </AppBar>
