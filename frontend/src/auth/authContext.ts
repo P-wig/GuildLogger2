@@ -1,14 +1,11 @@
 import { createContext } from "react";
-
-export type AuthUser = {
-  _id: string;
-  userId: string;
-};
+import type { User } from "../api/users";
 
 export type AuthContextValue = {
-  user: AuthUser | null;
+  user: User | null;
   isAuthenticated: boolean;
-  login: (userId: string) => void;
+  loading: boolean;
+  login: (user: User) => void;
   logout: () => void;
 };
 

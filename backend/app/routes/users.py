@@ -6,8 +6,6 @@ from pymongo.collection import Collection
 from app.db import get_db
 from app.mongo_utils import serialize_doc, to_object_id
 
-from .auth import _encrypt
-
 bp = Blueprint("users", __name__)
 
 
@@ -19,39 +17,6 @@ def users_col() -> Collection:
 def list_users():
     docs = [serialize_doc(d) for d in users_col().find().limit(200)]
     return jsonify(docs)
-
-
-@bp.post("")
-def create_user():
-    """
-    Docstring for create_user
-    """
-    data = request.get_json(silent=True) or {}
-    # minimal validation (extend later)
-    if not isinstance(data, dict) or not data:
-        return jsonify({"error": "Expected JSON object body"}), 400
-
-    required_fields = ["username", "userid", "password"]
-    if not all(field in data for field in required_fields):
-        missing_fields = [field for field in required_fields if field not in data]
-        error_message = f"Missing fields: {', '.join(missing_fields)}"
-        return jsonify({"error": error_message}), 400
-    else:
-        # Check if username already exists
-        if users_col().find_one({"username": data["username"]}):
-            return jsonify({"error": "Username already exists"}), 409
-        # Create Hashed Password and UserID
-        hash_userid = _encrypt(data["userid"], 3, 1)
-        hash_password = _encrypt(data["password"], 3, 1)
-        data["userid"] = hash_userid
-        data["password"] = hash_password
-        res = users_col().insert_one(data)
-        doc = users_col().find_one({"_id": res.inserted_id})
-
-        if not doc:
-            return jsonify({"error": "Failed to create user"}), 500
-        else:
-            return jsonify(serialize_doc(sanitize_user(doc))), 201
 
 
 @bp.get("/<user_id>")
@@ -126,5 +91,5 @@ def delete_user(user_id: str):
 
 def sanitize_user(doc: dict) -> dict:
     """Remove sensitive fields from user document."""
-    sensitive_fields = ["password", "userid"]
+    sensitive_fields = ["password", "userId"]
     return {k: v for k, v in doc.items() if k not in sensitive_fields}

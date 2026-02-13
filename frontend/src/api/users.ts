@@ -1,4 +1,4 @@
-import { api } from './http';
+import { api } from "./http";
 
 export type User = {
   _id: string;
@@ -16,9 +16,9 @@ export type RegisterRequest = {
 };
 
 export type LoginResponse = {
-  user: User;
-  token?: string;
   message: string;
+  ok: boolean;
+  user: User;
 };
 
 export type RegisterResponse = {
@@ -28,9 +28,9 @@ export type RegisterResponse = {
 
 export const usersApi = {
   // POST /api/auth/login
-  login: (credentials: LoginRequest) => 
-    api.post<LoginResponse>('/auth/login', credentials),
+  login: (credentials: LoginRequest) =>
+    api.post<LoginResponse>("/auth/login", credentials),
   // POST /api/auth/register
   register: (userData: RegisterRequest) =>
-    api.post<RegisterResponse>('/auth/register', userData),
+    api.post<RegisterResponse>("/auth/register", userData),
 };

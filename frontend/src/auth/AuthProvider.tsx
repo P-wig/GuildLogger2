@@ -1,30 +1,76 @@
 import React, { useMemo, useState } from "react";
 import { AuthContext } from "./authContext";
+import type { User } from "../api/users";
 
-export type AuthUser = {
-  id: string;
-  email: string;
-};
+const SESSION_KEY = "session_token";
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-type AuthContextValue = {
-  user: AuthUser | null;
-  isAuthenticated: boolean;
-  login: (email: string) => void;
-  logout: () => void;
-};
+interface StoredSession {
+  user: User;
+  expiresAt: number;
+}
+
+function encodeSession(session: StoredSession): string {
+  return btoa(JSON.stringify(session));
+}
+
+function decodeSession(raw: string): StoredSession | null {
+  try {
+    return JSON.parse(atob(raw)) as StoredSession;
+  } catch {
+    return null;
+  }
+}
+
+function persistSession(user: User) {
+  const session: StoredSession = {
+    user,
+    expiresAt: Date.now() + SESSION_TTL_MS,
+  };
+  localStorage.setItem(SESSION_KEY, encodeSession(session));
+}
+
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+function loadSession(): User | null {
+  const raw = localStorage.getItem(SESSION_KEY);
+  if (!raw) return null;
+
+  const session = decodeSession(raw);
+  if (!session) {
+    clearSession();
+    return null;
+  }
+
+  if (Date.now() > session.expiresAt) {
+    clearSession();
+    return null;
+  }
+
+  return session.user;
+}
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  // TODO: replace with real auth token
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUser] = useState<User | null>(() => loadSession());
+  const [loading] = useState(false);
 
-  const value = useMemo<AuthContextValue>(() => {
+  const value = useMemo(() => {
     return {
       user,
       isAuthenticated: !!user,
-      login: (email: string) => setUser({ id: "testUser", email }),
-      logout: () => setUser(null),
+      loading,
+      login: (u: User) => {
+        setUser(u);
+        persistSession(u);
+      },
+      logout: () => {
+        setUser(null);
+        clearSession();
+      },
     };
-  }, [user]);
+  }, [user, loading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

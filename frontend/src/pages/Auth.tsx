@@ -21,11 +21,11 @@ interface AuthForm {
   confirmPassword?: string; // Only for register mode
 }
 
-type AuthMode = 'login' | 'register';
+type AuthMode = "login" | "register";
 
 export const Auth = () => {
   const { login } = useAuth();
-  const [mode, setMode] = useState<AuthMode>('login');
+  const [mode, setMode] = useState<AuthMode>("login");
   const [formData, setFormData] = useState<AuthForm>({
     userId: "",
     password: "",
@@ -70,12 +70,12 @@ export const Auth = () => {
         throw new Error("Password is required");
       }
 
-      if (mode === 'register') {
+      if (mode === "register") {
         // Additional validation for registration
         if (formData.password !== formData.confirmPassword) {
           throw new Error("Passwords do not match");
         }
-        
+
         if (formData.password.length < 6) {
           throw new Error("Password must be at least 6 characters");
         }
@@ -83,33 +83,36 @@ export const Auth = () => {
         // Call register API
         const response = await usersApi.register({
           userId: formData.userId,
-          password: formData.password
+          password: formData.password,
         });
 
         // Auto-login after successful registration
-        login(response.data.user.userId);
+        login(response.data.user);
         navigate(redirectTo, { replace: true });
-
       } else {
         // Call login API
         const response = await usersApi.login({
           userId: formData.userId,
-          password: formData.password
+          password: formData.password,
         });
 
         // Update auth context
-        login(response.data.user.userId);
+        login(response.data.user);
         navigate(redirectTo, { replace: true });
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || `${mode === 'login' ? 'Login' : 'Registration'} failed`);
+      setError(
+        err.response?.data?.error ||
+          err.message ||
+          `${mode === "login" ? "Login" : "Registration"} failed`,
+      );
     } finally {
       setLoading(false);
     }
   };
 
   const toggleMode = () => {
-    setMode(mode === 'login' ? 'register' : 'login');
+    setMode(mode === "login" ? "register" : "login");
     setError(null);
     setFormData({
       userId: "",
@@ -121,14 +124,13 @@ export const Auth = () => {
   return (
     <Box sx={{ maxWidth: 420, mx: "auto", mt: 4 }}>
       <Typography variant="h4" gutterBottom>
-        {mode === 'login' ? 'Sign In' : 'Create Account'}
+        {mode === "login" ? "Sign In" : "Create Account"}
       </Typography>
 
       <Typography color="text.secondary" sx={{ mb: 3 }}>
-        {mode === 'login' 
-          ? 'Enter your credentials to access your account'
-          : 'Create a new account to get started'
-        }
+        {mode === "login"
+          ? "Enter your credentials to access your account"
+          : "Create a new account to get started"}
       </Typography>
 
       <Card variant="outlined">
@@ -150,7 +152,9 @@ export const Auth = () => {
                 disabled={loading}
                 autoComplete="username"
                 variant="outlined"
-                helperText={mode === 'register' ? "Choose a unique username" : ""}
+                helperText={
+                  mode === "register" ? "Choose a unique username" : ""
+                }
               />
 
               <TextField
@@ -161,12 +165,14 @@ export const Auth = () => {
                 value={formData.password}
                 onChange={handleInputChange}
                 disabled={loading}
-                autoComplete={mode === 'login' ? "current-password" : "new-password"}
+                autoComplete={
+                  mode === "login" ? "current-password" : "new-password"
+                }
                 variant="outlined"
-                helperText={mode === 'register' ? "Minimum 6 characters" : ""}
+                helperText={mode === "register" ? "Minimum 6 characters" : ""}
               />
 
-              {mode === 'register' && (
+              {mode === "register" && (
                 <TextField
                   fullWidth
                   label="Confirm Password"
@@ -184,11 +190,11 @@ export const Auth = () => {
                 type="submit"
                 variant="contained"
                 loading={loading}
-                startIcon={mode === 'login' ? <LoginIcon /> : <PersonAddIcon />}
+                startIcon={mode === "login" ? <LoginIcon /> : <PersonAddIcon />}
                 fullWidth
                 size="large"
               >
-                {mode === 'login' ? 'Sign In' : 'Create Account'}
+                {mode === "login" ? "Sign In" : "Create Account"}
               </LoadingButton>
 
               <Button
@@ -197,10 +203,9 @@ export const Auth = () => {
                 disabled={loading}
                 fullWidth
               >
-                {mode === 'login' 
+                {mode === "login"
                   ? "Don't have an account? Sign up"
-                  : "Already have an account? Sign in"
-                }
+                  : "Already have an account? Sign in"}
               </Button>
             </Stack>
           </Box>
