@@ -144,7 +144,11 @@ const HardwareCard = ({ hw, onDelete }: HardwareCardProps) => {
         <Typography variant="h6" sx={{ mb: 1 }}>
           {hw.hardwareName}
         </Typography>
-        <HardwareList hardware={[hw]} />
+        <HardwareList
+          hardware={[hw]}
+          displayTitle={false}
+          displayName={false}
+        />
         {hw.assignedProjects.length > 0 && (
           <Typography
             variant="caption"
@@ -214,14 +218,6 @@ export const HardwarePage = () => {
         justifyContent="space-between"
         gap={2}
       >
-        <div>
-          <Typography variant="h4" className={styles.title}>
-            Hardware
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Manage hardware sets — create, view availability, or remove.
-          </Typography>
-        </div>
         <Button variant="contained" onClick={() => setCreateOpen(true)}>
           New Hardware Set
         </Button>

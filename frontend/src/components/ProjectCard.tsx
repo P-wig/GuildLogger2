@@ -13,13 +13,9 @@ import { ProjectButton } from "./ProjectButton";
 
 type ProjectCardProps = {
   project: Project;
-  /** Hardware sets assigned to this project (for display) */
   hardware?: Hardware[];
-  /** Label for the primary action button */
   buttonLabel?: string;
-  /** Called when the primary action button is clicked */
   onButtonClick?: () => void;
-  /** Optional secondary action (e.g. Delete) */
   secondaryLabel?: string;
   onSecondaryClick?: () => void;
   secondaryColor?: "error" | "warning" | "primary";
@@ -38,12 +34,16 @@ export const ProjectCard = ({
     <Card className={styles.card} variant="outlined">
       <CardContent className={styles.content}>
         <div className={styles.header}>
-          <Typography variant="h6">{project.projectName}</Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="h6" align="left">
+            {project.projectName}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" align="left">
             ID: {project.projectId}
           </Typography>
           {project.description && (
-            <Typography variant="body2">{project.description}</Typography>
+            <Typography variant="body2" align="left">
+              {project.description}
+            </Typography>
           )}
         </div>
 

@@ -277,14 +277,6 @@ export const Projects = () => {
         justifyContent="space-between"
         gap={2}
       >
-        <div>
-          <Typography variant="h4" className={styles.title}>
-            Projects
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Manage your projects — create, join, or leave.
-          </Typography>
-        </div>
         <Stack direction="row" gap={1}>
           <Button variant="outlined" onClick={() => setJoinOpen(true)}>
             Join Project

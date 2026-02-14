@@ -5,14 +5,15 @@ import styles from "./userList.module.css";
 
 type UserListProps = {
   users: string[];
-  /** Highlight the owner with a primary-colored chip */
   ownerUserId?: string;
 };
 
 export const UserList = ({ users, ownerUserId }: UserListProps) => {
   return (
     <div className={styles.root}>
-      <Typography variant="subtitle2">Users</Typography>
+      <Typography variant="subtitle2" align="left">
+        Users
+      </Typography>
       <Stack direction="row" flexWrap="wrap" gap={1}>
         {users.map((u) => (
           <Chip

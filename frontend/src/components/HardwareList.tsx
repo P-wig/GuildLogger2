@@ -6,16 +6,26 @@ import type { Hardware } from "../api/hardware";
 
 type HardwareListProps = {
   hardware: Hardware[];
+  displayTitle?: boolean;
+  displayName?: boolean;
 };
 
 function clampPercent(value: number) {
   return Math.max(0, Math.min(100, value));
 }
 
-export const HardwareList = ({ hardware }: HardwareListProps) => {
+export const HardwareList = ({
+  hardware,
+  displayTitle = true,
+  displayName = true,
+}: HardwareListProps) => {
   return (
     <div className={styles.root}>
-      <Typography variant="subtitle2">Hardware</Typography>
+      {displayTitle && (
+        <Typography variant="subtitle2" align="left">
+          Hardware
+        </Typography>
+      )}
 
       <Stack spacing={1.25}>
         {hardware.map((hw) => {
@@ -27,9 +37,11 @@ export const HardwareList = ({ hardware }: HardwareListProps) => {
           return (
             <div key={hw._id} className={styles.item}>
               <div className={styles.row}>
-                <Typography variant="body2" className={styles.name}>
-                  {hw.hardwareName}
-                </Typography>
+                {displayName && (
+                  <Typography variant="body2" className={styles.name}>
+                    {hw.hardwareName}
+                  </Typography>
+                )}
                 <Typography variant="caption" color="text.secondary">
                   {hw.available}/{hw.capacity} available
                 </Typography>
