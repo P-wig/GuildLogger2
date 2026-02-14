@@ -1,4 +1,4 @@
-import { Link, Outlet } from "react-router";
+import { Link, Outlet, useLocation } from "react-router";
 import AppBar from "@mui/material/AppBar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -8,8 +8,14 @@ import Typography from "@mui/material/Typography";
 import { useAuth } from "../auth";
 import { ProjectProvider } from "../projects/ProjectContext";
 
+const activeNavSx = {
+  textShadow: "0 0 8px rgba(255,255,255,0.9), 0 0 16px rgba(255,255,255,0.5)",
+  fontWeight: 700,
+} as const;
+
 export const AppLayout = () => {
   const { isAuthenticated, user, logout } = useAuth();
+  const { pathname } = useLocation();
 
   return (
     <ProjectProvider>
@@ -28,18 +34,22 @@ export const AppLayout = () => {
           <Toolbar sx={{ justifyContent: "space-between" }}>
             {isAuthenticated && (
               <Box sx={{ display: "flex", gap: 2 }}>
-                <Button color="inherit" component={Link} to="/home">
-                  Home
-                </Button>
-                <Button color="inherit" component={Link} to="/account">
-                  Account
-                </Button>
-                <Button color="inherit" component={Link} to="/projects">
-                  Projects
-                </Button>
-                <Button color="inherit" component={Link} to="/hardware">
-                  Hardware
-                </Button>
+                {[
+                  { to: "/home", label: "Home" },
+                  { to: "/account", label: "Account" },
+                  { to: "/projects", label: "Projects" },
+                  { to: "/hardware", label: "Hardware" },
+                ].map(({ to, label }) => (
+                  <Button
+                    key={to}
+                    color="inherit"
+                    component={Link}
+                    to={to}
+                    sx={pathname === to ? activeNavSx : undefined}
+                  >
+                    {label}
+                  </Button>
+                ))}
               </Box>
             )}
 
