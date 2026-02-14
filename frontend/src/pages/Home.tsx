@@ -1,6 +1,3 @@
-import Typography from "@mui/material/Typography";
-import Stack from "@mui/material/Stack";
-
 import type { Project } from "../api/projects";
 import type { Hardware } from "../api/hardware";
 import styles from "./homePage.module.css";
@@ -109,22 +106,6 @@ export const Home = () => {
 
   return (
     <div className={styles.root}>
-      <Stack
-        direction="row"
-        alignItems="baseline"
-        justifyContent="space-between"
-        gap={2}
-      >
-        <div>
-          <Typography variant="h4" className={styles.title}>
-            Dashboard
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Static data for testing. We will add API calls later.
-          </Typography>
-        </div>
-      </Stack>
-
       <div className={styles.grid}>
         {projects.map((project) => (
           <ProjectCard

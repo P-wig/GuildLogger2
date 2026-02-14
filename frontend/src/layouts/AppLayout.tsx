@@ -26,20 +26,22 @@ export const AppLayout = () => {
           sx={{ top: 0, left: 0, right: 0, zIndex: 1200 }}
         >
           <Toolbar sx={{ justifyContent: "space-between" }}>
-            <Box sx={{ display: "flex", gap: 2 }}>
-              <Button color="inherit" component={Link} to="/">
-                Home
-              </Button>
-              <Button color="inherit" component={Link} to="/account">
-                Account
-              </Button>
-              <Button color="inherit" component={Link} to="/projects">
-                Projects
-              </Button>
-              <Button color="inherit" component={Link} to="/hardware">
-                Hardware
-              </Button>
-            </Box>
+            {isAuthenticated && (
+              <Box sx={{ display: "flex", gap: 2 }}>
+                <Button color="inherit" component={Link} to="/home">
+                  Home
+                </Button>
+                <Button color="inherit" component={Link} to="/account">
+                  Account
+                </Button>
+                <Button color="inherit" component={Link} to="/projects">
+                  Projects
+                </Button>
+                <Button color="inherit" component={Link} to="/hardware">
+                  Hardware
+                </Button>
+              </Box>
+            )}
 
             {/* Center - App Title */}
             <Typography

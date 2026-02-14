@@ -9,13 +9,14 @@ export const router = createBrowserRouter([
     path: "/",
     element: <AppLayout />,
     children: [
-      { index: true, element: <Home /> },
+      { index: true, element: <Auth /> },
       { path: "auth", element: <Auth /> },
 
       // Authenticated routes
       {
         element: <ProtectedRoute />,
         children: [
+          { path: "home", element: <Home /> },
           { path: "account", element: <Account /> },
           { path: "projects", element: <Projects /> },
           { path: "hardware", element: <HardwarePage /> },
