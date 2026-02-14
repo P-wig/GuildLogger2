@@ -1,24 +1,54 @@
 import { api } from "./http";
 
+// ── Types matching backend schemas ──────────────────────────────
+
 export type Project = {
-    _id: string; // MongoDB id 
-    projectId: string; // required project id
-    name: string; // required name
-    description: string; // required description
-    ownerUserId?: string; // optional owner user id
+  _id: string;
+  projectId: string;
+  projectName: string;
+  description: string;
+  ownerUserId: string;
+  assignedUsers: string[];
+  assignedHardware: { hardwareId: string; amount: number }[];
 };
 
-// projects api wrapper
+export type CreateProjectRequest = {
+  projectId: string;
+  projectName: string;
+  description: string;
+  ownerUserId: string;
+};
+
+export type UpdateProjectRequest = {
+  projectName?: string;
+  description?: string;
+};
+
+// ── API functions ───────────────────────────────────────────────
+
 export const projectsApi = {
-    list: (ownerUserId?: string) => // fetch projects 
-        api.get<Project[]>("/projects", { // http get to /api/projects
-            params: ownerUserId ? { ownerUserId } : {}, // include param only if provided 
-    }),
-    // payload required to create a project 
-    create: (project: {
-        projectId: string; //required
-        name: string;//required
-        description: string;//required
-        ownerUserId?: string;//optional
-    }) => api.post<Project>("/projects", project), // http post to /api/ projects with project data
+  /** List projects. Optionally filter by owner or assigned user. */
+  list: (params?: { ownerUserId?: string; assignedUser?: string }) =>
+    api.get<Project[]>("/projects", { params }),
+
+  /** Get a single project by its Mongo _id. */
+  get: (id: string) => api.get<Project>(`/projects/${id}`),
+
+  /** Create a new project. */
+  create: (data: CreateProjectRequest) => api.post<Project>("/projects", data),
+
+  /** Partially update a project by Mongo _id. */
+  update: (id: string, data: UpdateProjectRequest) =>
+    api.patch<Project>(`/projects/${id}`, data),
+
+  /** Join a project. */
+  join: (id: string, userId: string) =>
+    api.post<Project>(`/projects/${id}/join`, { userId }),
+
+  /** Leave a project. */
+  leave: (id: string, userId: string) =>
+    api.post<{ ok: boolean }>(`/projects/${id}/leave`, { userId }),
+
+  /** Delete a project by Mongo _id. */
+  delete: (id: string) => api.delete(`/projects/${id}`),
 };

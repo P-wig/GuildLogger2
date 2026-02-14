@@ -33,6 +33,9 @@ export const AppLayout = () => {
               <Button color="inherit" component={Link} to="/account">
                 Account
               </Button>
+              <Button color="inherit" component={Link} to="/projects">
+                Projects
+              </Button>
             </Box>
 
             {/* Center - App Title */}
