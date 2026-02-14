@@ -1,25 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
 import Alert from "@mui/material/Alert";
-import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
-import CardActions from "@mui/material/CardActions";
 import CardContent from "@mui/material/CardContent";
-import Chip from "@mui/material/Chip";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
-import Divider from "@mui/material/Divider";
-import Grid from "@mui/material/Grid";
+import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useAuth } from "../auth";
+import { ProjectCard } from "../components";
 import {
   projectsApi,
   type CreateProjectRequest,
   type Project,
 } from "../api/projects";
+import styles from "./homePage.module.css";
 
 // ── Create Project Dialog ───────────────────────────────────────
 
@@ -209,66 +207,6 @@ const JoinProjectDialog = ({
   );
 };
 
-// ── Project Card ────────────────────────────────────────────────
-
-type ProjectCardProps = {
-  project: Project;
-  currentUserId: string;
-  onLeave: (project: Project) => void;
-  onDelete: (project: Project) => void;
-};
-
-const ProjectCard = ({
-  project,
-  currentUserId,
-  onLeave,
-  onDelete,
-}: ProjectCardProps) => {
-  const isOwner = project.ownerUserId === currentUserId;
-
-  return (
-    <Card variant="outlined">
-      <CardContent>
-        <Typography variant="h6">{project.projectName}</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          ID: {project.projectId}
-        </Typography>
-        {project.description && (
-          <Typography variant="body2" sx={{ mb: 1 }}>
-            {project.description}
-          </Typography>
-        )}
-        <Divider sx={{ my: 1 }} />
-        <Typography variant="caption" color="text.secondary">
-          Members:
-        </Typography>
-        <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", mt: 0.5 }}>
-          {project.assignedUsers.map((uid) => (
-            <Chip
-              key={uid}
-              label={uid}
-              size="small"
-              color={uid === project.ownerUserId ? "primary" : "default"}
-              variant={uid === currentUserId ? "filled" : "outlined"}
-            />
-          ))}
-        </Box>
-      </CardContent>
-      <CardActions>
-        {isOwner ? (
-          <Button size="small" color="error" onClick={() => onDelete(project)}>
-            Delete
-          </Button>
-        ) : (
-          <Button size="small" color="warning" onClick={() => onLeave(project)}>
-            Leave
-          </Button>
-        )}
-      </CardActions>
-    </Card>
-  );
-};
-
 // ── Main Projects Page ──────────────────────────────────────────
 
 export const Projects = () => {
@@ -332,25 +270,30 @@ export const Projects = () => {
   };
 
   return (
-    <Box sx={{ py: 3, px: 2, maxWidth: 900, mx: "auto" }}>
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          mb: 3,
-        }}
+    <div className={styles.root}>
+      <Stack
+        direction="row"
+        alignItems="baseline"
+        justifyContent="space-between"
+        gap={2}
       >
-        <Typography variant="h4">Projects</Typography>
-        <Box sx={{ display: "flex", gap: 1 }}>
+        <div>
+          <Typography variant="h4" className={styles.title}>
+            Projects
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Manage your projects — create, join, or leave.
+          </Typography>
+        </div>
+        <Stack direction="row" gap={1}>
           <Button variant="outlined" onClick={() => setJoinOpen(true)}>
             Join Project
           </Button>
           <Button variant="contained" onClick={() => setCreateOpen(true)}>
             New Project
           </Button>
-        </Box>
-      </Box>
+        </Stack>
+      </Stack>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
@@ -370,18 +313,24 @@ export const Projects = () => {
           </CardContent>
         </Card>
       ) : (
-        <Grid container spacing={2}>
-          {projects.map((project) => (
-            <Grid size={{ xs: 12, sm: 6 }} key={project._id}>
+        <div className={styles.grid}>
+          {projects.map((project) => {
+            const isOwner = project.ownerUserId === userId;
+            return (
               <ProjectCard
+                key={project._id}
                 project={project}
-                currentUserId={userId}
-                onLeave={handleLeave}
-                onDelete={handleDelete}
+                buttonLabel={isOwner ? undefined : "Leave"}
+                onButtonClick={isOwner ? undefined : () => handleLeave(project)}
+                secondaryLabel={isOwner ? "Delete" : undefined}
+                onSecondaryClick={
+                  isOwner ? () => handleDelete(project) : undefined
+                }
+                secondaryColor="error"
               />
-            </Grid>
-          ))}
-        </Grid>
+            );
+          })}
+        </div>
       )}
 
       <CreateProjectDialog
@@ -397,6 +346,6 @@ export const Projects = () => {
         onJoined={handleJoined}
         userId={userId}
       />
-    </Box>
+    </div>
   );
 };

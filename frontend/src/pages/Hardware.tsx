@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import Alert from "@mui/material/Alert";
-import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardActions from "@mui/material/CardActions";
@@ -9,15 +8,17 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
-import Grid from "@mui/material/Grid";
-import LinearProgress from "@mui/material/LinearProgress";
+import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { ProjectButton } from "../components";
 import {
   hardwareApi,
   type CreateHardwareRequest,
   type Hardware,
 } from "../api/hardware";
+import { HardwareList } from "../components";
+import styles from "./homePage.module.css";
 
 // ── Create Hardware Dialog ──────────────────────────────────────
 
@@ -134,39 +135,16 @@ type HardwareCardProps = {
 };
 
 const HardwareCard = ({ hw, onDelete }: HardwareCardProps) => {
-  const usedPct =
-    hw.capacity > 0 ? ((hw.capacity - hw.available) / hw.capacity) * 100 : 0;
-
   return (
-    <Card variant="outlined">
+    <Card
+      variant="outlined"
+      sx={{ width: "min(66vw, 1000px)", maxWidth: "100%", mx: "auto" }}
+    >
       <CardContent>
-        <Typography variant="h6">{hw.hardwareName}</Typography>
-
-        <Box sx={{ mt: 1.5, mb: 0.5 }}>
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              mb: 0.5,
-            }}
-          >
-            <Typography variant="body2" color="text.secondary">
-              Available: {hw.available} / {hw.capacity}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {Math.round(100 - usedPct)}% free
-            </Typography>
-          </Box>
-          <LinearProgress
-            variant="determinate"
-            value={usedPct}
-            color={
-              usedPct > 80 ? "error" : usedPct > 50 ? "warning" : "primary"
-            }
-            sx={{ height: 8, borderRadius: 1 }}
-          />
-        </Box>
-
+        <Typography variant="h6" sx={{ mb: 1 }}>
+          {hw.hardwareName}
+        </Typography>
+        <HardwareList hardware={[hw]} />
         {hw.assignedProjects.length > 0 && (
           <Typography
             variant="caption"
@@ -178,10 +156,13 @@ const HardwareCard = ({ hw, onDelete }: HardwareCardProps) => {
           </Typography>
         )}
       </CardContent>
-      <CardActions>
-        <Button size="small" color="error" onClick={() => onDelete(hw)}>
-          Delete
-        </Button>
+      <CardActions sx={{ px: 2, pb: 2 }}>
+        <ProjectButton
+          label="Delete"
+          onClick={() => onDelete(hw)}
+          variant="outlined"
+          color="error"
+        />
       </CardActions>
     </Card>
   );
@@ -226,20 +207,25 @@ export const HardwarePage = () => {
   };
 
   return (
-    <Box sx={{ py: 3, px: 2, maxWidth: 900, mx: "auto" }}>
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          mb: 3,
-        }}
+    <div className={styles.root}>
+      <Stack
+        direction="row"
+        alignItems="baseline"
+        justifyContent="space-between"
+        gap={2}
       >
-        <Typography variant="h4">Hardware</Typography>
+        <div>
+          <Typography variant="h4" className={styles.title}>
+            Hardware
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Manage hardware sets — create, view availability, or remove.
+          </Typography>
+        </div>
         <Button variant="contained" onClick={() => setCreateOpen(true)}>
           New Hardware Set
         </Button>
-      </Box>
+      </Stack>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
@@ -258,13 +244,11 @@ export const HardwarePage = () => {
           </CardContent>
         </Card>
       ) : (
-        <Grid container spacing={2}>
+        <div className={styles.grid}>
           {hardwareList.map((hw) => (
-            <Grid size={{ xs: 12, sm: 6 }} key={hw._id}>
-              <HardwareCard hw={hw} onDelete={handleDelete} />
-            </Grid>
+            <HardwareCard key={hw._id} hw={hw} onDelete={handleDelete} />
           ))}
-        </Grid>
+        </div>
       )}
 
       <CreateHardwareDialog
@@ -272,6 +256,6 @@ export const HardwarePage = () => {
         onClose={() => setCreateOpen(false)}
         onCreated={handleCreated}
       />
-    </Box>
+    </div>
   );
 };

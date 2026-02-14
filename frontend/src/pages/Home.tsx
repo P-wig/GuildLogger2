@@ -1,70 +1,145 @@
-import { Link as RouterLink } from "react-router";
-import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
-import Card from "@mui/material/Card";
-import CardActions from "@mui/material/CardActions";
-import CardContent from "@mui/material/CardContent";
-import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { useAuth } from "../auth";
+import Stack from "@mui/material/Stack";
+
+import type { Project } from "../api/projects";
+import type { Hardware } from "../api/hardware";
+import styles from "./homePage.module.css";
+import { ProjectCard } from "../components";
+import { useState } from "react";
+
+// ── Mock data using the real API types ──────────────────────────
+
+const MOCK_HARDWARE: Hardware[] = [
+  {
+    _id: "h1",
+    hardwareName: "Arduino Uno",
+    capacity: 6,
+    available: 2,
+    assignedProjects: ["testID1"],
+  },
+  {
+    _id: "h2",
+    hardwareName: "Raspberry Pi 4",
+    capacity: 10,
+    available: 7,
+    assignedProjects: ["testID1"],
+  },
+  {
+    _id: "h3",
+    hardwareName: "ESP32 Module",
+    capacity: 4,
+    available: 0,
+    assignedProjects: ["testID2"],
+  },
+  {
+    _id: "h4",
+    hardwareName: "FPGA Board",
+    capacity: 12,
+    available: 5,
+    assignedProjects: ["testID2"],
+  },
+  {
+    _id: "h5",
+    hardwareName: "Oscilloscope",
+    capacity: 3,
+    available: 1,
+    assignedProjects: ["testID3"],
+  },
+];
+
+const MOCK_PROJECTS: Project[] = [
+  {
+    _id: "testID1",
+    projectId: "proj-alpha",
+    projectName: "Project Alpha",
+    description: "Fake project description 1",
+    ownerUserId: "testUser1",
+    assignedUsers: ["testUser1", "testUser2", "testUser3"],
+    assignedHardware: [
+      { hardwareId: "h1", amount: 4 },
+      { hardwareId: "h2", amount: 3 },
+    ],
+  },
+  {
+    _id: "testID2",
+    projectId: "proj-beta",
+    projectName: "Project Beta",
+    description: "Fake project description 2",
+    ownerUserId: "testUser4",
+    assignedUsers: ["testUser4", "testUser5"],
+    assignedHardware: [
+      { hardwareId: "h3", amount: 4 },
+      { hardwareId: "h4", amount: 7 },
+    ],
+  },
+  {
+    _id: "testID3",
+    projectId: "proj-gamma",
+    projectName: "Project Gamma",
+    description: "Fake project description 3",
+    ownerUserId: "testUser6",
+    assignedUsers: ["testUser6", "testUser7", "testUser8", "testUser9"],
+    assignedHardware: [{ hardwareId: "h5", amount: 2 }],
+  },
+];
+
+/** Given a project, return the subset of mock hardware assigned to it. */
+function getHardwareForProject(project: Project): Hardware[] {
+  const hwIds = project.assignedHardware.map((ah) => ah.hardwareId);
+  return MOCK_HARDWARE.filter((hw) => hwIds.includes(hw._id));
+}
 
 export const Home = () => {
-  const { isAuthenticated, user } = useAuth();
+  const [projects, setProjects] = useState<Project[]>(MOCK_PROJECTS);
+
+  const handleButtonClick = (projectId: string) => {
+    setProjects((prev) =>
+      prev.map((project) =>
+        project._id === projectId
+          ? {
+              ...project,
+              assignedUsers: project.assignedUsers.includes("testUser1")
+                ? project.assignedUsers.filter((u) => u !== "testUser1")
+                : [...project.assignedUsers, "testUser1"],
+            }
+          : project,
+      ),
+    );
+  };
 
   return (
-    <Box sx={{ mt: 0, pt: 0 }}>
-      <Typography variant="h4" gutterBottom sx={{ mt: 0 }}>
-        Home
-      </Typography>
-
-      <Typography color="text.secondary" sx={{ mb: 3 }}>
-        Welcome to the Cloud Native Team Project.
-      </Typography>
-
-      <Stack spacing={3}>
-        {/* Quick Links Card - Only show if authenticated */}
-        {isAuthenticated && (
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Quick Actions
-              </Typography>
-              <Typography color="text.secondary" sx={{ mb: 2 }}>
-                Welcome back, <strong>{user?.userId}</strong>! Access your account and project features below.
-              </Typography>
-            </CardContent>
-
-            <CardActions>
-              <Button variant="contained" component={RouterLink} to="/account">
-                Go to Account
-              </Button>
-              <Button variant="outlined" component={RouterLink} to="/projects">
-                View Projects
-              </Button>
-            </CardActions>
-          </Card>
-        )}
-
-        {/* Sign In Prompt - Only show if not authenticated */}
-        {!isAuthenticated && (
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Get Started
-              </Typography>
-              <Typography color="text.secondary" sx={{ mb: 2 }}>
-                Please sign in to access your account and manage projects.
-              </Typography>
-            </CardContent>
-
-            <CardActions sx={{ justifyContent: 'center' }}>
-              <Button variant="contained" component={RouterLink} to="/auth">
-                Sign In
-              </Button>
-            </CardActions>
-          </Card>
-        )}
+    <div className={styles.root}>
+      <Stack
+        direction="row"
+        alignItems="baseline"
+        justifyContent="space-between"
+        gap={2}
+      >
+        <div>
+          <Typography variant="h4" className={styles.title}>
+            Dashboard
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Static data for testing. We will add API calls later.
+          </Typography>
+        </div>
       </Stack>
-    </Box>
+
+      <div className={styles.grid}>
+        {projects.map((project) => (
+          <ProjectCard
+            key={project._id}
+            project={project}
+            hardware={getHardwareForProject(project)}
+            buttonLabel={
+              project.assignedUsers.includes("testUser1")
+                ? "Leave project"
+                : "Join project"
+            }
+            onButtonClick={() => handleButtonClick(project._id)}
+          />
+        ))}
+      </div>
+    </div>
   );
 };
