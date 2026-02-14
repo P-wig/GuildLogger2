@@ -382,12 +382,12 @@ const breakpoints = {
 ```tsx
 <TextField
   fullWidth
-  label="Username"
-  placeholder="Enter your username"
+  label="User ID"
+  placeholder="Enter your user ID"
   variant="outlined"
   sx={{ mb: 2 }}
-  error={!!errors.username}
-  helperText={errors.username}
+  error={!!errors.userId}
+  helperText={errors.userId}
 />
 ```
 
@@ -580,7 +580,7 @@ All text must meet WCAG AA standards:
 <TextField
   autoFocus={shouldFocus}
   inputProps={{
-    'aria-label': 'Username or Email',
+    'aria-label': 'User ID',
   }}
 />
 ```
@@ -590,12 +590,12 @@ All text must meet WCAG AA standards:
 ```tsx
 // Provide meaningful labels
 <TextField
-  label="Username"
-  aria-label="Enter your username"
-  aria-describedby="username-helper"
+  label="User ID"
+  aria-label="Enter your user ID"
+  aria-describedby="userId-helper"
 />
-<Typography id="username-helper" variant="caption" color="text.secondary">
-  Your unique login identifier (3-20 characters)
+<Typography id="userId-helper" variant="caption" color="text.secondary">
+  Your unique login identifier
 </Typography>
 
 // Alert updates
@@ -655,9 +655,9 @@ All text must meet WCAG AA standards:
     <Stack spacing={2}>
       <TextField
         fullWidth
-        label="Username or Email"
+        label="User ID"
         variant="outlined"
-        placeholder="username"
+        placeholder="user123"
       />
       
       <TextField
@@ -854,6 +854,6 @@ const darkTheme = createTheme({
 
 ---
 
-**Last Updated:** February 10, 2026
-**Version:** 1.0
+**Last Updated:** February 13, 2026
+**Version:** 1.1
 **Status:** Active - Implementation Ready

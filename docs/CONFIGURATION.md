@@ -26,8 +26,8 @@ These must be set for the application to run.
 |----------|---------|-------------|----------|
 | `FLASK_ENV` | `development` | Flask environment (development, staging, production) | Yes |
 | `FLASK_DEBUG` | `1` | Enable Flask debug mode (0 or 1) | No (default: 0) |
-| `MONGODB_URI` | `mongodb://localhost:27017` | MongoDB connection string | Yes |
-| `MONGODB_DB_NAME` | `hardware_checkout` | Database name | Yes |
+| `MONGO_URI` | `mongodb://localhost:27017` | MongoDB connection string | Yes |
+| `MONGO_DB` | `cloud_native` | Database name | Yes |
 | `SECRET_KEY` | `your-secret-key-here` | Flask secret key for sessions | Yes |
 | `LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) | No (default: INFO) |
 
@@ -58,8 +58,8 @@ class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-key-change-in-production')
     
     # Database
-    MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017')
-    MONGODB_DB_NAME = os.getenv('MONGODB_DB_NAME', 'hardware_checkout')
+    MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017')
+    MONGO_DB = os.getenv('MONGO_DB', 'cloud_native')
     
     # Logging
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
@@ -83,7 +83,7 @@ class DevelopmentConfig(Config):
     """Development configuration."""
     DEBUG = True
     TESTING = False
-    MONGODB_URI = 'mongodb://localhost:27017'
+    MONGO_URI = 'mongodb://localhost:27017'
     
 class StagingConfig(Config):
     """Staging configuration."""
@@ -99,7 +99,7 @@ class ProductionConfig(Config):
 class TestingConfig(Config):
     """Testing configuration."""
     TESTING = True
-    MONGODB_DB_NAME = 'test_hardware_checkout'
+    MONGO_DB = 'test_cloud_native'
 ```
 
 ### Server Configuration
@@ -210,21 +210,19 @@ mongodb://host1:27017,host2:27017,host3:27017/hardware_checkout?replicaSet=rs0
 db.createCollection('users', {
   schema: {
     bsonType: 'object',
-    required: ['userid', 'password_hash'],
+    required: ['userId', 'password'],
     properties: {
       _id: { bsonType: 'objectId' },
-      userid: { bsonType: 'string' },
-      username: { bsonType: 'string' },
-      password_hash: { bsonType: 'string' },
-      email: { bsonType: 'string' },
+      userId: { bsonType: 'string' },  // Encrypted per SR3
+      password: { bsonType: 'string' },  // Encrypted per SR3
       createdAt: { bsonType: 'date' },
       updatedAt: { bsonType: 'date' }
     }
   }
 })
 
-// Create unique index on userid
-db.users.createIndex({ userid: 1 }, { unique: true })
+// Create unique index on userId (encrypted value)
+db.users.createIndex({ userId: 1 }, { unique: true })
 ```
 
 #### Projects Collection
@@ -345,8 +343,8 @@ else:
 ```bash
 FLASK_ENV=development
 FLASK_DEBUG=1
-MONGODB_URI=mongodb://localhost:27017
-MONGODB_DB_NAME=hardware_checkout_dev
+MONGO_URI=mongodb://localhost:27017
+MONGO_DB=cloud_native_dev
 SECRET_KEY=dev-secret-key
 LOG_LEVEL=DEBUG
 ```
@@ -355,8 +353,8 @@ LOG_LEVEL=DEBUG
 ```bash
 FLASK_ENV=staging
 FLASK_DEBUG=0
-MONGODB_URI=mongodb+srv://user:pass@staging-cluster.mongodb.net
-MONGODB_DB_NAME=hardware_checkout_staging
+MONGO_URI=mongodb+srv://user:pass@staging-cluster.mongodb.net
+MONGO_DB=cloud_native_staging
 SECRET_KEY=<random-staging-key>
 LOG_LEVEL=INFO
 ```
@@ -365,8 +363,8 @@ LOG_LEVEL=INFO
 ```bash
 FLASK_ENV=production
 FLASK_DEBUG=0
-MONGODB_URI=mongodb+srv://user:pass@prod-cluster.mongodb.net
-MONGODB_DB_NAME=hardware_checkout_prod
+MONGO_URI=mongodb+srv://user:pass@prod-cluster.mongodb.net
+MONGO_DB=cloud_native_prod
 SECRET_KEY=<strong-random-key>
 LOG_LEVEL=WARNING
 ```
@@ -383,8 +381,8 @@ FLASK_ENV=development
 FLASK_DEBUG=1
 
 # Database
-MONGODB_URI=mongodb://localhost:27017
-MONGODB_DB_NAME=hardware_checkout
+MONGO_URI=mongodb://localhost:27017
+MONGO_DB=cloud_native
 
 # Security
 SECRET_KEY=change-this-in-production
@@ -417,8 +415,8 @@ services:
   backend:
     environment:
       - FLASK_ENV=development
-      - MONGODB_URI=mongodb://mongo:27017
-      - MONGODB_DB_NAME=hardware_checkout
+      - MONGO_URI=mongodb://mongo:27017
+      - MONGO_DB=cloud_native
       - SECRET_KEY=dev-key
       - LOG_LEVEL=DEBUG
       
@@ -480,13 +478,13 @@ services:
 ### Issue: Cannot connect to MongoDB
 ```bash
 # Check connection string
-echo $MONGODB_URI
+echo $MONGO_URI
 
 # Test connection
-mongosh "$MONGODB_URI"
+mongosh "$MONGO_URI"
 
 # Verify database exists
-mongosh "$MONGODB_URI" --eval "db.adminCommand('ping')"
+mongosh "$MONGO_URI" --eval "db.adminCommand('ping')"
 ```
 
 ### Issue: CORS errors in frontend
@@ -509,6 +507,6 @@ echo $FEATURE_HARDWARE_CHECKOUT
 
 ---
 
-**Last Updated:** February 10, 2026  
-**Version:** 1.0  
+**Last Updated:** February 13, 2026  
+**Version:** 1.1  
 **Status:** Active

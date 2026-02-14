@@ -2,7 +2,7 @@
 ## Team Project
 
 **Project Name:** Team Project
-**Version:** 1.0.0
+**Version:** 1.1.0
 **Date:** February 2026
 **Status:** In Development
 **Course:** ECE 382V: Cloud Native App Development  
@@ -349,12 +349,13 @@ Output: { ok: true/false, message, user: { userid } }
 ```
 users: {
   _id: ObjectId (auto-generated),
-  username: String (unique),
-  userid: String (encrypted),
+  userId: String (unique, encrypted),
   password: String (encrypted),
   [other fields]: optional
 }
 ```
+
+**Note**: Per professor clarification, only `userId` and `password` are required fields (no username).
 
 **Endpoints**:
 
@@ -370,34 +371,32 @@ users: {
 **Create User (POST /api/users)**:
 ```
 Input: {
-  username: String (must be unique),
-  userid: String,
+  userId: String (must be unique),
   password: String
 }
 
 Validation:
-  - All required fields present (username, userid, password)
-  - `userid` MUST be unique (checked via MongoDB unique index)
-  - `username` uniqueness TBD (to be finalized in implementation)
+  - All required fields present (userId, password) - per professor clarification
+  - `userId` MUST be unique (checked via MongoDB unique index)
+  - Both userId and password must be encrypted
   - Fields are non-empty strings
 
 Processing:
   1. Validate all required fields present
-  2. Check userid uniqueness (prevent duplicates)
-  3. Encrypt both userid and password using F3/E1 cipher
+  2. Check userId uniqueness (prevent duplicates)
+  3. Encrypt both userId and password using cyclic cipher (shift 3, direction 1)
   4. Insert into users collection
   5. Retrieve created document
 
 Output: {
   _id: String,
-  username: String (display name, returned to client),
-  userid: String (NOT returned - redacted by sanitize_user()),
-  password: String (NOT returned - redacted by sanitize_user())
+  userId: String (decrypted for client display),
+  password: String (NOT returned - redacted)
 }
 
 Error Codes:
   - 400: Missing/invalid fields
-  - 409: userid already exists (duplicate key)
+  - 409: userId already exists (duplicate key)
   - 500: Database error
 ```
 
@@ -943,23 +942,22 @@ hardwareApi.getAllocations(projectId?: string)
 - Auto-login after successful registration
 - Redirect to specified page on successful login
 
-**Form Fields** (per Casey's meeting on Feb 10):
-- username: Display name input (visible to others on UI)
-- userId: Unique login identity input (NOT publicly displayed)
+**Form Fields** (per professor clarification - Feb 2026):
+- userId: Unique login identity input
 - password: Password input
 - confirmPassword: Password confirmation (register mode only)
 
-**Field Semantics** (Casey's design):
-- `username`: Display name, shown in UI to other users
-- `userId`: Unique login identity, used for authentication only, kept private
+**Field Semantics**:
+- `userId`: Unique login identity, used for authentication, displayed in account page
+- No username field required (professor confirmed only userId and password needed)
 
 **Integration**:
 - Calls `usersApi.login()` for authentication (uses userId + password)
-- Calls `usersApi.register()` for account creation (uses username + userId + password)
+- Calls `usersApi.register()` for account creation (uses userId + password only)
 - Updates auth context via `login()` function
 - Navigates to `/account` or previous page on success
 
-**Status**: NEEDS UPDATE - Currently missing username field in registration form
+**Status**: IMPLEMENTED - Registration uses userId and password per professor clarification
 
 **Home Page** (pages/Home.tsx)
 
@@ -1154,44 +1152,38 @@ db.projects.find({assignedUsers: "user123"})
 
 **Purpose**: Store user account information with encrypted credentials
 
-**Schema** (per Casey's meeting design):
+**Schema** (per professor clarification - only userId and password needed):
 ```mongodb
 {
   _id: ObjectId (MongoDB auto-generated),
-  username: String (display name, visible in UI),
-  userid: String (unique index, encrypted, never returned in API),
-  password: String (encrypted),
+  userId: String (unique index, encrypted per SR3),
+  password: String (encrypted per SR3),
   createdAt: Date
 }
 ```
 
 **Indexes**:
 - `_id`: Primary index (auto)
-- `userid`: Unique index (uniqueness constraint per Casey's design)
-- `username`: Index for UI lookup (uniqueness TBD)
+- `userId`: Unique index (uniqueness constraint)
 
-**Field Semantics** (Casey's explicit design):
-- `username`: Display name shown to other users in UI (discovery/reference)
-- `userid`: True unique identity for authentication, kept private/encrypted
+**Field Semantics** (per professor clarification):
+- `userId`: User's login identifier, stored encrypted per SR3, decrypted for display
 
 **Validation**:
-- username: Non-empty string, displayed as human-readable identifier
-- userid: Non-empty, unique (enforced by MongoDB unique index), encrypted before storage
-- password: Non-empty, encrypted using F3/E1 cipher before storage
+- userId: Non-empty, unique (enforced by MongoDB unique index), encrypted before storage per SR3
+- password: Non-empty, encrypted using cyclic cipher (shift 3, direction 1) before storage per SR3
 
 **Usage**:
-- User registration: Insert new document with username, userid, password
-- User authentication: Query by encrypted userid and encrypted password (login)
-- User retrieval: Query by _id or username (for profile/UI display)
-- Avoid returning userid in API responses (use sanitize_user())
+- User registration: Insert new document with encrypted userId and encrypted password
+- User authentication: Encrypt input credentials and compare with stored values
+- User retrieval: Query by _id; return decrypted userId for display
+- Return decrypted userId in API responses for UI display
 
 **Security Notes**:
-- Sensitive fields (userid, password) MUST be excluded from ALL API responses via `sanitize_user()` function
-- username CAN be returned (it's the display name)
-- userid and password are ONLY used server-side for authentication
-- Client receives and displays username, never sees userid
-
-**Future Consideration** (caseyusr didn't finalize): Whether username must also be unique - to be determined during implementation
+- BOTH userId and password are encrypted before storage per SR3
+- password is NEVER returned in API responses
+- userId is returned DECRYPTED for display purposes
+- Client receives decrypted userId for display
 
 #### 5.1.2 Projects Collection
 
@@ -1483,10 +1475,9 @@ resource_requests (1) ──→ (1) allocations (when checked out)
 
 **Validation Location**: Backend API Layer (app/routes/*.py)
 
-**User Validation**:
-- `username`: String, required, unique, 3-50 characters
-- `userid`: String, required, encrypted before storage
-- `password`: String, required, non-empty, encrypted before storage
+**User Validation** (per professor clarification - only userId and password needed):
+- `userId`: String, required, unique, encrypted before storage per SR3
+- `password`: String, required, non-empty, encrypted before storage per SR3
 
 **Project Validation**:
 - `projectId`: String, required, unique, 1-100 characters
@@ -1563,9 +1554,8 @@ db.hardware_sets.updateOne(
 │       User           │
 ├──────────────────────┤
 │ - _id: ObjectId      │
-│ - username: String   │
-│ - userid: String     │ (encrypted)
-│ - password: String   │ (encrypted)
+│ - userId: String     │ (encrypted per SR3)
+│ - password: String   │ (encrypted per SR3)
 │ - createdAt: Date    │
 ├──────────────────────┤
 │ + register()         │
@@ -1776,27 +1766,24 @@ Response 401: {
 
 ```
 Method: POST
-URL: /api/users
+URL: /api/users/register
 Request: {
-  "username": String,
-  "userid": String,
+  "userId": String,
   "password": String
 }
 
 Response 201: {
   "_id": String,
-  "username": String,
-  "userid": String (encrypted)
-  "password": String (encrypted)
+  "userId": String (decrypted for display)
 }
 
 Response 400: {
-  "error": "Missing fields: [...], 
+  "error": "Missing fields: [...]", 
    status: 400
 }
 
 Response 409: {
-  "error": "Username already exists",
+  "error": "User ID already exists",
   "status": 409
 }
 ```
@@ -1812,9 +1799,7 @@ URL: /api/users
 Response 200: [
   {
     "_id": String,
-    "username": String,
-    "userid": String,
-    "password": String
+    "userId": String (decrypted for display)
   },
   ...
 ] (max 200 users)
@@ -1830,9 +1815,7 @@ URL: /api/users/<mongodb_id>
 
 Response 200: {
   "_id": String,
-  "username": String,
-  "userid": String,
-  "password": String
+  "userId": String (decrypted for display)
 }
 
 Response 404: {
@@ -2152,8 +2135,8 @@ Resource Authorization:
 
 **Data Masking**:
 - `sanitize_user()` function removes sensitive fields from responses
-- Userid and password NEVER returned in API responses
-- Username (display name only) returned for UI rendering
+- Password NEVER returned in API responses
+- UserId returned DECRYPTED for UI display (per professor clarification)
 - Sensitive fields only used server-side for authentication
 
 ### 10.4 Network Security
@@ -2252,11 +2235,12 @@ All API endpoints perform strict validation:
 ## 11. Business Rules
 
 ### 11.1 User Management Rules
-1. Username MUST be unique across all users
-2. Userid and password MUST be encrypted before storage
-3. Same encryption algorithm MUST be used for both fields
-4. Sensitive fields (userid, password) MUST NOT be returned in API responses
-5. User session state MUST be managed client-side only (stateless backend)
+1. UserId MUST be unique across all users
+2. UserId and password MUST be encrypted before storage per SR3
+3. Same encryption algorithm (cyclic cipher, shift 3, direction 1) MUST be used for both fields
+4. Password MUST NOT be returned in API responses
+5. UserId is returned DECRYPTED for display purposes
+6. User session state MUST be managed client-side only (stateless backend)
 
 ### 11.2 Project Management Rules
 1. ProjectId MUST be unique across all projects
@@ -2382,8 +2366,7 @@ Start: User fills registration form
    ▼
 ┌────────────────────────────────────────────┐
 │ Frontend: Collect data                     │
-│  - username (display name)                 │
-│  - userid (login identifier)               │
+│  - userId (login identifier)               │
 │  - password                                │
 │  - confirmPassword                         │
 └────────────────────────────────────────────┘
@@ -2402,19 +2385,19 @@ Start: User fills registration form
    │
    └── Validation passes ───────────────────┐
                                             ▼
-                        POST /api/users with data
-                        Payload: {username, userid, password}
+                        POST /api/users/register with data
+                        Payload: {userId, password}
                                             │
                                             ▼
                         Backend: Receive registration
                         Validate all required fields
-                        Check userid uniqueness
+                        Check userId uniqueness
                                             │
-                        ├── Duplicate userid ────┐
+                        ├── Duplicate userId ────┐
                         │                        ▼
                         │         Return 409 Conflict
                         │
-                        └── Unique userid ──────┐
+                        └── Unique userId ──────┐
                                                 ▼
                             Encrypt userid and password
                             Create user document
@@ -2799,8 +2782,7 @@ Start: Authenticated user creates project
 ```python
 # fixtures/users.py
 test_user = {
-  "username": "testuser",
-  "userid": "test123",
+  "userId": "test123",
   "password": "testpass"
 }
 

@@ -50,14 +50,13 @@ import pytest
 from app.routes.users import sanitize_user
 
 def test_sanitize_user_removes_password():
-    """Verify password_hash is removed from user object."""
+    """Verify password is removed from user object."""
     user = {
         "userId": "john_doe",
-        "username": "John Doe",
-        "password_hash": "hashed_pw_123"
+        "password": "encrypted_pw_123"
     }
     result = sanitize_user(user)
-    assert "password_hash" not in result
+    assert "password" not in result
     assert result["userId"] == "john_doe"
 ```
 
@@ -85,17 +84,15 @@ describe('validateEmail', () => {
 ```python
 def test_create_user_stores_in_database(client, db):
     """Verify user creation endpoint stores data in MongoDB."""
-    response = client.post('/api/users', json={
-        "userid": "test_user",
-        "username": "Test User",
+    response = client.post('/api/users/register', json={
+        "userId": "test_user",
         "password": "securepass123"
     })
     assert response.status_code == 201
     
-    # Verify data in database
-    user = db['users'].find_one({"userid": "test_user"})
-    assert user is not None
-    assert user["username"] == "Test User"
+    # Verify data in database (userId stored encrypted)
+    # Note: query by encrypted userId in production
+    assert response.json()["userId"] == "test_user"  # Returned decrypted
 ```
 
 ### End-to-End Tests
@@ -207,31 +204,27 @@ class TestUserCreation:
     
     def test_create_user_success(self, client):
         """Test successful user creation."""
-        response = client.post('/api/users', json={
-            "userid": "newuser",
-            "username": "New User",
+        response = client.post('/api/users/register', json={
+            "userId": "newuser",
             "password": "secure123"
         })
         
         assert response.status_code == 201
         data = response.get_json()
-        assert data['userId'] == "newuser"
-        assert data['username'] == "New User"
+        assert data['userId'] == "newuser"  # Returned decrypted for display
         assert 'password' not in data  # Never return password
     
     def test_create_user_duplicate_userid(self, client, db):
-        """Test creation fails with duplicate userid."""
+        """Test creation fails with duplicate userId."""
         # Create first user
-        client.post('/api/users', json={
-            "userid": "duplicate",
-            "username": "User 1",
+        client.post('/api/users/register', json={
+            "userId": "duplicate",
             "password": "pass123"
         })
         
         # Try to create duplicate
-        response = client.post('/api/users', json={
-            "userid": "duplicate",
-            "username": "User 2",
+        response = client.post('/api/users/register', json={
+            "userId": "duplicate",
             "password": "pass456"
         })
         
@@ -240,9 +233,9 @@ class TestUserCreation:
     
     def test_create_user_missing_fields(self, client):
         """Test creation fails with missing required fields."""
-        response = client.post('/api/users', json={
-            "userid": "newuser"
-            # Missing username and password
+        response = client.post('/api/users/register', json={
+            "userId": "newuser"
+            # Missing password
         })
         
         assert response.status_code == 400
@@ -348,8 +341,8 @@ export const handlers = [
   // Mock GET /api/users
   http.get('/api/users', () => {
     return HttpResponse.json([
-      { userId: 'user1', username: 'User One' },
-      { userId: 'user2', username: 'User Two' }
+      { userId: 'user1' },
+      { userId: 'user2' }
     ]);
   }),
   
@@ -357,10 +350,9 @@ export const handlers = [
   http.post('/api/auth/login', async ({ request }) => {
     const body = await request.json();
     
-    if (body.userid === 'testuser' && body.password === 'password123') {
+    if (body.userId === 'testuser' && body.password === 'password123') {
       return HttpResponse.json({
-        token: 'mock-token-123',
-        user: { userId: 'testuser', username: 'Test User' }
+        user: { userId: 'testuser' }
       });
     }
     
@@ -454,16 +446,15 @@ Test that frontend and backend communicate correctly:
 def test_full_login_flow(client, db):
     """Test complete login workflow."""
     # 1. Create user via registration
-    register_response = client.post('/api/users', json={
-        "userid": "testuser",
-        "username": "Test User",
+    register_response = client.post('/api/users/register', json={
+        "userId": "testuser",
         "password": "password123"
     })
     assert register_response.status_code == 201
     
     # 2. Login with created user
     login_response = client.post('/api/auth/login', json={
-        "userid": "testuser",
+        "userId": "testuser",
         "password": "password123"
     })
     assert login_response.status_code == 200
@@ -547,53 +538,53 @@ npm test -- --ui
 
 ## Best Practices
 
-### Do's ✅
+### Do's
 
 1. **Test behavior, not implementation**
    ```python
-   # ✅ Good - tests the behavior
+   # Good - tests the behavior
    def test_password_is_hashed():
        user = create_user("test", "plaintext_password")
        assert user['password_hash'] != "plaintext_password"
    
-   # ❌ Bad - tests the implementation
+   # Bad - tests the implementation
    def test_uses_bcrypt():
        assert 'bcrypt' in imports
    ```
 
 2. **Use descriptive test names**
    ```python
-   # ✅ Good
+   # Good
    def test_checkout_prevents_overallocation_with_insufficient_units():
        pass
    
-   # ❌ Bad
+   # Bad
    def test_checkout():
        pass
    ```
 
 3. **One assertion per test (when possible)**
    ```python
-   # ✅ Better - focused tests
+   # Better - focused tests
    def test_user_creation_sets_userid():
-       user = create_user("id123", username="test")
+       user = create_user("id123", password="test123")
        assert user['userId'] == "id123"
    
-   def test_user_creation_hashes_password():
+   def test_user_creation_encrypts_password():
        user = create_user("id123", password="plain")
-       assert user['password_hash'] != "plain"
+       assert user['password'] != "plain"  # Encrypted
    
-   # ❌ Less ideal - multiple assertions
+   # Less ideal - multiple assertions
    def test_user_creation():
-       user = create_user("id123", "test")
+       user = create_user("id123", "test123")
        assert user['userId'] == "id123"
-       assert user['password_hash'] != "plain"
+       assert user['password'] != "plain"
        assert user['createdAt'] is not None
    ```
 
 4. **Use fixtures for common setup**
    ```python
-   # ✅ Good - DRY
+   # Good - DRY
    @pytest.fixture
    def test_user(db):
        return db['users'].insert_one({...})
@@ -604,7 +595,7 @@ npm test -- --ui
 
 5. **Test edge cases and error conditions**
    ```python
-   # ✅ Good - comprehensive
+   # Good - comprehensive
    def test_negative_units_rejected():
        pass
    
@@ -615,38 +606,38 @@ npm test -- --ui
        pass
    ```
 
-### Don'ts ❌
+### Don'ts
 
 1. **Don't test the testing framework**
    ```python
-   # ❌ Pointless
+   # Pointless
    def test_assert_works():
        assert 1 == 1
    ```
 
 2. **Don't share state between tests**
    ```python
-   # ❌ Bad - tests affect each other
+   # Bad - tests affect each other
    test_counter = 0
    
    def test_first():
        global test_counter
        test_counter += 1
    
-   # ❌ Bad - test order matters
+   # Bad - test order matters
    def test_second():
        assert test_counter == 1  # Fails if test_first didn't run
    ```
 
 3. **Don't make tests too brittle**
    ```python
-   # ❌ Bad - breaks on implementation changes
+   # Bad - breaks on implementation changes
    def test_user_uses_database():
        with patch('pymongo.MongoClient') as mock:
            create_user(...)
            mock.assert_called_once()
    
-   # ✅ Good - tests the behavior
+   # Good - tests the behavior
    def test_user_persisted(db):
        create_user(...)
        user = db['users'].find_one()
@@ -671,6 +662,6 @@ Recommended:
 
 ---
 
-**Last Updated:** February 10, 2026  
-**Version:** 1.0  
+**Last Updated:** February 13, 2026  
+**Version:** 1.1  
 **Status:** In Development (Framework Selection Pending)
