@@ -4,23 +4,16 @@ import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardActions from "@mui/material/CardActions";
 import CardContent from "@mui/material/CardContent";
-import Dialog from "@mui/material/Dialog";
-import DialogActions from "@mui/material/DialogActions";
-import DialogContent from "@mui/material/DialogContent";
-import DialogTitle from "@mui/material/DialogTitle";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import { ProjectButton } from "../components";
+import { FormDialog, ProjectButton, HardwareList } from "../components";
 import {
   hardwareApi,
   type CreateHardwareRequest,
   type Hardware,
 } from "../api/hardware";
-import { HardwareList } from "../components";
 import styles from "./homePage.module.css";
-
-// ── Create Hardware Dialog ──────────────────────────────────────
 
 type CreateDialogProps = {
   open: boolean;
@@ -35,7 +28,7 @@ const CreateHardwareDialog = ({
 }: CreateDialogProps) => {
   const [form, setForm] = useState({ hardwareName: "", capacity: "" });
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const handleChange = (field: string, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -54,7 +47,7 @@ const CreateHardwareDialog = ({
       return;
     }
 
-    setSubmitting(true);
+    setLoading(true);
     setError(null);
 
     try {
@@ -82,52 +75,40 @@ const CreateHardwareDialog = ({
         setError("Failed to create hardware.");
       }
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Create New Hardware Set</DialogTitle>
-      <DialogContent
-        sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}
-      >
-        {error && <Alert severity="error">{error}</Alert>}
-        <TextField
-          label="Hardware Name"
-          value={form.hardwareName}
-          onChange={(e) => handleChange("hardwareName", e.target.value)}
-          required
-          helperText="Unique name for this hardware set"
-          autoFocus
-        />
-        <TextField
-          label="Capacity"
-          type="number"
-          value={form.capacity}
-          onChange={(e) => handleChange("capacity", e.target.value)}
-          required
-          helperText="Total number of units in stock"
-          slotProps={{ htmlInput: { min: 1 } }}
-        />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={submitting}>
-          Cancel
-        </Button>
-        <Button
-          variant="contained"
-          onClick={handleSubmit}
-          disabled={submitting}
-        >
-          {submitting ? "Creating…" : "Create"}
-        </Button>
-      </DialogActions>
-    </Dialog>
+    <FormDialog
+      open={open}
+      onClose={onClose}
+      onSubmit={handleSubmit}
+      title="Create New Hardware Set"
+      submitLabel="Create"
+      loading={loading}
+      error={error}
+    >
+      <TextField
+        label="Hardware Name"
+        value={form.hardwareName}
+        onChange={(e) => handleChange("hardwareName", e.target.value)}
+        required
+        helperText="Unique name for this hardware set"
+        autoFocus
+      />
+      <TextField
+        label="Capacity"
+        type="number"
+        value={form.capacity}
+        onChange={(e) => handleChange("capacity", e.target.value)}
+        required
+        helperText="Total number of units in stock"
+        slotProps={{ htmlInput: { min: 1 } }}
+      />
+    </FormDialog>
   );
 };
-
-// ── Hardware Card ───────────────────────────────────────────────
 
 type HardwareCardProps = {
   hw: Hardware;
@@ -171,8 +152,6 @@ const HardwareCard = ({ hw, onDelete }: HardwareCardProps) => {
     </Card>
   );
 };
-
-// ── Main Hardware Page ──────────────────────────────────────────
 
 export const HardwarePage = () => {
   const [hardwareList, setHardwareList] = useState<Hardware[]>([]);

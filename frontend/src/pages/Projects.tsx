@@ -3,23 +3,17 @@ import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
-import Dialog from "@mui/material/Dialog";
-import DialogActions from "@mui/material/DialogActions";
-import DialogContent from "@mui/material/DialogContent";
-import DialogTitle from "@mui/material/DialogTitle";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useAuth } from "../auth";
-import { ProjectCard } from "../components";
+import { FormDialog, ProjectCard } from "../components";
 import {
   projectsApi,
   type CreateProjectRequest,
   type Project,
 } from "../api/projects";
 import styles from "./homePage.module.css";
-
-// ── Create Project Dialog ───────────────────────────────────────
 
 type CreateDialogProps = {
   open: boolean;
@@ -40,7 +34,7 @@ const CreateProjectDialog = ({
     description: "",
   });
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const handleChange = (field: string, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -53,7 +47,7 @@ const CreateProjectDialog = ({
       return;
     }
 
-    setSubmitting(true);
+    setLoading(true);
     setError(null);
 
     try {
@@ -83,56 +77,44 @@ const CreateProjectDialog = ({
         setError("Failed to create project.");
       }
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Create New Project</DialogTitle>
-      <DialogContent
-        sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}
-      >
-        {error && <Alert severity="error">{error}</Alert>}
-        <TextField
-          label="Project ID"
-          value={form.projectId}
-          onChange={(e) => handleChange("projectId", e.target.value)}
-          required
-          helperText="Unique identifier (cannot be changed later)"
-          autoFocus
-        />
-        <TextField
-          label="Project Name"
-          value={form.projectName}
-          onChange={(e) => handleChange("projectName", e.target.value)}
-          required
-        />
-        <TextField
-          label="Description"
-          value={form.description}
-          onChange={(e) => handleChange("description", e.target.value)}
-          multiline
-          rows={3}
-        />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={submitting}>
-          Cancel
-        </Button>
-        <Button
-          variant="contained"
-          onClick={handleSubmit}
-          disabled={submitting}
-        >
-          {submitting ? "Creating…" : "Create"}
-        </Button>
-      </DialogActions>
-    </Dialog>
+    <FormDialog
+      open={open}
+      onClose={onClose}
+      onSubmit={handleSubmit}
+      title="Create New Project"
+      submitLabel="Create"
+      loading={loading}
+      error={error}
+    >
+      <TextField
+        label="Project ID"
+        value={form.projectId}
+        onChange={(e) => handleChange("projectId", e.target.value)}
+        required
+        helperText="Unique identifier (cannot be changed later)"
+        autoFocus
+      />
+      <TextField
+        label="Project Name"
+        value={form.projectName}
+        onChange={(e) => handleChange("projectName", e.target.value)}
+        required
+      />
+      <TextField
+        label="Description"
+        value={form.description}
+        onChange={(e) => handleChange("description", e.target.value)}
+        multiline
+        rows={3}
+      />
+    </FormDialog>
   );
 };
-
-// ── Join Project Dialog ─────────────────────────────────────────
 
 type JoinDialogProps = {
   open: boolean;
@@ -149,7 +131,7 @@ const JoinProjectDialog = ({
 }: JoinDialogProps) => {
   const [projectMongoId, setProjectMongoId] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
     if (!projectMongoId.trim()) {
@@ -157,7 +139,7 @@ const JoinProjectDialog = ({
       return;
     }
 
-    setSubmitting(true);
+    setLoading(true);
     setError(null);
 
     try {
@@ -168,46 +150,34 @@ const JoinProjectDialog = ({
     } catch {
       setError("Failed to join project. Check the ID and try again.");
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Join Existing Project</DialogTitle>
-      <DialogContent
-        sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}
-      >
-        {error && <Alert severity="error">{error}</Alert>}
-        <TextField
-          label="Project Mongo ID"
-          value={projectMongoId}
-          onChange={(e) => {
-            setProjectMongoId(e.target.value);
-            setError(null);
-          }}
-          required
-          helperText="Ask the project owner for this ID"
-          autoFocus
-        />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={submitting}>
-          Cancel
-        </Button>
-        <Button
-          variant="contained"
-          onClick={handleSubmit}
-          disabled={submitting}
-        >
-          {submitting ? "Joining…" : "Join"}
-        </Button>
-      </DialogActions>
-    </Dialog>
+    <FormDialog
+      open={open}
+      onClose={onClose}
+      onSubmit={handleSubmit}
+      title="Join Existing Project"
+      submitLabel="Join"
+      loading={loading}
+      error={error}
+    >
+      <TextField
+        label="Project Mongo ID"
+        value={projectMongoId}
+        onChange={(e) => {
+          setProjectMongoId(e.target.value);
+          setError(null);
+        }}
+        required
+        helperText="Ask the project owner for this ID"
+        autoFocus
+      />
+    </FormDialog>
   );
 };
-
-// ── Main Projects Page ──────────────────────────────────────────
 
 export const Projects = () => {
   const { user } = useAuth();
