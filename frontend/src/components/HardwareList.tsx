@@ -19,9 +19,10 @@ export const HardwareList = ({ hardware }: HardwareListProps) => {
 
       <Stack spacing={1.25}>
         {hardware.map((hw) => {
-          const used = Math.max(0, hw.capacity - hw.available);
-          const percentUsed =
-            hw.capacity === 0 ? 0 : clampPercent((used / hw.capacity) * 100);
+          const percentAvailable =
+            hw.capacity === 0
+              ? 0
+              : clampPercent((hw.available / hw.capacity) * 100);
 
           return (
             <div key={hw._id} className={styles.item}>
@@ -36,11 +37,11 @@ export const HardwareList = ({ hardware }: HardwareListProps) => {
 
               <LinearProgress
                 variant="determinate"
-                value={percentUsed}
+                value={percentAvailable}
                 color={
-                  percentUsed > 80
+                  percentAvailable < 20
                     ? "error"
-                    : percentUsed > 50
+                    : percentAvailable < 50
                       ? "warning"
                       : "primary"
                 }
