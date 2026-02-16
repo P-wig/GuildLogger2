@@ -61,7 +61,9 @@ const CreateProjectDialog = ({ open, onClose }: CreateDialogProps) => {
         "response" in err &&
         (err as { response?: { data?: { error?: string } } }).response?.data
           ?.error;
-      setError((typeof msg === "string" ? msg : null) || "Failed to create project.");
+      setError(
+        (typeof msg === "string" ? msg : null) || "Failed to create project.",
+      );
     } finally {
       setLoading(false);
     }
@@ -160,8 +162,14 @@ const JoinProjectDialog = ({ open, onClose }: JoinDialogProps) => {
 
 export const Projects = () => {
   const { user } = useAuth();
-  const { projects, hardware, loadingProjects, leaveProject, deleteProject } =
-    useAppData();
+  const {
+    projects,
+    hardware,
+    loadingProjects,
+    leaveProject,
+    deleteProject,
+    joinProject,
+  } = useAppData();
 
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -192,6 +200,14 @@ export const Projects = () => {
       await leaveProject(project.projectId);
     } catch {
       setError("Failed to leave project.");
+    }
+  };
+
+  const handleJoin = async (project: Project) => {
+    try {
+      await joinProject(project.projectId);
+    } catch {
+      setError("Failed to join project.");
     }
   };
 
@@ -263,17 +279,15 @@ export const Projects = () => {
                 project={project}
                 hardware={getHardwareForProject(project)}
                 actions={[
-                  ...(!isOwner
-                    ? [
-                        {
-                          label: isAssigned ? "Leave" : "Join",
-                          onClick: isAssigned
-                            ? () => handleLeave(project)
-                            : () => void 0,
-                          variant: "contained" as const,
-                        },
-                      ]
-                    : []),
+                  ...[
+                    {
+                      label: isAssigned ? "Leave" : "Join",
+                      onClick: isAssigned
+                        ? () => handleLeave(project)
+                        : () => handleJoin(project),
+                      variant: "contained" as const,
+                    },
+                  ],
                   ...(isOwner
                     ? [
                         {

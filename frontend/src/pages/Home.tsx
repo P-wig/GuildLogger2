@@ -191,7 +191,7 @@ export const Home = () => {
       });
     }
 
-    if (isAssigned && !isOwner) {
+    if (isAssigned) {
       actions.push({
         label: "Leave",
         onClick: async () => {
