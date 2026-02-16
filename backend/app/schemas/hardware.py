@@ -26,6 +26,7 @@ class HardwareCheckout(BaseModel):
 
     projectId: str = Field(..., min_length=1, description="Project to checkout for")
     amount: int = Field(..., ge=1, description="Number of units to checkout")
+    userId: str = Field(..., min_length=1, description="User performing the checkout")
 
 
 class HardwareCheckin(BaseModel):
@@ -33,3 +34,4 @@ class HardwareCheckin(BaseModel):
 
     projectId: str = Field(..., min_length=1, description="Project to checkin for")
     amount: int = Field(..., ge=1, description="Number of units to checkin")
+    userId: str = Field(..., min_length=1, description="User performing the checkin")

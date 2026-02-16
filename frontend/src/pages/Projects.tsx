@@ -1,33 +1,28 @@
-import { useCallback, useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Typography from "@mui/material/Typography";
 import { useAuth } from "../auth";
+import { useAppData } from "../context/AppContext";
 import { FormDialog, ProjectCard } from "../components";
-import {
-  projectsApi,
-  type CreateProjectRequest,
-  type Project,
-} from "../api/projects";
+import type { Project } from "../api/projects";
 import styles from "./homePage.module.css";
+
+type ProjectFilter = "all" | "owner" | "assigned";
 
 type CreateDialogProps = {
   open: boolean;
   onClose: () => void;
-  onCreated: (project: Project) => void;
-  ownerUserId: string;
 };
 
-const CreateProjectDialog = ({
-  open,
-  onClose,
-  onCreated,
-  ownerUserId,
-}: CreateDialogProps) => {
+const CreateProjectDialog = ({ open, onClose }: CreateDialogProps) => {
+  const { createProject } = useAppData();
   const [form, setForm] = useState({
     projectId: "",
     projectName: "",
@@ -51,31 +46,22 @@ const CreateProjectDialog = ({
     setError(null);
 
     try {
-      const payload: CreateProjectRequest = {
+      await createProject({
         projectId: form.projectId.trim(),
         projectName: form.projectName.trim(),
         description: form.description.trim(),
-        ownerUserId,
-      };
-      const { data } = await projectsApi.create(payload);
-      onCreated(data);
+        ownerUserId: "", // AppContext fills this in
+      });
       setForm({ projectId: "", projectName: "", description: "" });
       onClose();
     } catch (err: unknown) {
-      if (
+      const msg =
         err &&
         typeof err === "object" &&
         "response" in err &&
         (err as { response?: { data?: { error?: string } } }).response?.data
-          ?.error
-      ) {
-        setError(
-          (err as { response: { data: { error: string } } }).response.data
-            .error,
-        );
-      } else {
-        setError("Failed to create project.");
-      }
+          ?.error;
+      setError((typeof msg === "string" ? msg : null) || "Failed to create project.");
     } finally {
       setLoading(false);
     }
@@ -119,22 +105,16 @@ const CreateProjectDialog = ({
 type JoinDialogProps = {
   open: boolean;
   onClose: () => void;
-  onJoined: (project: Project) => void;
-  userId: string;
 };
 
-const JoinProjectDialog = ({
-  open,
-  onClose,
-  onJoined,
-  userId,
-}: JoinDialogProps) => {
-  const [projectMongoId, setProjectMongoId] = useState("");
+const JoinProjectDialog = ({ open, onClose }: JoinDialogProps) => {
+  const { joinProject } = useAppData();
+  const [projectId, setProjectId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
-    if (!projectMongoId.trim()) {
+    if (!projectId.trim()) {
       setError("Project ID is required.");
       return;
     }
@@ -143,9 +123,8 @@ const JoinProjectDialog = ({
     setError(null);
 
     try {
-      const { data } = await projectsApi.join(projectMongoId.trim(), userId);
-      onJoined(data);
-      setProjectMongoId("");
+      await joinProject(projectId.trim());
+      setProjectId("");
       onClose();
     } catch {
       setError("Failed to join project. Check the ID and try again.");
@@ -165,10 +144,10 @@ const JoinProjectDialog = ({
       error={error}
     >
       <TextField
-        label="Project Mongo ID"
-        value={projectMongoId}
+        label="Project ID"
+        value={projectId}
         onChange={(e) => {
-          setProjectMongoId(e.target.value);
+          setProjectId(e.target.value);
           setError(null);
         }}
         required
@@ -181,50 +160,36 @@ const JoinProjectDialog = ({
 
 export const Projects = () => {
   const { user } = useAuth();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { projects, hardware, loadingProjects, leaveProject, deleteProject } =
+    useAppData();
+
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
+  const [filter, setFilter] = useState<ProjectFilter>("all");
 
   const userId = user?.userId ?? "";
 
-  const fetchProjects = useCallback(async () => {
-    if (!userId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const { data } = await projectsApi.list({ assignedUser: userId });
-      setProjects(data);
-    } catch {
-      setError("Failed to load projects.");
-    } finally {
-      setLoading(false);
+  const filtered = useMemo(() => {
+    switch (filter) {
+      case "owner":
+        return projects.filter((p) => p.ownerUserId === userId);
+      case "assigned":
+        return projects.filter((p) => p.assignedUsers.includes(userId));
+      default:
+        return projects;
     }
-  }, [userId]);
+  }, [projects, filter, userId]);
 
-  useEffect(() => {
-    fetchProjects();
-  }, [fetchProjects]);
-
-  const handleCreated = (project: Project) => {
-    setProjects((prev) => [project, ...prev]);
-  };
-
-  const handleJoined = (project: Project) => {
-    setProjects((prev) => {
-      const exists = prev.find((p) => p._id === project._id);
-      if (exists) {
-        return prev.map((p) => (p._id === project._id ? project : p));
-      }
-      return [project, ...prev];
-    });
+  /** Get hardware objects assigned to a project */
+  const getHardwareForProject = (project: Project) => {
+    const hwIds = project.assignedHardware.map((ah) => ah.hardwareId);
+    return hardware.filter((h) => hwIds.includes(h._id));
   };
 
   const handleLeave = async (project: Project) => {
     try {
-      await projectsApi.leave(project._id, userId);
-      setProjects((prev) => prev.filter((p) => p._id !== project._id));
+      await leaveProject(project.projectId);
     } catch {
       setError("Failed to leave project.");
     }
@@ -232,8 +197,7 @@ export const Projects = () => {
 
   const handleDelete = async (project: Project) => {
     try {
-      await projectsApi.delete(project._id);
-      setProjects((prev) => prev.filter((p) => p._id !== project._id));
+      await deleteProject(project.projectId);
     } catch {
       setError("Failed to delete project.");
     }
@@ -243,10 +207,23 @@ export const Projects = () => {
     <div className={styles.root}>
       <Stack
         direction="row"
-        alignItems="baseline"
+        alignItems="center"
         justifyContent="space-between"
         gap={2}
+        flexWrap="wrap"
       >
+        {/* Filter buttons */}
+        <ToggleButtonGroup
+          value={filter}
+          exclusive
+          onChange={(_e, val) => val && setFilter(val as ProjectFilter)}
+          size="small"
+        >
+          <ToggleButton value="all">All</ToggleButton>
+          <ToggleButton value="owner">Owner</ToggleButton>
+          <ToggleButton value="assigned">Assigned</ToggleButton>
+        </ToggleButtonGroup>
+
         <Stack direction="row" gap={1}>
           <Button variant="outlined" onClick={() => setJoinOpen(true)}>
             Join Project
@@ -263,27 +240,38 @@ export const Projects = () => {
         </Alert>
       )}
 
-      {loading ? (
+      {loadingProjects ? (
         <Typography color="text.secondary">Loading projects…</Typography>
-      ) : projects.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <Card variant="outlined">
           <CardContent>
             <Typography color="text.secondary" align="center">
-              No projects yet. Create one or join an existing project to get
-              started.
+              {filter === "all"
+                ? "No projects yet. Create one or join an existing project to get started."
+                : `No projects match the "${filter}" filter.`}
             </Typography>
           </CardContent>
         </Card>
       ) : (
         <div className={styles.grid}>
-          {projects.map((project) => {
+          {filtered.map((project) => {
             const isOwner = project.ownerUserId === userId;
+            const isAssigned = project.assignedUsers.includes(userId);
             return (
               <ProjectCard
                 key={project._id}
                 project={project}
-                buttonLabel={isOwner ? undefined : "Leave"}
-                onButtonClick={isOwner ? undefined : () => handleLeave(project)}
+                hardware={getHardwareForProject(project)}
+                buttonLabel={
+                  isOwner ? undefined : isAssigned ? "Leave" : "Join"
+                }
+                onButtonClick={
+                  isOwner
+                    ? undefined
+                    : isAssigned
+                      ? () => handleLeave(project)
+                      : () => void 0 // handled via dialog
+                }
                 secondaryLabel={isOwner ? "Delete" : undefined}
                 onSecondaryClick={
                   isOwner ? () => handleDelete(project) : undefined
@@ -298,16 +286,9 @@ export const Projects = () => {
       <CreateProjectDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        onCreated={handleCreated}
-        ownerUserId={userId}
       />
 
-      <JoinProjectDialog
-        open={joinOpen}
-        onClose={() => setJoinOpen(false)}
-        onJoined={handleJoined}
-        userId={userId}
-      />
+      <JoinProjectDialog open={joinOpen} onClose={() => setJoinOpen(false)} />
     </div>
   );
 };

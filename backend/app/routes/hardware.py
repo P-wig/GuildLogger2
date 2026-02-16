@@ -20,6 +20,10 @@ def hardware_col() -> Collection:
     return get_db()["hardware"]
 
 
+def projects_col() -> Collection:
+    return get_db()["projects"]
+
+
 def _validation_error_response(exc: ValidationError):
     """Convert a Pydantic ValidationError into a 400 JSON response."""
     errors = []
@@ -29,7 +33,6 @@ def _validation_error_response(exc: ValidationError):
     return jsonify({"error": "Validation failed", "details": errors}), 400
 
 
-# ── List hardware ────────────────────────────────────────────────
 @bp.get("")
 def list_hardware():
     """Return all hardware sets, optionally filtered by assignedProject."""
@@ -43,7 +46,6 @@ def list_hardware():
     return jsonify(docs)
 
 
-# ── Create hardware ──────────────────────────────────────────────
 @bp.post("")
 def create_hardware():
     data = request.get_json(silent=True) or {}
@@ -72,7 +74,6 @@ def create_hardware():
     return jsonify(serialize_doc(saved)), 201
 
 
-# ── Get single hardware ─────────────────────────────────────────
 @bp.get("/<hardware_id>")
 def get_hardware(hardware_id: str):
     try:
@@ -86,7 +87,6 @@ def get_hardware(hardware_id: str):
     return jsonify(serialize_doc(doc))
 
 
-# ── Partial update ───────────────────────────────────────────────
 @bp.patch("/<hardware_id>")
 def update_hardware(hardware_id: str):
     data = request.get_json(silent=True) or {}
@@ -115,7 +115,6 @@ def update_hardware(hardware_id: str):
     return jsonify(serialize_doc(doc))
 
 
-# ── Delete hardware ──────────────────────────────────────────────
 @bp.delete("/<hardware_id>")
 def delete_hardware(hardware_id: str):
     try:
@@ -123,45 +122,173 @@ def delete_hardware(hardware_id: str):
     except Exception:
         return jsonify({"error": "Invalid id"}), 400
 
-    res = hardware_col().delete_one({"_id": _id})
-    if res.deleted_count == 0:
+    doc = hardware_col().find_one({"_id": _id})
+    if not doc:
         return jsonify({"error": "Not found"}), 404
+
+    hw_id_str = str(_id)
+
+    projects_col().update_many(
+        {"assignedHardware.hardwareId": hw_id_str},
+        {"$pull": {"assignedHardware": {"hardwareId": hw_id_str}}},
+    )
+
+    hardware_col().delete_one({"_id": _id})
     return "", 204
 
 
-# ── Checkout hardware (stub) ────────────────────────────────────
 @bp.post("/<hardware_id>/checkout")
 def checkout_hardware(hardware_id: str):
-    """Stub – validates the request body but returns 501."""
+    """Check out units of hardware for a project."""
     data = request.get_json(silent=True) or {}
 
     try:
-        HardwareCheckout(**data)
+        body = HardwareCheckout(**data)
     except ValidationError as exc:
         return _validation_error_response(exc)
 
     try:
-        to_object_id(hardware_id)
+        _id = to_object_id(hardware_id)
     except Exception:
         return jsonify({"error": "Invalid id"}), 400
 
-    return jsonify({"error": "Not implemented"}), 501
+    hw = hardware_col().find_one({"_id": _id})
+    if not hw:
+        return jsonify({"error": "Hardware not found"}), 404
+
+    project = projects_col().find_one({"projectId": body.projectId})
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
+    if body.userId not in project.get("assignedUsers", []):
+        return jsonify({"error": "User is not assigned to this project"}), 403
+
+    if hw["available"] < body.amount:
+        return (
+            jsonify(
+                {
+                    "error": f"Insufficient availability. Only {hw['available']} units available"
+                }
+            ),
+            400,
+        )
+
+    hw_id_str = str(_id)
+    amount = int(body.amount)
+
+    # Decrease available on hardware, track project
+    hardware_col().update_one(
+        {"_id": _id},
+        {
+            "$inc": {"available": -amount},
+            "$addToSet": {"assignedProjects": body.projectId},
+        },
+    )
+
+    # Update project's assignedHardware: increment if exists, else push new
+    existing_entry = next(
+        (
+            e
+            for e in project.get("assignedHardware", [])
+            if e["hardwareId"] == hw_id_str
+        ),
+        None,
+    )
+    if existing_entry:
+        projects_col().update_one(
+            {"projectId": body.projectId, "assignedHardware.hardwareId": hw_id_str},
+            {"$inc": {"assignedHardware.$.amount": body.amount}},
+        )
+    else:
+        projects_col().update_one(
+            {"projectId": body.projectId},
+            {
+                "$push": {
+                    "assignedHardware": {"hardwareId": hw_id_str, "amount": body.amount}
+                }
+            },
+        )
+
+    updated_hw = hardware_col().find_one({"_id": _id})
+    if not updated_hw:
+        return jsonify({"error": "Failed to retrieve hardware"}), 500
+    return jsonify(serialize_doc(updated_hw))
 
 
-# ── Checkin hardware (stub) ─────────────────────────────────────
 @bp.post("/<hardware_id>/checkin")
 def checkin_hardware(hardware_id: str):
-    """Stub – validates the request body but returns 501."""
+    """Check in units of hardware from a project."""
     data = request.get_json(silent=True) or {}
 
     try:
-        HardwareCheckin(**data)
+        body = HardwareCheckin(**data)
     except ValidationError as exc:
         return _validation_error_response(exc)
 
     try:
-        to_object_id(hardware_id)
+        _id = to_object_id(hardware_id)
     except Exception:
         return jsonify({"error": "Invalid id"}), 400
 
-    return jsonify({"error": "Not implemented"}), 501
+    hw = hardware_col().find_one({"_id": _id})
+    if not hw:
+        return jsonify({"error": "Hardware not found"}), 404
+
+    project = projects_col().find_one({"projectId": body.projectId})
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
+    if body.userId not in project.get("assignedUsers", []):
+        return jsonify({"error": "User is not assigned to this project"}), 403
+
+    hw_id_str = str(_id)
+    amount = int(body.amount)
+
+    entry = next(
+        (
+            e
+            for e in project.get("assignedHardware", [])
+            if e["hardwareId"] == hw_id_str
+        ),
+        None,
+    )
+    if not entry:
+        return (
+            jsonify({"error": "This hardware is not checked out for this project"}),
+            400,
+        )
+
+    if amount > entry["amount"]:
+        return (
+            jsonify(
+                {
+                    "error": f"Cannot check in {amount} units. Only {entry['amount']} checked out"
+                }
+            ),
+            400,
+        )
+
+    new_available = min(hw["capacity"], hw["available"] + amount)
+    hardware_col().update_one({"_id": _id}, {"$set": {"available": new_available}})
+
+    if amount == entry["amount"]:
+
+        projects_col().update_one(
+            {"projectId": body.projectId},
+            {"$pull": {"assignedHardware": {"hardwareId": hw_id_str}}},
+        )
+        hardware_col().update_one(
+            {"_id": _id},
+            {"$pull": {"assignedProjects": body.projectId}},
+        )
+    else:
+        # Partially checked in
+        projects_col().update_one(
+            {"projectId": body.projectId, "assignedHardware.hardwareId": hw_id_str},
+            {"$inc": {"assignedHardware.$.amount": -amount}},
+        )
+
+    updated_hw = hardware_col().find_one({"_id": _id})
+    if not updated_hw:
+        return jsonify({"error": "Failed to retrieve hardware"}), 500
+    return jsonify(serialize_doc(updated_hw))
