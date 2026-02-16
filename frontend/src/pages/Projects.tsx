@@ -262,21 +262,29 @@ export const Projects = () => {
                 key={project._id}
                 project={project}
                 hardware={getHardwareForProject(project)}
-                buttonLabel={
-                  isOwner ? undefined : isAssigned ? "Leave" : "Join"
-                }
-                onButtonClick={
-                  isOwner
-                    ? undefined
-                    : isAssigned
-                      ? () => handleLeave(project)
-                      : () => void 0 // handled via dialog
-                }
-                secondaryLabel={isOwner ? "Delete" : undefined}
-                onSecondaryClick={
-                  isOwner ? () => handleDelete(project) : undefined
-                }
-                secondaryColor="error"
+                actions={[
+                  ...(!isOwner
+                    ? [
+                        {
+                          label: isAssigned ? "Leave" : "Join",
+                          onClick: isAssigned
+                            ? () => handleLeave(project)
+                            : () => void 0,
+                          variant: "contained" as const,
+                        },
+                      ]
+                    : []),
+                  ...(isOwner
+                    ? [
+                        {
+                          label: "Delete",
+                          onClick: () => handleDelete(project),
+                          variant: "outlined" as const,
+                          color: "error" as const,
+                        },
+                      ]
+                    : []),
+                ]}
               />
             );
           })}

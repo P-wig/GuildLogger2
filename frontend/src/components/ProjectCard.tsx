@@ -11,24 +11,23 @@ import { UserList } from "./UserList";
 import { HardwareList } from "./HardwareList";
 import { ProjectButton } from "./ProjectButton";
 
+export type CardAction = {
+  label: string;
+  onClick: () => void;
+  variant?: "contained" | "outlined" | "text";
+  color?: "primary" | "error" | "warning" | "inherit";
+};
+
 type ProjectCardProps = {
   project: Project;
   hardware?: Hardware[];
-  buttonLabel?: string;
-  onButtonClick?: () => void;
-  secondaryLabel?: string;
-  onSecondaryClick?: () => void;
-  secondaryColor?: "error" | "warning" | "primary";
+  actions?: CardAction[];
 };
 
 export const ProjectCard = ({
   project,
   hardware = [],
-  buttonLabel,
-  onButtonClick,
-  secondaryLabel,
-  onSecondaryClick,
-  secondaryColor = "error",
+  actions = [],
 }: ProjectCardProps) => {
   return (
     <Card className={styles.card} variant="outlined">
@@ -56,23 +55,17 @@ export const ProjectCard = ({
         </Stack>
       </CardContent>
 
-      {(buttonLabel || secondaryLabel) && (
+      {actions.length > 0 && (
         <CardActions className={styles.buttonContainer}>
-          {buttonLabel && onButtonClick && (
+          {actions.map((action) => (
             <ProjectButton
-              label={buttonLabel}
-              onClick={onButtonClick}
-              variant="contained"
+              key={action.label}
+              label={action.label}
+              onClick={action.onClick}
+              variant={action.variant ?? "contained"}
+              color={action.color}
             />
-          )}
-          {secondaryLabel && onSecondaryClick && (
-            <ProjectButton
-              label={secondaryLabel}
-              onClick={onSecondaryClick}
-              variant="outlined"
-              color={secondaryColor}
-            />
-          )}
+          ))}
         </CardActions>
       )}
     </Card>
