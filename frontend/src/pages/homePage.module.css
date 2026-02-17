@@ -1,0 +1,18 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 16px;
+}
+
+.title {
+  margin-bottom: 4px;
+}
+
+.grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  justify-items: center;
+}

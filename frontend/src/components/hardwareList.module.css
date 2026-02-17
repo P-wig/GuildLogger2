@@ -1,0 +1,27 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.name {
+  font-weight: 500;
+}
+
+.bar {
+  height: 8px;
+  border-radius: 999px;
+}

@@ -9,6 +9,7 @@ from flask_cors import CORS
 from .config import Config
 from .db import close_mongo, init_mongo
 from .routes.auth import bp as auth_bp
+from .routes.hardware import bp as hardware_bp
 from .routes.health import bp as health_bp
 from .routes.projects import bp as projects_bp
 from .routes.root import bp as root_bp
@@ -33,5 +34,6 @@ def create_app() -> Flask:
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(users_bp, url_prefix="/api/users")
     app.register_blueprint(projects_bp, url_prefix="/api/projects")
+    app.register_blueprint(hardware_bp, url_prefix="/api/hardware")
 
     return app

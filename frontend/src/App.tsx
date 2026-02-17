@@ -1,15 +1,15 @@
 import { RouterProvider } from "react-router";
 import "./App.css";
 import { AuthProvider } from "./auth";
+import { AppProvider } from "./context/AppContext";
 import { router } from "./routes";
-import { ProjectProvider } from "./projects/ProjectContext";
 
 function App() {
   return (
     <AuthProvider>
-      <ProjectProvider> // wrapped App with ProjectProvider
+      <AppProvider>
         <RouterProvider router={router} />
-      </ProjectProvider>
+      </AppProvider>
     </AuthProvider>
   );
 }

@@ -1,24 +1,44 @@
 import { api } from "./http";
 
 export type Project = {
-    _id: string; // MongoDB id 
-    projectId: string; // required project id
-    name: string; // required name
-    description: string; // required description
-    ownerUserId?: string; // optional owner user id
+  _id: string;
+  projectId: string;
+  projectName: string;
+  description: string;
+  ownerUserId: string;
+  assignedUsers: string[];
+  assignedHardware: { hardwareId: string; amount: number }[];
 };
 
-// projects api wrapper
+export type CreateProjectRequest = {
+  projectId: string;
+  projectName: string;
+  description: string;
+  ownerUserId: string;
+};
+
+export type UpdateProjectRequest = {
+  projectName?: string;
+  description?: string;
+};
+
 export const projectsApi = {
-    list: (ownerUserId?: string) => // fetch projects 
-        api.get<Project[]>("/projects", { // http get to /api/projects
-            params: ownerUserId ? { ownerUserId } : {}, // include param only if provided 
-    }),
-    // payload required to create a project 
-    create: (project: {
-        projectId: string; //required
-        name: string;//required
-        description: string;//required
-        ownerUserId?: string;//optional
-    }) => api.post<Project>("/projects", project), // http post to /api/ projects with project data
+  list: (params?: { ownerUserId?: string; assignedUser?: string }) =>
+    api.get<Project[]>("/projects", { params }),
+
+  get: (projectId: string) => api.get<Project>(`/projects/${projectId}`),
+
+  create: (data: CreateProjectRequest) => api.post<Project>("/projects", data),
+
+  update: (projectId: string, data: UpdateProjectRequest) =>
+    api.patch<Project>(`/projects/${projectId}`, data),
+
+  join: (projectId: string, userId: string) =>
+    api.post<Project>(`/projects/${projectId}/join`, { userId }),
+
+  leave: (projectId: string, userId: string) =>
+    api.post<Project>(`/projects/${projectId}/leave`, { userId }),
+
+  delete: (projectId: string, userId: string) =>
+    api.delete(`/projects/${projectId}`, { params: { userId } }),
 };
