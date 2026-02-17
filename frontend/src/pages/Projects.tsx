@@ -174,7 +174,8 @@ export const Projects = () => {
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
-  const [filter, setFilter] = useState<ProjectFilter>("all");
+  // Default filter: only show projects user is assigned to or owns
+  const [filter, setFilter] = useState<ProjectFilter>("assigned");
 
   const userId = user?.userId ?? "";
 
@@ -185,7 +186,10 @@ export const Projects = () => {
       case "assigned":
         return projects.filter((p) => p.assignedUsers.includes(userId));
       default:
-        return projects;
+        // Only show projects user owns or is assigned to
+        return projects.filter(
+          (p) => p.ownerUserId === userId || p.assignedUsers.includes(userId)
+        );
     }
   }, [projects, filter, userId]);
 
