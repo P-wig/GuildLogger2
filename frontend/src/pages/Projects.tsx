@@ -238,6 +238,27 @@ export const Projects = () => {
           exclusive
           onChange={(_e, val) => val && setFilter(val as ProjectFilter)}
           size="small"
+          sx={{
+            "& .MuiToggleButton-root": {
+              color: "text.primary",
+              borderColor: "divider",
+              backgroundColor: "background.paper",
+              "&:hover": {
+                backgroundColor: "primary.light",
+              },
+              "&.Mui-selected": {
+                color: "primary.contrastText",
+                backgroundColor: "primary.main",
+                borderColor: "primary.main",
+                "&:hover": {
+                  backgroundColor: "#00b3ff",
+                },
+              },
+              "&.Mui-disabled": {
+                color: "text.disabled",
+              },
+            },
+          }}
         >
           <ToggleButton value="all">All</ToggleButton>
           <ToggleButton value="owner">Owner</ToggleButton>

@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { AuthContext } from "./authContext";
+import { authChannel } from "./authSync";
 import type { User } from "../api/users";
 
 const SESSION_KEY = "session_token";
@@ -52,9 +53,37 @@ function loadSession(): User | null {
   return session.user;
 }
 
+function broadcastAuthChanged() {
+  // BroadcastChannel (same chrome profile)
+  authChannel?.postMessage({ type: "AUTH_CHANGED" });
+  localStorage.setItem("__auth_changed_at__", String(Date.now()));
+}
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(() => loadSession());
   const [loading] = useState(false);
+
+  // ✅ Keep all tabs/windows in sync
+  useEffect(() => {
+    const sync = () => setUser(loadSession());
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === SESSION_KEY || e.key === "__auth_changed_at__") sync();
+    };
+
+    window.addEventListener("storage", onStorage);
+
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.type === "AUTH_CHANGED") sync();
+    };
+
+    authChannel?.addEventListener("message", onMessage);
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      authChannel?.removeEventListener("message", onMessage);
+    };
+  }, []);
 
   const value = useMemo(() => {
     return {
@@ -62,12 +91,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       isAuthenticated: !!user,
       loading,
       login: (u: User) => {
-        setUser(u);
         persistSession(u);
+        setUser(u);
+        broadcastAuthChanged();
       },
       logout: () => {
-        setUser(null);
         clearSession();
+        setUser(null);
+        broadcastAuthChanged();
       },
     };
   }, [user, loading]);
