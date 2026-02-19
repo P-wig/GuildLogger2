@@ -265,7 +265,7 @@ const JoinProjectDialog = ({ open, onClose }: JoinDialogProps) => {
       error={error}
     >
       <TextField
-        label="Project ID"
+        label="Search / Enter Project ID"
         value={projectId}
         onChange={(e) => setProjectId(e.target.value)}
         required
@@ -363,11 +363,26 @@ export const Projects = () => {
   return (
     <div className={styles.root}>
       <Stack
-        direction="row"
+        direction={{ xs: "column", md: "row" }}
         justifyContent="space-between"
-        flexWrap="wrap"
-        gap={2}
+        alignItems="center"
+        spacing={2}
+        sx={{ mb: 3 }}
       >
+        <Typography variant="h4" sx={{ fontWeight: 600 }}>
+          Projects
+        </Typography>
+
+      </Stack>
+
+      <Stack
+        direction={{ xs: "column", md: "row" }} // column on mobile, row on desktop
+        spacing={2}
+        sx={{ mt: 1 }}
+        alignItems="center"
+        justifyContent="space-between"
+      >
+        {/* LEFT SIDE (Filter) */}
         <ToggleButtonGroup
           value={filter}
           exclusive
@@ -375,24 +390,9 @@ export const Projects = () => {
           size="small"
           sx={{
             "& .MuiToggleButton-root": {
-              color: "text.primary",
-              borderColor: "divider",
-              backgroundColor: "background.paper",
-              "&:hover": {
-                backgroundColor: "primary.light",
-              },
-              "&.Mui-selected": {
-                color: "primary.contrastText",
-                backgroundColor: "primary.main",
-                borderColor: "primary.main",
-                "&:hover": {
-                  backgroundColor: "#00b3ff",
-                },
-              },
-              "&.Mui-disabled": {
-                color: "text.disabled",
-              },
+              flex: 1,
             },
+            width: { xs: "100%", md: "auto" },
           }}
         >
           <ToggleButton value="all">All</ToggleButton>
@@ -400,15 +400,34 @@ export const Projects = () => {
           <ToggleButton value="assigned">Assigned</ToggleButton>
         </ToggleButtonGroup>
 
-        <Stack direction="row" gap={1}>
-          <Button variant="outlined" onClick={() => setJoinOpen(true)}>
+        {/* RIGHT SIDE (Buttons) */}
+        <Stack
+          direction={{ xs: "column", md: "row" }}
+          spacing={2}
+          sx={{
+            width: { xs: "100%", md: "auto" },
+          }}
+        >
+          <Button
+            variant="contained"
+            fullWidth
+            sx={{ minWidth: 150 }}
+            onClick={() => setJoinOpen(true)}
+          >
             Join Project
           </Button>
-          <Button variant="contained" onClick={() => setCreateOpen(true)}>
+
+          <Button
+            variant="outlined"
+            fullWidth
+            sx={{ minWidth: 150 }}
+            onClick={() => setCreateOpen(true)}
+          >
             New Project
           </Button>
         </Stack>
       </Stack>
+
 
       {error && (
         <Alert severity="error" onClose={() => setError(null)}>

@@ -68,6 +68,8 @@ const CreateHardwareDialog = ({ open, onClose }: CreateDialogProps) => {
   };
 
   return (
+
+
     <FormDialog
       open={open}
       onClose={onClose}
@@ -77,6 +79,7 @@ const CreateHardwareDialog = ({ open, onClose }: CreateDialogProps) => {
       loading={loading}
       error={error}
     >
+
       <TextField
         label="Hardware Name"
         value={form.hardwareName}
@@ -160,7 +163,7 @@ const ManageHardwareDialog = ({ open, onClose, hw }: ManageDialogProps) => {
           ?.error;
       setError(
         (msg as string | undefined) ||
-          `Failed to ${mode === "checkout" ? "check out" : "check in"} hardware.`,
+        `Failed to ${mode === "checkout" ? "check out" : "check in"} hardware.`,
       );
     } finally {
       setLoading(false);
@@ -297,12 +300,21 @@ export const HardwarePage = () => {
   return (
     <div className={styles.root}>
       <Stack
-        direction="row"
-        alignItems="baseline"
+        direction={{ xs: "column", md: "row" }}
         justifyContent="space-between"
-        gap={2}
+        alignItems={{ xs: "stretch", md: "center" }}
+        spacing={2}
+        sx={{ mb: 3 }}
       >
-        <Button variant="contained" onClick={() => setCreateOpen(true)}>
+        <Typography variant="h4" sx={{ fontWeight: 600 }}>
+          Hardware
+        </Typography>
+
+        <Button
+          variant="contained"
+          onClick={() => setCreateOpen(true)}
+          sx={{ alignSelf: { xs: "stretch", md: "auto" } }}
+        >
           New Hardware Set
         </Button>
       </Stack>
