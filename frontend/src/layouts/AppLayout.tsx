@@ -40,88 +40,86 @@ export const AppLayout = () => {
     >
       {/* Header AppBar */}
       <AppBar position="fixed" sx={{ top: 0, left: 0, right: 0, zIndex: 1200 }}>
-        <Toolbar sx={{ justifyContent: "space-between" }}>
+        <Toolbar sx={{ display: "flex", alignItems: "center" }}>
 
-
-          {/* LEFT SECTION */}
-          <Box sx={{ display: "flex", alignItems: "center" }}>
-            {isAuthenticated && (
-              <>
-                {/* Desktop Nav */}
-                <Box
-                  sx={{
-                    display: { xs: "none", md: "flex" },
-                    gap: 2,
-                  }}
-                >
-                  {[
-                    { to: "/home", label: "Home" },
-                    { to: "/account", label: "Account" },
-                    { to: "/projects", label: "Projects" },
-                    { to: "/hardware", label: "Hardware" },
-                  ].map(({ to, label }) => (
-                    <Button
-                      key={to}
-                      color="inherit"
-                      component={Link}
-                      to={to}
-                      sx={pathname === to ? activeNavSx : undefined}
-                    >
-                      {label}
-                    </Button>
-                  ))}
-                </Box>
-
-                {/* Mobile Hamburger */}
-                <Box sx={{ display: { xs: "flex", md: "none" } }}>
-                  <IconButton
-                    color="inherit"
-                    edge="start"
-                    onClick={handleDrawerToggle}
-                  >
-                    <MenuIcon />
-                  </IconButton>
-                </Box>
-              </>
-            )}
+          {/* LEFT: App Title (desktop) */}
+          <Box sx={{ display: { xs: "none", md: "flex" }, alignItems: "center" }}>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              Hardware Checkout App
+            </Typography>
           </Box>
 
-          {/* Center - App Title */}
-          <Typography
-            variant="h6"
+          {/* CENTER: Desktop Navigation */}
+          {isAuthenticated && (
+            <Box
+              sx={{
+                flexGrow: 1,
+                display: { xs: "none", md: "flex" },
+                justifyContent: "center",
+                gap: 2,
+              }}
+            >
+              {[
+                { to: "/home", label: "Home" },
+                { to: "/account", label: "Account" },
+                { to: "/projects", label: "Projects" },
+                { to: "/hardware", label: "Hardware" },
+              ].map(({ to, label }) => (
+                <Button
+                  key={to}
+                  color="inherit"
+                  component={Link}
+                  to={to}
+                  sx={pathname === to ? activeNavSx : undefined}
+                >
+                  {label}
+                </Button>
+              ))}
+            </Box>
+          )}
+
+          {/* MOBILE CENTER TITLE */}
+          <Box
             sx={{
-              position: "absolute",
-              left: "50%",
-              transform: "translateX(-50%)",
-              fontWeight: 600,
-              pointerEvents: "none",
+              display: { xs: "flex", md: "none" },
+              flexGrow: 1,
+              justifyContent: "center",
             }}
           >
-            Hardware Checkout App
-          </Typography>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              Hardware Checkout App
+            </Typography>
+          </Box>
 
           {/* RIGHT SECTION */}
-          <Box>
-            {!isAuthenticated ? (
-              <Button color="inherit" component={Link} to="/auth">
-                Sign in
-              </Button>
-            ) : (
-              <Button color="inherit" onClick={logout}>
-                <Box sx={{ display: { xs: "none", sm: "inline" } }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+
+            {/* Auth button on desktop */}
+            {isAuthenticated && (
+              <Box sx={{ display: { xs: "none", md: "flex" } }}>
+                <Button color="inherit" onClick={logout}>
                   Sign out ({user?.userId})
-                </Box>
-                <Box sx={{ display: { xs: "inline", sm: "none" } }}>
-                  Logout
-                </Box>
-              </Button>
+                </Button>
+              </Box>
+            )}
+
+            {/* Mobile hamburger */}
+            {isAuthenticated && (
+              <Box sx={{ display: { xs: "flex", md: "none" } }}>
+                <IconButton
+                  color="inherit"
+                  onClick={handleDrawerToggle}
+                >
+                  <MenuIcon />
+                </IconButton>
+              </Box>
             )}
           </Box>
         </Toolbar>
       </AppBar>
 
       <Drawer
-        anchor="left"
+        anchor="right"
         open={mobileOpen}
         onClose={handleDrawerToggle}
       >

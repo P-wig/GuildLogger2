@@ -30,30 +30,100 @@ export const ProjectCard = ({
   actions = [],
 }: ProjectCardProps) => {
   return (
-    <Card className={styles.card} variant="outlined">
+    <Card
+      className={styles.card}
+      variant="outlined"
+      sx={{ borderRadius: 3 }}
+    >
       <CardContent className={styles.content}>
-        <div className={styles.header}>
-          <Typography variant="h6" align="left">
+
+        {/* ================= HEADER ================= */}
+        <div className={styles.headerRow}>
+          <Typography variant="h5" sx={{ fontWeight: 600 }}>
             {project.projectName}
           </Typography>
-          <Typography variant="body2" color="text.secondary" align="left">
-            ID: {project.projectId}
+
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ fontWeight: 500 }}
+          >
+            Project ID: {project.projectId}
           </Typography>
-          {project.description && (
-            <Typography variant="body2" align="left">
-              {project.description}
-            </Typography>
-          )}
         </div>
 
-        <Stack className={styles.sections} spacing={2}>
-          <UserList
-            users={project.assignedUsers}
-            ownerUserId={project.ownerUserId}
-          />
-          {hardware.length > 0 && <HardwareList hardware={hardware} />}
-        </Stack>
+        <div className={styles.divider} />
+
+        {/* ================= DESCRIPTION ================= */}
+        {project.description && (
+          <>
+            <div className={styles.section}>
+              <Typography
+                variant="subtitle2"
+                className={styles.sectionTitle}
+              >
+                Project Description
+              </Typography>
+
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                className={styles.sectionText}
+              >
+                {project.description}
+              </Typography>
+            </div>
+
+            <div className={styles.divider} />
+          </>
+        )}
+
+
+        {/* ================= OWNER / USERS ================= */}
+        <div className={styles.section}>
+          <div className={styles.ownerUserRow}>
+            <div>
+              <Typography variant="subtitle2" className={styles.sectionTitle}>
+                Owner
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {project.ownerUserId}
+              </Typography>
+            </div>
+
+            <div>
+              <Typography variant="subtitle2" className={styles.sectionTitle}>
+                Users
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {project.assignedUsers?.join(", ")}
+              </Typography>
+            </div>
+          </div>
+        </div>
+
+        <div className={styles.divider} />
+
+
+        {/* ================= HARDWARE ================= */}
+        {hardware.length > 0 && (
+          <div className={styles.section}>
+            <Typography
+              variant="subtitle2"
+              className={styles.sectionTitle}
+            >
+              Hardware
+            </Typography>
+
+            <HardwareList
+              hardware={hardware}
+              displayTitle={false}
+            />
+          </div>
+        )}
+
       </CardContent>
+
 
       {actions.length > 0 && (
         <CardActions className={styles.buttonContainer}>
