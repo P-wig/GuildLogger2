@@ -28,3 +28,39 @@ def close_mongo(app) -> None:
     if client is not None:
         client.close()
         app.extensions.pop("mongo_client", None)
+
+
+INITIAL_HARDWARE = [
+    {
+        "hardwareName": "HWSet1",
+        "capacity": 200,
+        "available": 200,
+        "assignedProjects": [],
+    },
+    {
+        "hardwareName": "HWSet2",
+        "capacity": 200,
+        "available": 200,
+        "assignedProjects": [],
+    },
+    {
+        "hardwareName": "HWSet3",
+        "capacity": 100,
+        "available": 100,
+        "assignedProjects": [],
+    },
+    {
+        "hardwareName": "HWSet4",
+        "capacity": 100,
+        "available": 100,
+        "assignedProjects": [],
+    },
+]
+
+
+def seed_hardware(db: Database) -> None:
+    """Insert default hardware sets if they don't already exist."""
+    col = db["hardware"]
+    for hw in INITIAL_HARDWARE:
+        if not col.find_one({"hardwareName": hw["hardwareName"]}):
+            col.insert_one(hw.copy())

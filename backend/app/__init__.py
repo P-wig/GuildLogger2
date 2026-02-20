@@ -7,7 +7,7 @@ from flask import Flask
 from flask_cors import CORS
 
 from .config import Config
-from .db import close_mongo, init_mongo
+from .db import close_mongo, init_mongo, seed_hardware, get_db
 from .routes.auth import bp as auth_bp
 from .routes.hardware import bp as hardware_bp
 from .routes.health import bp as health_bp
@@ -26,6 +26,11 @@ def create_app() -> Flask:
     )
 
     init_mongo(app)
+
+    with app.app_context():
+        db = get_db()
+        seed_hardware(db)
+        app.logger.info("Hardware seeded successfully")
 
     atexit.register(lambda: close_mongo(app))
 

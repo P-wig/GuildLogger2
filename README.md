@@ -156,3 +156,18 @@ If you see "vite: command not found":
 
 - Run `npm install` in the `frontend/` directory
 - The `start_frontend.sh` script handles this automatically
+
+## Alternative way to start the application
+
+In one termianl run from dir root:
+
+```bash
+docker compose up -d --build --remove-orphans
+```
+
+In a second terminal, run:
+
+```bash
+cd frontend
+npm run dev
+```
