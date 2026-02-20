@@ -7,6 +7,7 @@ This repository contains a monolithic codebase for Part 1 of the class project i
 - **Backend**: Flask + MongoDB (Python 3.12+)
 - **Frontend**: React + Vite + TypeScript
 - **Development**: Scripts for automated startup and dependency management
+- **Deployment**: Docker Compose YAML to run backend service/database locally
 
 ## Prerequisites
 
@@ -72,9 +73,6 @@ The frontend uses React + Vite for fast development and hot module replacement (
    cd frontend/frontend
    npm install
    ```
-
-## Running the Application
-
 ### Start Individual Components
 
 #### Backend Only
@@ -90,7 +88,7 @@ This script will:
 - Start the Flask development server
 - Output the process PID for tracking
 
-The backend will be available at `http://localhost:5001`
+The backend will be available at `http://localhost:5001` and assumes a separate MongoDB instance is already available. 
 
 #### Frontend Only
 
@@ -107,15 +105,20 @@ The frontend will be available at `http://localhost:5173`
 
 ### Start Full Application
 
-To run both backend and frontend simultaneously:
+Launch the entire application locally using a convenient script:
 
 ```bash
 ./scripts/start_app.sh
 ```
+This assumes you have Docker and `docker-compose` installed on your machine. 
+For Mac users, install from [here](https://docs.docker.com/desktop/setup/install/mac-install/)
+and use `brew` to install `docker-compose`. 
+
+>__NOTE__: Ensure the docker socket is available by first running Docker Desktop.
 
 This orchestrator script will:
 
-- Start the backend server in the background
+- Start the backend services in the background using `docker compose`
 - Start the frontend server in the background
 - Monitor both processes for errors
 - Provide log file locations for debugging
@@ -139,7 +142,10 @@ Once running, the backend provides the following endpoints:
 
 - `GET /api/health` - Health check endpoint
 - `GET /api/users` - List all users
-- `POST /api/users` - Create a new user
+- `POST /api/auth/register` - Create a new user
+
+## Running the Application
+
 
 ## Troubleshooting
 

@@ -33,7 +33,7 @@ trap cleanup SIGINT SIGTERM
 
 # Start backend server
 echo -e "${GREEN}🔧 Backend...${NC}"
-"$SCRIPT_DIR/start_backend.sh" > /tmp/backend.log 2>&1 &
+docker compose up --abort-on-container-exit > /tmp/backend.log 2>&1 &
 BACKEND_PID=$!
 
 # Wait a moment for backend to initialize
