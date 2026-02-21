@@ -7,5 +7,5 @@ export const authChannel =
 export function broadcastAuthChanged() {
   if (authChannel) authChannel.postMessage({ type: "AUTH_CHANGED" });
   // storage event fires in other tabs when localStorage is mutated
-  localStorage.setItem("auth.lastChangedAt", String(Date.now()));
+  localStorage.setItem("__auth_changed_at__", String(Date.now()));
 }

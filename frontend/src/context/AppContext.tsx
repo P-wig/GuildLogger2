@@ -49,7 +49,7 @@ type AppContextValue = {
 };
 
 const AppContext = createContext<AppContextValue | undefined>(undefined);
-
+// central data store of entire app
 export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const { user, isAuthenticated } = useAuth();
   const userId = user?.userId ?? "";

@@ -1,7 +1,6 @@
 import axios from 'axios';
 import type { AxiosError, AxiosResponse } from 'axios';
 
-// Create axios instance with base configuration
 export const api = axios.create({
   baseURL: '/api', // Uses Vite proxy from vite.config.ts to route to backend
   timeout: 10000, // 10 second timeout
@@ -36,7 +35,6 @@ api.interceptors.request.use(
 // Response interceptor - runs after every response
 api.interceptors.response.use(
   (response: AxiosResponse) => {
-    // Log successful responses in development
     if (import.meta.env.DEV) {
       console.log(`API Response: ${response.config.method?.toUpperCase()} ${response.config.url}`, response.data);
     }
@@ -49,28 +47,22 @@ api.interceptors.response.use(
       console.error(`API Error: ${error.config?.method?.toUpperCase()} ${error.config?.url}`, error.response?.data);
     }
     
-    // Handle specific error cases - check if response exists first
     if (error.response) {
       const status = error.response.status;
       
       if (status === 401) {
         // Unauthorized - clear token and redirect to login
         localStorage.removeItem('authToken');
-        // You could dispatch a logout action here
-        // window.location.href = '/auth';
       }
       
       if (status === 403) {
-        // Forbidden - user doesn't have permission
         console.error('Access forbidden');
       }
       
       if (status >= 500) {
-        // Server error
         console.error('Server error occurred');
       }
     } else {
-      // Network error or request timeout
       console.error('Network error or timeout occurred');
     }
     

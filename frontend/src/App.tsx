@@ -6,7 +6,9 @@ import { router } from "./routes";
 
 function App() {
   return (
-    <AuthProvider>
+    // manages user session
+    <AuthProvider> 
+      {/* manages app data (projects, hardware) */}
       <AppProvider>
         <RouterProvider router={router} />
       </AppProvider>

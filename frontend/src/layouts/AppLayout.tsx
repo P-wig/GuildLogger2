@@ -141,6 +141,11 @@ export const AppLayout = () => {
                 </ListItemButton>
               </ListItem>
             ))}
+            <ListItem disablePadding>
+              <ListItemButton onClick={logout}>
+                <ListItemText primary={`Sign out (${user?.userId})`} />
+              </ListItemButton>
+            </ListItem>
           </List>
         </Box>
       </Drawer>

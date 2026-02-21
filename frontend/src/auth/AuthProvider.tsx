@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AuthContext } from "./authContext";
-import { authChannel } from "./authSync";
+import { authChannel , broadcastAuthChanged} from "./authSync";
 import type { User } from "../api/users";
 
 const SESSION_KEY = "session_token";
@@ -28,6 +28,7 @@ function persistSession(user: User) {
     user,
     expiresAt: Date.now() + SESSION_TTL_MS,
   };
+  // This is shared across the same Chrome profile
   localStorage.setItem(SESSION_KEY, encodeSession(session));
 }
 
@@ -53,17 +54,11 @@ function loadSession(): User | null {
   return session.user;
 }
 
-function broadcastAuthChanged() {
-  // BroadcastChannel (same chrome profile)
-  authChannel?.postMessage({ type: "AUTH_CHANGED" });
-  localStorage.setItem("__auth_changed_at__", String(Date.now()));
-}
-
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(() => loadSession());
   const [loading] = useState(false);
 
-  // ✅ Keep all tabs/windows in sync
+  // Keep all tabs/windows in sync
   useEffect(() => {
     const sync = () => setUser(loadSession());
 
