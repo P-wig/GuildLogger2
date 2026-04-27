@@ -14,7 +14,8 @@ export const AuthRoute = () => {
   if (isAuthenticated) {
     const state = location.state as LocationState | null;
     const fromPath = state?.from?.pathname;
-    const target = fromPath && fromPath !== "/auth" ? fromPath : "/";
+    // Redirect authenticated users to the app instead of root
+    const target = fromPath && fromPath !== "/auth" ? fromPath : "/app";
     return <Navigate to={target} replace />;
   }
 

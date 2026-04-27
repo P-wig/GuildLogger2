@@ -45,7 +45,7 @@ export const AppLayout = () => {
           {/* LEFT: App Title (desktop) */}
           <Box sx={{ display: { xs: "none", md: "flex" }, alignItems: "center" }}>
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              Hardware Checkout App
+              React / Flask Boilerplate
             </Typography>
           </Box>
 
@@ -60,10 +60,8 @@ export const AppLayout = () => {
               }}
             >
               {[
-                { to: "/home", label: "Home" },
+                { to: "/app", label: "Home" },
                 { to: "/account", label: "Account" },
-                { to: "/projects", label: "Projects" },
-                { to: "/hardware", label: "Hardware" },
               ].map(({ to, label }) => (
                 <Button
                   key={to}
@@ -87,7 +85,7 @@ export const AppLayout = () => {
             }}
           >
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              Hardware Checkout App
+              React / Flask Boilerplate
             </Typography>
           </Box>
 
@@ -132,8 +130,6 @@ export const AppLayout = () => {
             {[
               { to: "/home", label: "Home" },
               { to: "/account", label: "Account" },
-              { to: "/projects", label: "Projects" },
-              { to: "/hardware", label: "Hardware" },
             ].map(({ to, label }) => (
               <ListItem key={to} disablePadding>
                 <ListItemButton component={Link} to={to}>
@@ -185,7 +181,7 @@ export const AppLayout = () => {
             align="center"
             sx={{ opacity: 0.8 }}
           >
-            © {new Date().getFullYear()} Cloud Native Team Project. All rights
+            © {new Date().getFullYear()} Your Company Name. All rights
             reserved.
           </Typography>
         </Toolbar>

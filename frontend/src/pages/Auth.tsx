@@ -13,7 +13,7 @@ import LoginIcon from "@mui/icons-material/Login";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import { useMemo } from "react";
 import { useAuth } from "../auth";
-import { usersApi } from "../api/users";
+import { authApi } from "../api/auth";
 
 interface AuthForm {
   userId: string;
@@ -81,7 +81,7 @@ export const Auth = () => {
         }
 
         // Call register API
-        const response = await usersApi.register({
+        const response = await authApi.register({
           userId: formData.userId,
           password: formData.password,
         });
@@ -91,7 +91,7 @@ export const Auth = () => {
         navigate(redirectTo, { replace: true });
       } else {
         // Call login API
-        const response = await usersApi.login({
+        const response = await authApi.login({
           userId: formData.userId,
           password: formData.password,
         });

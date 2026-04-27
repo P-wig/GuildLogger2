@@ -1,3 +1,5 @@
+"""how to use pydantic models example for later"""
+
 from __future__ import annotations
 
 from pydantic import BaseModel, Field

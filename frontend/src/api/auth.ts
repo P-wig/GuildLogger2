@@ -15,22 +15,15 @@ export type RegisterRequest = {
   password: string;
 };
 
-export type LoginResponse = {
-  message: string;
-  ok: boolean;
-  user: User;
-};
-
-export type RegisterResponse = {
+export type AuthResponse = {
   user: User;
   message: string;
 };
 
-export const usersApi = {
-  // POST /api/auth/login
+export const authApi = {
   login: (credentials: LoginRequest) =>
-    api.post<LoginResponse>("/auth/login", credentials),
-  // POST /api/auth/register
+    api.post<AuthResponse>("/auth/login", credentials),
+
   register: (userData: RegisterRequest) =>
-    api.post<RegisterResponse>("/auth/register", userData),
+    api.post<AuthResponse>("/auth/register", userData),
 };

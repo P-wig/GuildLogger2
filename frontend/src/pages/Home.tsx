@@ -45,7 +45,7 @@ export const Home = () => {
               spacing={2}
               justifyContent="center"
             >
-              <Grid size= {{ xs: 12, sm: "auto" }}>
+              <Grid size={{ xs: 12, sm: "auto" }}>
                 <Button
                   variant="contained"
                   fullWidth
@@ -54,30 +54,6 @@ export const Home = () => {
                   size="large"
                 >
                   ACCOUNT
-                </Button>
-              </Grid>
-
-              <Grid size= {{ xs: 12, sm: "auto" }}>
-                <Button
-                  variant="outlined"
-                  fullWidth
-                  component={RouterLink}
-                  to="/projects"
-                  size="large"
-                >
-                  PROJECTS
-                </Button>
-              </Grid>
-
-              <Grid size= {{ xs: 12, sm: "auto" }}>
-                <Button
-                  variant="outlined"
-                  fullWidth
-                  component={RouterLink}
-                  to="/hardware"
-                  size="large"
-                >
-                  HARDWARE
                 </Button>
               </Grid>
             </Grid>

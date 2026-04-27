@@ -6,9 +6,8 @@ import { router } from "./routes";
 
 function App() {
   return (
-    // manages user session
     <AuthProvider> 
-      {/* manages app data (projects, hardware) */}
+      {/* Clean boilerplate context - add your domain data here */}
       <AppProvider>
         <RouterProvider router={router} />
       </AppProvider>
