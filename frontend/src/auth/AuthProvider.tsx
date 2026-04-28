@@ -1,3 +1,17 @@
+/**
+
+Application auth state provider.
+Responsibilities:
+Hydrate auth state from localStorage on app startup.
+Persist login session with a fixed TTL (24 hours).
+Validate and clear invalid/expired session data.
+Keep all open tabs in sync via BroadcastChannel + storage events.
+Expose auth state and actions through AuthContext:
+user, isAuthenticated, loading, login, logout.
+Notes:
+Session data is base64-encoded for transport/storage convenience, not encryption.
+localStorage is shared per browser profile and can be cleared by the user.
+*/
 import React, { useEffect, useMemo, useState } from "react";
 import { AuthContext } from "./authContext";
 import { authChannel, broadcastAuthChanged } from "./authSync";
