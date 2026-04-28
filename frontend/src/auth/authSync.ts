@@ -1,4 +1,3 @@
-// authSync.ts
 const CHANNEL = "auth";
 
 export const authChannel =

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AuthContext } from "./authContext";
-import { authChannel , broadcastAuthChanged} from "./authSync";
-import type { User } from "../api/users";
+import { authChannel, broadcastAuthChanged } from "./authSync";
+import type { User } from "../api/auth";
 
 const SESSION_KEY = "session_token";
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -56,7 +56,7 @@ function loadSession(): User | null {
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(() => loadSession());
-  const [loading] = useState(false);
+  const loading = false;
 
   // Keep all tabs/windows in sync
   useEffect(() => {
