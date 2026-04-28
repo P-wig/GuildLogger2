@@ -141,8 +141,6 @@ tail -f /tmp/frontend.log
 Once running, the backend provides the following endpoints:
 
 - `GET /api/health` - Health check endpoint
-- `GET /api/users` - List all users
-- `POST /api/auth/register` - Create a new user
 
 ## Running the Application
 
