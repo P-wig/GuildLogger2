@@ -17,39 +17,51 @@ echo ""
 
 # Function to cleanup background processes on exit
 cleanup() {
-    echo -e "\n${YELLOW}🛑 Shutting down services...${NC}"
-    if [ ! -z "$BACKEND_PID" ]; then
-        kill $BACKEND_PID 2>/dev/null
-        echo -e "${GREEN}✓ Backend stopped${NC}"
-    fi
+    echo -e "\n${YELLOW}Shutting down services...${NC}"
     if [ ! -z "$FRONTEND_PID" ]; then
         kill $FRONTEND_PID 2>/dev/null
-        echo -e "${GREEN}✓ Frontend stopped${NC}"
+        echo -e "${GREEN}Frontend stopped${NC}"
     fi
+    docker compose down --remove-orphans > /tmp/backend.log 2>&1 || true
+    echo -e "${GREEN}Backend services stopped${NC}"
     exit 0
 }
 
 trap cleanup SIGINT SIGTERM
 
 # Start backend server
-echo -e "${GREEN}🔧 Backend...${NC}"
-docker compose up --abort-on-container-exit > /tmp/backend.log 2>&1 &
-BACKEND_PID=$!
+echo -e "${GREEN}Backend...${NC}"
 
-# Wait a moment for backend to initialize
-sleep 2
+if ! docker info > /dev/null 2>&1; then
+    echo -e "${RED}Docker Engine is not running. Start Docker Desktop and retry.${NC}"
+    exit 1
+fi
 
-# Check if backend is still running
-if ! kill -0 $BACKEND_PID 2>/dev/null; then
-    echo -e "${RED}❌ Backend failed to start. Reading /tmp/backend.log for details...${NC}"
-    echo -e "${BLUE}═══════════════════════════════════════${NC}"
-    echo -e "${BLUE}  BACKEND LOG${NC}"
-    echo -e "${BLUE}═══════════════════════════════════════${NC}"
+if ! docker compose up -d --build --force-recreate mongo backend > /tmp/backend.log 2>&1; then
+    echo -e "${RED}Backend failed to start. Reading /tmp/backend.log...${NC}"
     cat /tmp/backend.log
     exit 1
 fi
 
-echo -e "${GREEN}✓ Backend started (PID: $BACKEND_PID)${NC}"
+# Wait for backend health endpoint (max 30s)
+HEALTH_URL="http://localhost:5001/api/health"
+READY=0
+for i in $(seq 1 30); do
+    if curl -fsS "$HEALTH_URL" > /dev/null 2>&1; then
+        READY=1
+        break
+    fi
+    sleep 1
+done
+
+if [ "$READY" -ne 1 ]; then
+    echo -e "${RED}Backend did not become healthy at ${HEALTH_URL}${NC}"
+    echo -e "${BLUE}BACKEND LOG${NC}"
+    cat /tmp/backend.log
+    exit 1
+fi
+
+echo -e "${GREEN}Backend is healthy${NC}"
 echo ""
 
 # Start frontend server

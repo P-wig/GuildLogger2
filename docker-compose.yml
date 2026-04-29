@@ -14,15 +14,12 @@ services:
     ports:
       - "5001:5001"
     environment:
+      - PORT=5001
       - MONGO_URI=mongodb://mongo:27017
       - MONGO_DB=cloudnative
       - CORS_ORIGINS=http://localhost:5173
-      - FLASK_DEBUG=1
     depends_on:
       - mongo
-    volumes:
-      - ./backend/app:/app/app
-      - ./backend/run.py:/app/run.py
 
 volumes:
   mongo_data:

@@ -1,17 +1,21 @@
-FROM python:3.12-slim
+FROM golang:1.26.2-alpine AS builder
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/main .
+
+FROM alpine:3.20
 
 WORKDIR /app
+RUN adduser -D -g '' appuser
+USER appuser
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
-COPY pyproject.toml README.md /app/
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir .
-
-COPY app /app/app
-COPY run.py /app/run.py
-
+ENV PORT=5001
 EXPOSE 5001
 
-CMD ["python", "run.py"]
+COPY --from=builder /out/main /app/main
+CMD ["/app/main"]
