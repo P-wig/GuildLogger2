@@ -1,76 +1,48 @@
-# Monolith Full-Stack Application
+# GuildLogger2
 
-This repository contains a monolithic codebase for Part 1 of the class project in ECE 382V: Cloud Native App Development.
+A full-stack web application for managing Discord guild activity, member roles, and hardware/resource tracking.
 
 ## Tech Stack
 
-- **Backend**: Flask + MongoDB (Python 3.12+)
+- **Backend**: Go 1.26+ + Echo v4 + MongoDB
 - **Frontend**: React + Vite + TypeScript
 - **Development**: Scripts for automated startup and dependency management
-- **Deployment**: Docker Compose YAML to run backend service/database locally
+- **Deployment**: Docker Compose (backend + database containers)
 
 ## Prerequisites
 
-- **Python 3.12+** (managed via `pyenv`)
-- **Node.js** (latest LTS version recommended)
-- **MongoDB** connection (local or remote)
+- **Go 1.26+** — [golang.org/dl](https://golang.org/dl/)
+- **Node.js** (latest LTS) — [nodejs.org](https://nodejs.org/)
+- **Docker Desktop** — [docs.docker.com/desktop](https://docs.docker.com/desktop/)
+- **MongoDB** connection (provided by Docker Compose or a remote URI)
 
 ## Development Setup
 
 ### Backend Setup
 
-The `backend` folder contains the Flask Python application. It's recommended to use Python 3.12+ with a virtual environment.
+The `backend/` folder is a Go module (`github.com/P-wig/GuildLogger2/backend`).
 
-#### Step-by-Step (macOS/Linux)
-
-> **Note**: If you're on Linux or Windows, the steps are similar except for how you install `pyenv`. Use your system's package manager (e.g., `apt` for Ubuntu, `chocolatey` for Windows).
-
-1. **Install and configure Python 3.12.8 using `pyenv`**:
+1. **Install Go dependencies**:
 
    ```bash
-   brew install pyenv
-   pyenv install 3.12.8
    cd backend
-   pyenv local 3.12.8
+   go mod tidy
    ```
 
-   This creates a `.python-version` file in the backend directory, ensuring `pyenv` automatically uses Python 3.12.8 when you're in that directory.
-
-2. **Create virtual environment and install dependencies**:
-
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -e .
-   ```
-
-3. **Configure environment variables**:
+2. **Configure environment variables**:
 
    ```bash
    cp .env.example .env
-   # Edit .env with your MongoDB connection string and other settings
-   ```
-
-4. **Initialize the database** (optional, for first-time setup):
-   ```bash
-   flask --app app:create_app init-db
+   # Edit .env — set MONGO_URI, MONGO_DB, CORS_ORIGINS as needed
    ```
 
 ### Frontend Setup
 
 The frontend uses React + Vite for fast development and hot module replacement (HMR).
 
-1. **Verify Node.js installation**:
-
+1. **Navigate to frontend directory and install dependencies**:
    ```bash
-   node --version
-   ```
-
-   If not installed, download from [nodejs.org](https://nodejs.org/) or use your system's package manager.
-
-2. **Navigate to frontend directory and install dependencies**:
-   ```bash
-   cd frontend/frontend
+   cd frontend
    npm install
    ```
 ### Start Individual Components
@@ -83,12 +55,11 @@ The frontend uses React + Vite for fast development and hot module replacement (
 
 This script will:
 
-- Check for the virtual environment
-- Activate it automatically
-- Start the Flask development server
-- Output the process PID for tracking
+- Check for a Go installation
+- Run `go mod tidy`
+- Start the Go backend with `go run .`
 
-The backend will be available at `http://localhost:5001` and assumes a separate MongoDB instance is already available. 
+The backend will be available at `http://localhost:5001` and assumes a separate MongoDB instance is already available.
 
 #### Frontend Only
 
@@ -140,7 +111,21 @@ tail -f /tmp/frontend.log
 
 Once running, the backend provides the following endpoints:
 
-- `GET /api/health` - Health check endpoint
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | Service info |
+| `GET` | `/api/health` | Health check |
+| `POST` | `/api/auth/register` | Register a new user |
+| `POST` | `/api/auth/login` | Log in |
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `5001` | Backend listen port |
+| `MONGO_URI` | `mongodb://localhost:27017` | MongoDB connection URI |
+| `MONGO_DB` | `guildlogger` | Database name |
+| `CORS_ORIGINS` | `http://localhost:5173` | Allowed CORS origins (comma-separated) |
 
 ## Running the Application
 
@@ -151,19 +136,28 @@ Once running, the backend provides the following endpoints:
 
 If you see "Address already in use" for port 5001:
 
-- On macOS, disable 'AirPlay Receiver' in System Settings
-- Or kill the process using the port: `lsof -ti:5001 | xargs kill -9`
+```bash
+lsof -ti:5001 | xargs kill -9
+```
 
 ### Vite Command Not Found
 
-If you see "vite: command not found":
+```bash
+cd frontend
+npm install
+```
 
-- Run `npm install` in the `frontend/` directory
-- The `start_frontend.sh` script handles this automatically
+### Docker Container Running Stale Image
 
-## Alternative way to start the application
+```bash
+docker compose down --remove-orphans
+docker compose build --no-cache backend
+docker compose up -d
+```
 
-In one termianl run from dir root:
+## Alternative Way to Start the Application
+
+In one terminal, run from the repo root:
 
 ```bash
 docker compose up -d --build --remove-orphans
