@@ -1,66 +1,77 @@
-# Backend Flask Boilerplate
+# Backend Service (Go + Echo)
 
-Small Flask + MongoDB API service with an app factory, CORS for local React,
-and a simple `init-db` command for first-time Mongo setup.
+This backend is being migrated from Flask to Go and now runs on Echo with MongoDB.
+
+## Current Status
+- Runtime: Go
+- Web framework: Echo
+- Database: MongoDB
+- Available routes:
+	- `GET /`
+	- `GET /api/health`
 
 ## Requirements
-- Python 3.10+
-- MongoDB connection string
+- Go 1.26+
+- Docker Desktop (recommended for local MongoDB)
 
-## Setup
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
-
-If you prefer requirements files:
-```bash
-pip install -r requirements.txt
-```
+## Project Structure
+Key files and directories:
+- `main.go` - backend entrypoint
+- `app/app.go` - Echo app setup, middleware, and route registration
+- `app/config/` - environment-based config loader
+- `app/db/` - MongoDB connection and helpers
+- `app/routes/` - route handlers
 
 ## Configuration
-Copy `.env.example` to `.env` and adjust values:
+Environment variables used by the Go app:
+- `PORT` - backend port (default: `5001`)
+- `MONGO_URI` - Mongo connection string (default: `mongodb://localhost:27017`)
+- `MONGO_DB` - Mongo database name (default: `test`)
+- `CORS_ORIGINS` - comma-separated origins (default: `http://localhost:5173`)
+
+Example (PowerShell):
+```powershell
+$env:PORT="5001"
+$env:MONGO_URI="mongodb://localhost:27017"
+$env:MONGO_DB="cloudnative"
+$env:CORS_ORIGINS="http://localhost:5173"
+```
+
+## Run Locally (Go)
+From `backend/`:
 ```bash
-cp .env.example .env
+go mod tidy
+go fmt ./...
+go build ./...
+go run .
 ```
 
-Environment variables:
-- `MONGO_URI`: Mongo connection string (default: `mongodb://localhost:27017`)
-- `MONGO_DB`: Default database name (default: `myapp`)
-- `MONGO_INIT_COLLECTIONS`: Comma-separated collections to create on init
-
-## Run
+Health check:
 ```bash
-python run.py
+curl http://localhost:5001/api/health
 ```
 
-Or use Flask's CLI:
+## Run with Docker Compose
+From repo root:
 ```bash
-flask --app app:create_app run --debug
+docker compose up -d --build mongo backend
 ```
 
-## Initialize a database
-MongoDB creates a database on first write or collection creation. Use:
+Check backend logs:
 ```bash
-flask --app app:create_app init-db
+docker compose logs backend --tail=100
 ```
 
-Initialize a different database name:
+Health check:
 ```bash
-flask --app app:create_app init-db --db tenant_foo
+curl http://localhost:5001/api/health
 ```
 
-## Multi-database usage
-Use `get_db()` with a database name when needed:
-```python
-from app.db import get_db
-
-db = get_db("tenant_foo")
-db.users.insert_one({"username": "casey"})
+Stop services:
+```bash
+docker compose down --remove-orphans
 ```
 
-## API endpoints
-- `GET /api/health`
-- `GET /api/users`
-- `POST /api/users`
+## Notes
+- Python/Flask files may still exist in the repo as migration references.
+- The active backend runtime path is Go (`main.go` + Echo app wiring).
