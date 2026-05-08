@@ -3,6 +3,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"go.mongodb.org/mongo-driver/mongo"
@@ -17,6 +18,11 @@ func InitMongo(uri, dbName string) (*mongo.Client, *mongo.Database, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+
+	if err := client.Ping(ctx, nil); err != nil {
+		return nil, nil, fmt.Errorf("mongo ping failed: %w", err)
+	}
+
 	return client, client.Database(dbName), nil
 }
 

@@ -5,6 +5,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func ToObjectID(id string) (primitive.ObjectID, error) {
@@ -33,4 +34,22 @@ func SerializeDocs(docs []bson.M) []bson.M {
 		out = append(out, SerializeDoc(d))
 	}
 	return out
+}
+
+// Collection accessors — single source of truth for collection names.
+
+func UsersCollection(database *mongo.Database) *mongo.Collection {
+	return database.Collection("users")
+}
+
+func GuildsCollection(database *mongo.Database) *mongo.Collection {
+	return database.Collection("guilds")
+}
+
+func EventsCollection(database *mongo.Database) *mongo.Collection {
+	return database.Collection("events")
+}
+
+func MembersCollection(database *mongo.Database) *mongo.Collection {
+	return database.Collection("members")
 }

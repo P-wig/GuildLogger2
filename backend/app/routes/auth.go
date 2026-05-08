@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/P-wig/GuildLogger2/backend/app/db"
 	"github.com/labstack/echo/v4"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -52,8 +53,16 @@ func loginHandler(database *mongo.Database) echo.HandlerFunc {
 		ctx, cancel := context.WithTimeout(c.Request().Context(), 5*time.Second)
 		defer cancel()
 
+		// user holds the raw MongoDB document returned by FindOne.
+		// bson.M is a generic map type (map[string]interface{}) provided by the MongoDB
+		// driver for working with BSON documents. It allows dynamic access to fields without
+		// defining a strict struct type.
 		var user bson.M
-		err = database.Collection("users").FindOne(ctx, bson.M{
+
+		// FindOne queries the users coll for a doc matching both userId and the encrypted password.
+		// Decode unmarshals the BSON document into the user map.
+		// If no document matches, the driver returns mongo.ErrNoDocuments
+		err = db.UsersCollection(database).FindOne(ctx, bson.M{
 			"userId":   in.UserID,
 			"password": enc,
 		}).Decode(&user)
@@ -115,7 +124,7 @@ func registerHandler(database *mongo.Database) echo.HandlerFunc {
 		ctx, cancel := context.WithTimeout(c.Request().Context(), 5*time.Second)
 		defer cancel()
 
-		users := database.Collection("users")
+		users := db.UsersCollection(database)
 
 		var existing bson.M
 		err := users.FindOne(ctx, bson.M{"userId": userID}).Decode(&existing)
@@ -142,14 +151,7 @@ func registerHandler(database *mongo.Database) echo.HandlerFunc {
 			"password": hashPassword,
 		}
 
-		res, err := users.InsertOne(ctx, doc)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]interface{}{
-				"error": "Failed to create user",
-			})
-		}
-
-		if res.InsertedID == nil {
+		if _, err := users.InsertOne(ctx, doc); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]interface{}{
 				"error": "Failed to create user",
 			})

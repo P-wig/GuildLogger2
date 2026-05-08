@@ -74,7 +74,7 @@ func CreateApp() (*echo.Echo, func() error, error) {
 		},
 	}))
 
-	mongoClient, _, err := db.InitMongo(cfg.MongoURI, cfg.MongoDB)
+	mongoClient, database, err := db.InitMongo(cfg.MongoURI, cfg.MongoDB)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -82,6 +82,7 @@ func CreateApp() (*echo.Echo, func() error, error) {
 	// Route registration mirrors Flask blueprints.
 	routes.RegisterRoot(e)
 	routes.RegisterHealth(e)
+	routes.RegisterAuth(e, database)
 
 	cleanup := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
