@@ -11,6 +11,7 @@ import (
 
 	"github.com/P-wig/GuildLogger2/backend/app/config"
 	"github.com/P-wig/GuildLogger2/backend/app/db"
+	"github.com/P-wig/GuildLogger2/backend/app/repositories"
 	"github.com/P-wig/GuildLogger2/backend/app/routes"
 )
 
@@ -79,10 +80,19 @@ func CreateApp() (*echo.Echo, func() error, error) {
 		return nil, nil, err
 	}
 
-	// Route registration mirrors Flask blueprints.
+	userRepo := repositories.NewMongoUserRepository(database)
+	memberRepo := repositories.NewMongoMemberRepository(database)
+
+	// Ensure required member indexes exist at startup.
+	idxCtx, idxCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer idxCancel()
+	if err := memberRepo.EnsureIndexes(idxCtx); err != nil {
+		return nil, nil, err
+	}
+
 	routes.RegisterRoot(e)
 	routes.RegisterHealth(e)
-	routes.RegisterAuth(e, database)
+	routes.RegisterAuth(e, userRepo)
 
 	cleanup := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
