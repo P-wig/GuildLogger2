@@ -22,8 +22,31 @@ GuildLogger2 uses a web frontend and API backend with MongoDB persistence and Di
 
 - app/config: environment configuration
 - app/db: Mongo connection and utility helpers
+- app/repositories: data access interfaces and MongoDB implementations
 - app/routes: HTTP route modules
 - app/schemas: request/response payload structures
+
+### Data Access Layering
+
+GuildLogger2 uses the repository pattern to separate business logic from data access:
+
+```
+Route Handlers (app/routes)
+    ↓
+Repository Interfaces (app/repositories)
+    ↓
+MongoDB Implementations (app/repositories)
+    ↓
+Database Utilities (app/db/mongo_utils.go)
+    ↓
+MongoDB Driver & Database
+```
+
+**Benefits:**
+- Route handlers call business-focused methods (e.g., `userRepo.FindByDiscordID()`) instead of BSON queries
+- Repositories encapsulate all MongoDB query logic in one place
+- Database utilities provide low-level helpers (collection access, BSON serialization)
+- Testability: repository interfaces can be mocked for unit tests without touching the database
 
 ### Runtime
 
