@@ -11,6 +11,7 @@ import (
 
 	"github.com/P-wig/GuildLogger2/backend/app/config"
 	"github.com/P-wig/GuildLogger2/backend/app/db"
+	"github.com/P-wig/GuildLogger2/backend/app/discord"
 	"github.com/P-wig/GuildLogger2/backend/app/repositories"
 	"github.com/P-wig/GuildLogger2/backend/app/routes"
 )
@@ -35,6 +36,10 @@ import (
 // - error: non-nil when startup wiring (for example DB init) fails.
 func CreateApp() (*echo.Echo, func() error, error) {
 	cfg := config.Load()
+
+	if err := config.ValidateOAuthConfig(cfg); err != nil {
+		return nil, nil, err
+	}
 
 	e := echo.New()
 
@@ -90,9 +95,17 @@ func CreateApp() (*echo.Echo, func() error, error) {
 		return nil, nil, err
 	}
 
+	oauthClient := discord.NewOAuthClient(
+		cfg.DiscordClientID,
+		cfg.DiscordClientSecret,
+		cfg.DiscordAuthBaseURL,
+		cfg.DiscordAPIBaseURL,
+		cfg.DiscordOAuthScopes,
+	)
+
 	routes.RegisterRoot(e)
 	routes.RegisterHealth(e)
-	routes.RegisterAuth(e, userRepo)
+	routes.RegisterAuth(e, userRepo, oauthClient, cfg.SecretKey)
 
 	cleanup := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
