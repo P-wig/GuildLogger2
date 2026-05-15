@@ -22,34 +22,48 @@ func NewMongoUserRepository(database *mongo.Database) *MongoUserRepository {
 	return &MongoUserRepository{database: database}
 }
 
+// EnsureIndexes creates required indexes for user identity persistence.
+func (r *MongoUserRepository) EnsureIndexes(ctx context.Context) error {
+	_, err := db.UsersCollection(r.database).Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "discordId", Value: 1},
+		},
+		Options: options.Index().
+			SetUnique(true).
+			SetName("uniq_discord_user"),
+	})
+	return err
+}
+
 // CreateOrUpdateFromDiscord inserts or updates a user based on Discord ID (upsert pattern).
 func (r *MongoUserRepository) CreateOrUpdateFromDiscord(ctx context.Context, discordID, accessToken, refreshToken string) (*User, error) {
 	now := time.Now()
-	user := &User{
-		DiscordID:    discordID,
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+	update := bson.M{
+		"$set": bson.M{
+			"accessToken":  accessToken,
+			"refreshToken": refreshToken,
+			"updatedAt":    now,
+		},
+		"$setOnInsert": bson.M{
+			"discordId": discordID,
+			"createdAt": now,
+		},
 	}
-
 	opts := options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After)
 	result := db.UsersCollection(r.database).FindOneAndUpdate(
 		ctx,
 		bson.M{"discordId": discordID},
-		bson.M{"$set": user},
+		update,
 		opts,
 	)
-
 	if result.Err() != nil {
 		return nil, result.Err()
 	}
-
-	if err := result.Decode(user); err != nil {
+	var user User
+	if err := result.Decode(&user); err != nil {
 		return nil, err
 	}
-
-	return user, nil
+	return &user, nil
 }
 
 // FindByDiscordID retrieves a user by their Discord ID.
