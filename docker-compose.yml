@@ -18,6 +18,13 @@ services:
       - MONGO_URI=mongodb://mongo:27017
       - MONGO_DB=cloudnative
       - CORS_ORIGINS=http://localhost:5173
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
+      - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI}
+      - SECRET_KEY=${SECRET_KEY}
+      - DISCORD_AUTH_BASE_URL=https://discord.com/api/oauth2
+      - DISCORD_API_BASE_URL=https://discord.com/api/v10
+      - "DISCORD_OAUTH_SCOPES=identify guilds"
     depends_on:
       - mongo
 

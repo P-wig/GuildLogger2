@@ -10,6 +10,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"github.com/P-wig/GuildLogger2/backend/app/db"
 )
@@ -17,8 +18,7 @@ import (
 // eventDoc is the internal MongoDB storage struct.
 // Notes are stored as compressed bytes rather than a plain string.
 type eventDoc struct {
-	ID              string    `bson:"_id,omitempty"`
-	EventID         string    `bson:"eventId"`
+	EventID         string    `bson:"_id,omitempty"`
 	GuildID         string    `bson:"guildId"`
 	HostDiscordID   string    `bson:"hostDiscordId"`
 	AttendingIDs    []string  `bson:"attendingIds"`
@@ -63,7 +63,6 @@ func toDoc(event *Event) (*eventDoc, error) {
 		return nil, err
 	}
 	return &eventDoc{
-		ID:              event.ID,
 		EventID:         event.EventID,
 		GuildID:         event.GuildID,
 		HostDiscordID:   event.HostDiscordID,
@@ -82,7 +81,6 @@ func fromDoc(doc *eventDoc) (*Event, error) {
 		return nil, err
 	}
 	return &Event{
-		ID:            doc.ID,
 		EventID:       doc.EventID,
 		GuildID:       doc.GuildID,
 		HostDiscordID: doc.HostDiscordID,
@@ -104,6 +102,17 @@ func NewMongoEventRepository(database *mongo.Database) *MongoEventRepository {
 	return &MongoEventRepository{database: database}
 }
 
+// EnsureIndexes creates required indexes for event operations.
+func (r *MongoEventRepository) EnsureIndexes(ctx context.Context) error {
+	events := db.EventsCollection(r.database)
+
+	_, err := events.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "guildId", Value: 1}},
+		Options: options.Index().SetName("idx_event_guild_id"),
+	})
+	return err
+}
+
 // Create inserts a new event.
 func (r *MongoEventRepository) Create(ctx context.Context, event *Event) error {
 	event.CreatedAt = time.Now()
@@ -119,7 +128,7 @@ func (r *MongoEventRepository) Create(ctx context.Context, event *Event) error {
 // FindByEventID retrieves an event by its event ID.
 func (r *MongoEventRepository) FindByEventID(ctx context.Context, eventID string) (*Event, error) {
 	var doc eventDoc
-	err := db.EventsCollection(r.database).FindOne(ctx, bson.M{"eventId": eventID}).Decode(&doc)
+	err := db.EventsCollection(r.database).FindOne(ctx, bson.M{"_id": eventID}).Decode(&doc)
 
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return nil, nil
@@ -163,7 +172,7 @@ func (r *MongoEventRepository) Update(ctx context.Context, eventID string, event
 	}
 	result := db.EventsCollection(r.database).FindOneAndReplace(
 		ctx,
-		bson.M{"eventId": eventID},
+		bson.M{"_id": eventID},
 		doc,
 	)
 	return result.Err()
@@ -173,7 +182,7 @@ func (r *MongoEventRepository) Update(ctx context.Context, eventID string, event
 func (r *MongoEventRepository) AddAttendee(ctx context.Context, eventID, discordID string) error {
 	_, err := db.EventsCollection(r.database).UpdateOne(
 		ctx,
-		bson.M{"eventId": eventID},
+		bson.M{"_id": eventID},
 		bson.M{
 			"$addToSet": bson.M{"attendingIds": discordID}, // $addToSet prevents duplicates
 			"$set":      bson.M{"updatedAt": time.Now()},
@@ -186,7 +195,7 @@ func (r *MongoEventRepository) AddAttendee(ctx context.Context, eventID, discord
 func (r *MongoEventRepository) RemoveAttendee(ctx context.Context, eventID, discordID string) error {
 	_, err := db.EventsCollection(r.database).UpdateOne(
 		ctx,
-		bson.M{"eventId": eventID},
+		bson.M{"_id": eventID},
 		bson.M{
 			"$pull": bson.M{"attendingIds": discordID}, // $pull removes the element
 			"$set":  bson.M{"updatedAt": time.Now()},
@@ -197,6 +206,6 @@ func (r *MongoEventRepository) RemoveAttendee(ctx context.Context, eventID, disc
 
 // Delete removes an event entirely.
 func (r *MongoEventRepository) Delete(ctx context.Context, eventID string) error {
-	_, err := db.EventsCollection(r.database).DeleteOne(ctx, bson.M{"eventId": eventID})
+	_, err := db.EventsCollection(r.database).DeleteOne(ctx, bson.M{"_id": eventID})
 	return err
 }

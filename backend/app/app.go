@@ -87,11 +87,27 @@ func CreateApp() (*echo.Echo, func() error, error) {
 
 	userRepo := repositories.NewMongoUserRepository(database)
 	memberRepo := repositories.NewMongoMemberRepository(database)
+	eventsRepo := repositories.NewMongoEventRepository(database)
+	guildRepo := repositories.NewMongoGuildRepository(database)
 
-	// Ensure required member indexes exist at startup.
+	// Ensure required user/member/event indexes exist at startup.
 	idxCtx, idxCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer idxCancel()
+
+	// EnsureIndexes is called at startup so required DB constraints and query indexes
+	// are present before handling traffic. This prevents duplicate identity records
+	// (user/member uniqueness) and keeps common lookups fast (for example by guildId).
+	// Creating indexes is idempotent, so calling this on every startup is safe.
+	if err := userRepo.EnsureIndexes(idxCtx); err != nil {
+		return nil, nil, err
+	}
 	if err := memberRepo.EnsureIndexes(idxCtx); err != nil {
+		return nil, nil, err
+	}
+	if err := eventsRepo.EnsureIndexes(idxCtx); err != nil {
+		return nil, nil, err
+	}
+	if err := guildRepo.EnsureIndexes(idxCtx); err != nil {
 		return nil, nil, err
 	}
 

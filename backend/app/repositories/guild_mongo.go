@@ -9,6 +9,7 @@ import (
 	"github.com/P-wig/GuildLogger2/backend/app/db"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // MongoGuildRepository implements GuildRepository using MongoDB.
@@ -18,6 +19,17 @@ type MongoGuildRepository struct {
 
 func NewMongoGuildRepository(database *mongo.Database) *MongoGuildRepository {
 	return &MongoGuildRepository{database: database}
+}
+
+// EnsureIndexes creates required indexes for guild identity/config persistence.
+func (r *MongoGuildRepository) EnsureIndexes(ctx context.Context) error {
+	_, err := db.GuildsCollection(r.database).Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "guildId", Value: 1},
+		},
+		Options: options.Index().SetUnique(true).SetName("uniq_guild_id"),
+	})
+	return err
 }
 
 func (r *MongoGuildRepository) Create(ctx context.Context, guild *Guild) error {
