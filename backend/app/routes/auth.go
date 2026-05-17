@@ -15,15 +15,22 @@ type discordLoginPayload struct {
 	RedirectURI string `json:"redirectUri"`
 }
 
+// RegisterAuth registers public auth routes — no JWT required.
+// These must be public because they are how a user obtains a token in the first place.
 func RegisterAuth(e *echo.Echo, userRepo repositories.UserRepository, oauthClient *discord.OAuthClient, secretKey string) {
 	e.GET("/api/auth/discord/url", getDiscordAuthURLHandler(oauthClient))
 	e.POST("/api/auth/discord/login", discordLoginHandler(userRepo, oauthClient, secretKey))
-	e.GET("/api/auth/session", getSessionHandler(userRepo, secretKey))
 	e.POST("/api/auth/logout", logoutHandler())
-	e.GET("/api/auth/users/:discordId", getUserByDiscordIDHandler(userRepo))
 }
 
-// getDiscordAuthURLHandler returns the Discord authorization URL the frontend redirects the user to.
+// RegisterAuthProtected registers auth routes that require a valid JWT.
+// The group g is already guarded by JWT middleware, so no token validation is
+// needed inside these handlers — claims are read directly from context.
+func RegisterAuthProtected(g *echo.Group, userRepo repositories.UserRepository) {
+	g.GET("/auth/session", getSessionHandler(userRepo))
+	g.GET("/auth/users/:discordId", getUserByDiscordIDHandler(userRepo))
+}
+
 func getDiscordAuthURLHandler(oauthClient *discord.OAuthClient) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		redirectURI := strings.TrimSpace(c.QueryParam("redirectUri"))
@@ -42,8 +49,6 @@ func getDiscordAuthURLHandler(oauthClient *discord.OAuthClient) echo.HandlerFunc
 	}
 }
 
-// discordLoginHandler exchanges a Discord authorization code for tokens,
-// fetches the user's Discord identity, and persists the user record.
 func discordLoginHandler(userRepo repositories.UserRepository, oauthClient *discord.OAuthClient, secretKey string) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		var in discordLoginPayload
@@ -111,23 +116,16 @@ func discordLoginHandler(userRepo repositories.UserRepository, oauthClient *disc
 	}
 }
 
-// getSessionHandler validates the JWT from the Authorization header and returns the current user.
-func getSessionHandler(userRepo repositories.UserRepository, secretKey string) echo.HandlerFunc {
+// getSessionHandler returns the current user from the validated JWT claims.
+// JWT validation and claims injection is handled by JWT middleware upstream —
+// this handler only needs to read the claims and fetch the user record.
+func getSessionHandler(userRepo repositories.UserRepository) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		authHeader := c.Request().Header.Get("Authorization")
-		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-		if tokenStr == "" {
+		claims, ok := c.Get("user").(*session.Claims)
+		if !ok || claims == nil {
 			return c.JSON(http.StatusUnauthorized, map[string]interface{}{
 				"ok":    false,
-				"error": "missing token",
-			})
-		}
-
-		claims, err := session.Verify(tokenStr, secretKey)
-		if err != nil {
-			return c.JSON(http.StatusUnauthorized, map[string]interface{}{
-				"ok":    false,
-				"error": "invalid or expired token",
+				"error": "missing session",
 			})
 		}
 
