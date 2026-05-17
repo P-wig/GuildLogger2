@@ -12,6 +12,7 @@ import (
 	"github.com/P-wig/GuildLogger2/backend/app/config"
 	"github.com/P-wig/GuildLogger2/backend/app/db"
 	"github.com/P-wig/GuildLogger2/backend/app/discord"
+	appmiddleware "github.com/P-wig/GuildLogger2/backend/app/middleware"
 	"github.com/P-wig/GuildLogger2/backend/app/repositories"
 	"github.com/P-wig/GuildLogger2/backend/app/routes"
 )
@@ -29,6 +30,22 @@ import (
 // 4. Initialize MongoDB connection and return startup error if DB is unavailable.
 // 5. Register HTTP routes (currently root and health).
 // 6. Return a cleanup function that gracefully closes the Mongo client.
+//
+// Route protection:
+//
+//   - Non-protected routes are accessible by anyone without a valid session.
+//     Use these for public endpoints: login, OAuth callback, health checks.
+//     Example: /api/auth/discord/login, /api/health
+//
+//   - Protected routes require a valid JWT in the Authorization header.
+//     Use these for any endpoint that needs to know who the user is,
+//     such as fetching user profile, listing guilds, logging events.
+//     Example: /api/me, /api/guilds, /api/events
+//
+//     To add a new protected route, register it on the `protected` group:
+//     protected.GET("/me", handler)
+//     To add a new non-protected route, register it directly on `e` or an unguarded group:
+//     e.GET("/health", handler)
 //
 // CreateApp returns:
 // - *echo.Echo: the configured server instance ready to start.
@@ -119,9 +136,19 @@ func CreateApp() (*echo.Echo, func() error, error) {
 		cfg.DiscordOAuthScopes,
 	)
 
+	// jwtMiddleware guards any route group that requires an authenticated session.
+	// Routes registered on `protected` will reject requests without a valid JWT.
+	jwtMiddleware := appmiddleware.JWTMiddleware(cfg)
+	protected := e.Group("/api", jwtMiddleware)
+
+	// Non-protected routes: no JWT required, accessible to anyone.
 	routes.RegisterRoot(e)
 	routes.RegisterHealth(e)
 	routes.RegisterAuth(e, userRepo, oauthClient, cfg.SecretKey)
+
+	// Protected routes: JWT middleware is enforced by the `protected` group.
+	// Add new authenticated endpoints here as new route files are created.
+	routes.RegisterAuthProtected(protected, userRepo)
 
 	cleanup := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
