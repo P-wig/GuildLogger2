@@ -143,12 +143,14 @@ func CreateApp() (*echo.Echo, func() error, error) {
 
 	// Non-protected routes: no JWT required, accessible to anyone.
 	routes.RegisterRoot(e)
-	routes.RegisterHealth(e)
 	routes.RegisterAuth(e, userRepo, oauthClient, cfg.SecretKey)
 
 	// Protected routes: JWT middleware is enforced by the `protected` group.
 	// Add new authenticated endpoints here as new route files are created.
 	routes.RegisterAuthProtected(protected, userRepo)
+	routes.RegisterGuildsProtected(protected, guildRepo, memberRepo, eventsRepo)
+	routes.RegisterEventsProtected(protected, eventsRepo)
+	routes.RegisterMembersProtected(protected, memberRepo)
 
 	cleanup := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

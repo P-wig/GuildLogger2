@@ -51,6 +51,8 @@ type Guild struct {
 	OwnerDiscordID     string                  `bson:"ownerDiscordId"`
 	Roles              []GuildRole             `bson:"roles"`
 	NotificationConfig GuildNotificationConfig `bson:"notificationConfig"`
+	BotInstalled       bool                    `bson:"botInstalled"`
+	BotInstalledAt     *time.Time              `bson:"botInstalledAt,omitempty"`
 	CreatedAt          time.Time               `bson:"createdAt"`
 	UpdatedAt          time.Time               `bson:"updatedAt"`
 }
@@ -59,8 +61,12 @@ type GuildRepository interface {
 	// Base CRUD
 	Create(ctx context.Context, guild *Guild) error
 	FindByGuildID(ctx context.Context, guildID string) (*Guild, error)
+	FindByOwnerDiscordID(ctx context.Context, ownerDiscordID string) ([]Guild, error)
 	Update(ctx context.Context, guildID string, guild *Guild) error
 	Delete(ctx context.Context, guildID string) error
+
+	// Bot installation
+	SetBotInstalled(ctx context.Context, guildID string) error
 
 	// Role operations
 	UpsertRole(ctx context.Context, guildID string, role GuildRole) error
@@ -70,4 +76,6 @@ type GuildRepository interface {
 	// Guild-level configuration
 	UpdateStatusRoleConfig(ctx context.Context, guildID string, cfg GuildStatusRoleConfig) error
 	UpdateMilestoneNotificationConfig(ctx context.Context, guildID string, cfg GuildMilestoneNotificationConfig) error
+
+	EnsureIndexes(ctx context.Context) error
 }

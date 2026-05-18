@@ -43,4 +43,7 @@ type EventRepository interface {
 
 	// Delete removes an event entirely.
 	Delete(ctx context.Context, eventID string) error
+
+	// EnsureIndexes creates the necessary indexes for the event collection.
+	EnsureIndexes(ctx context.Context) error
 }
