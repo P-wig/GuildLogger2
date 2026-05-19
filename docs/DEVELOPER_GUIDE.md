@@ -63,3 +63,53 @@ Use clear, scoped commit messages:
 
 - Keep docs aligned with the active Go runtime.
 - Do not copy legacy Flask behavior into new docs unless marked as historical context.
+
+## Authentication Architecture
+
+GuildLogger uses a two-layer authentication model. The layers are complementary
+and operate independently — neither replaces the other.
+
+### Frontend: `ProtectedRoute` (UX guard)
+
+`ProtectedRoute` checks `AuthContext` (sourced from `localStorage`) before
+rendering any protected page. If no session is found, the user is redirected to
+`/auth` before any API call is made. This is a convenience guard only — it can
+be bypassed by a user who manually sets `localStorage`.
+
+### Backend: JWT Middleware (security boundary)
+
+Every request to a protected API route is validated by the JWT middleware in
+`backend/app/middleware/jwt.go`. The middleware verifies the token signature and
+expiry on every request, independent of what the frontend believes. A missing,
+forged, or expired token always results in `401 Unauthorized`.
+
+### Request flow
+
+User navigates to protected route
+│
+▼
+ProtectedRoute checks localStorage
+│
+No token? ──────────────────► redirect to /auth (no API call made)
+│
+Token exists
+▼
+Page renders and calls backend API
+│
+▼
+Backend JWT middleware validates token
+│
+Invalid/expired? ──────────────► 401 → http.ts clears localStorage
+│
+Valid
+▼
+Handler runs, returns data
+
+
+### 401 handling
+
+`frontend/src/api/http.ts` contains a response interceptor that clears
+`localStorage` on a `401` response. This ensures stale or expired tokens are
+removed automatically. Any component that receives a `401` should also call
+`logout()` from `useAuth()` to clear the in-memory auth state and trigger a
+redirect to `/auth`.

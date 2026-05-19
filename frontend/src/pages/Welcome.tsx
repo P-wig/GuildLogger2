@@ -27,7 +27,7 @@ export const Welcome = () => {
           gutterBottom
           sx={{ fontWeight: 600, mb: 3 }}
         >
-          Welcome to Your App
+          GuildLogger
         </Typography>
 
         <Typography
@@ -36,8 +36,7 @@ export const Welcome = () => {
           color="text.secondary"
           sx={{ mb: 4, maxWidth: "600px" }}
         >
-          Your full-stack application boilerplate with authentication, 
-          modern UI, and everything you need to get started.
+          Track events, manage members, and monitor activity across your Discord guilds.
         </Typography>
 
         <Card variant="outlined" sx={{ maxWidth: 400, width: "100%" }}>
@@ -46,9 +45,8 @@ export const Welcome = () => {
               Get Started
             </Typography>
             <Typography color="text.secondary" sx={{ mb: 3 }}>
-              Sign in to access your account and explore the features.
+              Sign in with your Discord account to begin.
             </Typography>
-
             <Stack spacing={2}>
               <Button
                 component={Link}
@@ -57,12 +55,8 @@ export const Welcome = () => {
                 size="large"
                 fullWidth
               >
-                Sign In
+                Sign In with Discord
               </Button>
-              
-              <Typography variant="body2" color="text.secondary">
-                New user? You can create an account on the sign-in page.
-              </Typography>
             </Stack>
           </CardContent>
         </Card>

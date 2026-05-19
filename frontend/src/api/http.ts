@@ -53,6 +53,7 @@ api.interceptors.response.use(
       if (status === 401) {
         // Unauthorized - clear token and redirect to login
         localStorage.removeItem('authToken');
+        localStorage.removeItem('session_token'); // clear profile so AuthContext syncs
       }
       
       if (status === 403) {

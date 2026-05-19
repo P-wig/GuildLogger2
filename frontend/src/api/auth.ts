@@ -2,28 +2,42 @@ import { api } from "./http";
 
 export type User = {
   _id: string;
-  userId: string;
+  discordId: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
-export type LoginRequest = {
-  userId: string;
-  password: string;
+export type DiscordLoginRequest = {
+  code: string;
+  redirectUri: string;
 };
 
-export type RegisterRequest = {
-  userId: string;
-  password: string;
+export type DiscordAuthURLResponse = {
+  ok: boolean;
+  url: string;
 };
 
-export type AuthResponse = {
+export type LoginResponse = {
+  ok: boolean;
+  token: string;
   user: User;
-  message: string;
+};
+
+export type SessionResponse = {
+  ok: boolean;
+  user: User;
 };
 
 export const authApi = {
-  login: (credentials: LoginRequest) =>
-    api.post<AuthResponse>("/auth/login", credentials),
+  getDiscordAuthURL: (redirectUri: string) =>
+    api.get<DiscordAuthURLResponse>("/auth/discord/url", {
+      params: { redirectUri },
+    }),
 
-  register: (userData: RegisterRequest) =>
-    api.post<AuthResponse>("/auth/register", userData),
+  discordLogin: (payload: DiscordLoginRequest) =>
+    api.post<LoginResponse>("/auth/discord/login", payload),
+
+  getSession: () => api.get<SessionResponse>("/auth/session"),
+
+  logout: () => api.post<{ ok: boolean }>("/auth/logout"),
 };
