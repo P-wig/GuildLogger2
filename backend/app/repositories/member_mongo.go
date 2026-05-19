@@ -139,31 +139,96 @@ func (r *MongoMemberRepository) Delete(ctx context.Context, guildID, discordID s
 	return err
 }
 
-func (r *MongoMemberRepository) GetEventStats(ctx context.Context, guildID, discordID string) (*MemberEventStats, error) {
-	hostedCount, err := db.EventsCollection(r.database).CountDocuments(
-		ctx,
-		bson.M{
-			"guildId":       guildID,
-			"hostDiscordId": discordID,
-		},
-	)
+func (r *MongoMemberRepository) GetStats(ctx context.Context, guildID, discordID string) (*MemberStats, error) {
+	member, err := r.FindByGuildAndDiscordID(ctx, guildID, discordID)
 	if err != nil {
 		return nil, err
 	}
+	if member == nil {
+		return nil, nil
+	}
 
-	participatedCount, err := db.EventsCollection(r.database).CountDocuments(
-		ctx,
-		bson.M{
-			"guildId":      guildID,
-			"attendingIds": discordID, // matches when discordID exists in array
-		},
-	)
+	pipeline := bson.A{
+		bson.M{"$match": bson.M{"guildId": guildID}},
+		bson.M{"$group": bson.M{
+			"_id": nil,
+			"hostedCount": bson.M{"$sum": bson.M{
+				"$cond": bson.A{
+					bson.M{"$eq": bson.A{"$hostDiscordId", discordID}},
+					1, 0,
+				},
+			}},
+			"participatedCount": bson.M{"$sum": bson.M{
+				"$cond": bson.A{
+					bson.M{"$in": bson.A{discordID, "$attendingIds"}},
+					1, 0,
+				},
+			}},
+		}},
+	}
+
+	cursor, err := db.EventsCollection(r.database).Aggregate(ctx, pipeline)
 	if err != nil {
 		return nil, err
 	}
+	defer cursor.Close(ctx)
 
-	return &MemberEventStats{
-		HostedCount:       hostedCount,
-		ParticipatedCount: participatedCount,
+	var result struct {
+		HostedCount       int64 `bson:"hostedCount"`
+		ParticipatedCount int64 `bson:"participatedCount"`
+	}
+	if cursor.Next(ctx) {
+		if err := cursor.Decode(&result); err != nil {
+			return nil, err
+		}
+	}
+	// If no events exist yet, result stays at zero values — that is correct.
+
+	return &MemberStats{
+		HostedCount:       result.HostedCount,
+		ParticipatedCount: result.ParticipatedCount,
+		JoinedAt:          member.JoinedAt,
 	}, nil
+}
+
+func (r *MongoMemberRepository) UpdateStatusAndRank(ctx context.Context, guildID, discordID string, status MemberStatus, rankedRoleID string) error {
+	_, err := db.MembersCollection(r.database).UpdateOne(
+		ctx,
+		bson.M{"guildId": guildID, "discordId": discordID},
+		bson.M{"$set": bson.M{
+			"status":       status,
+			"rankedRoleId": rankedRoleID,
+			"updatedAt":    time.Now(),
+		}},
+	)
+	return err
+}
+
+func (r *MongoMemberRepository) UpdateNotificationPreference(ctx context.Context, guildID, discordID string, optOut bool) error {
+	_, err := db.MembersCollection(r.database).UpdateOne(
+		ctx,
+		bson.M{"guildId": guildID, "discordId": discordID},
+		bson.M{"$set": bson.M{
+			"notificationsOptOut": optOut,
+			"updatedAt":           time.Now(),
+		}},
+	)
+	return err
+}
+
+func (r *MongoMemberRepository) FindNotificationTargets(ctx context.Context, guildID string) ([]Member, error) {
+	cursor, err := db.MembersCollection(r.database).Find(ctx, bson.M{
+		"guildId":             guildID,
+		"notificationsOptOut": false,
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var members []Member
+	if err := cursor.All(ctx, &members); err != nil {
+		return nil, err
+	}
+	return members, nil
 }

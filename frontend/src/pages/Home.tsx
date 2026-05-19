@@ -1,13 +1,12 @@
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Typography from "@mui/material/Typography";
-import { useAuth } from "../auth";
-
-import { Box } from "@mui/material";
+import Box from "@mui/material/Box";
 import Grid from "@mui/material/Grid";
 import Stack from "@mui/material/Stack";
-import { Link as RouterLink } from "react-router";
 import Button from "@mui/material/Button";
+import { Link as RouterLink } from "react-router";
+import { useAuth } from "../auth";
 
 export const Home = () => {
   const { isAuthenticated, user } = useAuth();
@@ -15,67 +14,59 @@ export const Home = () => {
   return (
     <Box sx={{ textAlign: "center" }}>
       <Typography variant="h4" gutterBottom>
-        Home
+        Dashboard
       </Typography>
 
       <Typography color="text.secondary" sx={{ mb: 4 }}>
-        Welcome to the Cloud Native Team Project.
+        Manage your Discord guilds, events, and members.
       </Typography>
 
       {isAuthenticated ? (
-        <Card
-          variant="outlined"
-          sx={{
-            maxWidth: 700,
-            mx: "auto",
-            p: 3,
-          }}
-        >
+        <Card variant="outlined" sx={{ maxWidth: 700, mx: "auto", p: 3 }}>
           <CardContent>
             <Typography variant="h6" gutterBottom>
               Quick Actions
             </Typography>
 
             <Typography color="text.secondary" sx={{ mb: 3 }}>
-              Welcome back, <strong>{user?.userId}</strong>!
+              Welcome back, <strong>{user?.discordId}</strong>!
             </Typography>
 
-            <Grid
-              container
-              spacing={2}
-              justifyContent="center"
-            >
+            <Grid container spacing={2} justifyContent="center">
               <Grid size={{ xs: 12, sm: "auto" }}>
                 <Button
                   variant="contained"
                   fullWidth
                   component={RouterLink}
-                  to="/account"
+                  to="/app/guilds"
                   size="large"
                 >
-                  ACCOUNT
+                  My Guilds
+                </Button>
+              </Grid>
+              <Grid size={{ xs: 12, sm: "auto" }}>
+                <Button
+                  variant="outlined"
+                  fullWidth
+                  component={RouterLink}
+                  to="/app/events"
+                  size="large"
+                >
+                  Events
                 </Button>
               </Grid>
             </Grid>
-
           </CardContent>
         </Card>
       ) : (
-        <Card
-          variant="outlined"
-          sx={{
-            maxWidth: 400,
-            mx: "auto",
-            p: 3,
-          }}
-        >
+        <Card variant="outlined" sx={{ maxWidth: 400, mx: "auto", p: 3 }}>
           <CardContent>
             <Typography variant="h6" gutterBottom>
               Get Started
             </Typography>
 
             <Typography color="text.secondary" sx={{ mb: 3 }}>
-              Please sign in to access your account and manage projects.
+              Sign in with Discord to manage your guilds and events.
             </Typography>
 
             <Stack alignItems="center">

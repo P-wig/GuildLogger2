@@ -48,6 +48,7 @@ function persistSession(user: User) {
 
 function clearSession() {
   localStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem("authToken"); // clear JWT on logout
 }
 
 function loadSession(): User | null {

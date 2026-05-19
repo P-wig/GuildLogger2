@@ -66,6 +66,20 @@ func (r *MongoGuildRepository) FindByGuildID(ctx context.Context, guildID string
 	return &guild, nil
 }
 
+func (r *MongoGuildRepository) FindByOwnerDiscordID(ctx context.Context, ownerDiscordID string) ([]Guild, error) {
+	cursor, err := db.GuildsCollection(r.database).Find(ctx, bson.M{"ownerDiscordId": ownerDiscordID})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var guilds []Guild
+	if err := cursor.All(ctx, &guilds); err != nil {
+		return nil, err
+	}
+	return guilds, nil
+}
+
 func (r *MongoGuildRepository) Update(ctx context.Context, guildID string, guild *Guild) error {
 	guild.UpdatedAt = time.Now()
 	result := db.GuildsCollection(r.database).FindOneAndReplace(
@@ -201,4 +215,18 @@ func (r *MongoGuildRepository) UpdateMilestoneNotificationConfig(ctx context.Con
 	guild.UpdatedAt = time.Now()
 
 	return r.Update(ctx, guildID, guild)
+}
+
+func (r *MongoGuildRepository) SetBotInstalled(ctx context.Context, guildID string) error {
+	now := time.Now()
+	_, err := db.GuildsCollection(r.database).UpdateOne(
+		ctx,
+		bson.M{"guildId": guildID},
+		bson.M{"$set": bson.M{
+			"botInstalled":   true,
+			"botInstalledAt": now,
+			"updatedAt":      now,
+		}},
+	)
+	return err
 }

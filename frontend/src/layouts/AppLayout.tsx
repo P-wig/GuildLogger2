@@ -45,7 +45,7 @@ export const AppLayout = () => {
           {/* LEFT: App Title (desktop) */}
           <Box sx={{ display: { xs: "none", md: "flex" }, alignItems: "center" }}>
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              React / Flask Boilerplate
+              GuildLogger2
             </Typography>
           </Box>
 
@@ -61,6 +61,8 @@ export const AppLayout = () => {
             >
               {[
                 { to: "/app", label: "Home" },
+                { to: "/app/guilds", label: "Guilds" },
+                { to: "/app/events", label: "Events" },
                 { to: "/account", label: "Account" },
               ].map(({ to, label }) => (
                 <Button
@@ -85,7 +87,7 @@ export const AppLayout = () => {
             }}
           >
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              React / Flask Boilerplate
+              GuildLogger2
             </Typography>
           </Box>
 
@@ -96,7 +98,7 @@ export const AppLayout = () => {
             {isAuthenticated && (
               <Box sx={{ display: { xs: "none", md: "flex" } }}>
                 <Button color="inherit" onClick={logout}>
-                  Sign out ({user?.userId})
+                  Sign out ({user?.discordId})
                 </Button>
               </Box>
             )}
@@ -128,7 +130,9 @@ export const AppLayout = () => {
         >
           <List>
             {[
-              { to: "/home", label: "Home" },
+              { to: "/app", label: "Home" },
+              { to: "/app/guilds", label: "Guilds" },
+              { to: "/app/events", label: "Events" },
               { to: "/account", label: "Account" },
             ].map(({ to, label }) => (
               <ListItem key={to} disablePadding>
@@ -139,7 +143,7 @@ export const AppLayout = () => {
             ))}
             <ListItem disablePadding>
               <ListItemButton onClick={logout}>
-                <ListItemText primary={`Sign out (${user?.userId})`} />
+                <ListItemText primary={`Sign out (${user?.discordId})`} />
               </ListItemButton>
             </ListItem>
           </List>
@@ -181,8 +185,7 @@ export const AppLayout = () => {
             align="center"
             sx={{ opacity: 0.8 }}
           >
-            © {new Date().getFullYear()} Your Company Name. All rights
-            reserved.
+            © {new Date().getFullYear()} GuildLogger by Holy Jar and co. All rights reserved.
           </Typography>
         </Toolbar>
       </AppBar>

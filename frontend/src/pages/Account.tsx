@@ -7,7 +7,6 @@ import { useAuth } from "../auth";
 export const Account = () => {
   const { user } = useAuth();
 
-  console.log("User data in Account component:", user);
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
@@ -20,7 +19,13 @@ export const Account = () => {
             User Information
           </Typography>
           <Typography>
-            <strong>User ID:</strong> {user?.userId}
+            <strong>Discord ID:</strong> {user?.discordId}
+          </Typography>
+          <Typography>
+            <strong>Member since:</strong>{" "}
+            {user?.createdAt
+              ? new Date(user.createdAt).toLocaleDateString()
+              : "—"}
           </Typography>
         </CardContent>
       </Card>

@@ -24,9 +24,10 @@ type Member struct {
 	UpdatedAt           time.Time    `bson:"updatedAt"`
 }
 
-type MemberEventStats struct {
-	HostedCount       int64 `json:"hostedCount"`
-	ParticipatedCount int64 `json:"participatedCount"`
+type MemberStats struct {
+	HostedCount       int64     `json:"hostedCount"`
+	ParticipatedCount int64     `json:"participatedCount"`
+	JoinedAt          time.Time `json:"joinedAt"`
 }
 
 type MemberRepository interface {
@@ -44,8 +45,8 @@ type MemberRepository interface {
 
 	Delete(ctx context.Context, guildID, discordID string) error
 
-	// Derived from events collection (source of truth).
-	GetEventStats(ctx context.Context, guildID, discordID string) (*MemberEventStats, error)
+	// Derived from events collection combined with member record.
+	GetStats(ctx context.Context, guildID, discordID string) (*MemberStats, error)
 
 	EnsureIndexes(ctx context.Context) error
 }

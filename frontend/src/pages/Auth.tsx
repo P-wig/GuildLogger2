@@ -1,214 +1,99 @@
-import React, { useState } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 import Box from "@mui/material/Box";
-import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import Alert from "@mui/material/Alert";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
-import Stack from "@mui/material/Stack";
-import Button from "@mui/material/Button";
+import Alert from "@mui/material/Alert";
 import LoadingButton from "@mui/lab/LoadingButton";
-import LoginIcon from "@mui/icons-material/Login";
-import PersonAddIcon from "@mui/icons-material/PersonAdd";
-import { useMemo } from "react";
-import { useAuth } from "../auth";
 import { authApi } from "../api/auth";
-
-interface AuthForm {
-  userId: string;
-  password: string;
-  confirmPassword?: string; // Only for register mode
-}
-
-type AuthMode = "login" | "register";
+import { useAuth } from "../auth";
 
 export const Auth = () => {
   const { login } = useAuth();
-  const [mode, setMode] = useState<AuthMode>("login");
-  const [formData, setFormData] = useState<AuthForm>({
-    userId: "",
-    password: "",
-    confirmPassword: "",
-  });
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const navigate = useNavigate();
-  const location = useLocation();
+  const code = searchParams.get("code");
+  const redirectUri = `${window.location.origin}/auth`;
 
-  const redirectTo = useMemo(() => {
-    const state = location.state as { from?: { pathname?: string } } | null;
-    return state?.from?.pathname ?? "/account";
-  }, [location.state]);
+  // Handle OAuth callback — exchange code automatically when Discord redirects back
+  useEffect(() => {
+    if (!code) return;
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-
-    // Clear error when user starts typing
-    if (error) {
+    const exchange = async () => {
+      setLoading(true);
       setError(null);
-    }
-  };
+      try {
+        const response = await authApi.discordLogin({ code, redirectUri });
+        localStorage.setItem("authToken", response.data.token);
+        login(response.data.user);
+        navigate("/app", { replace: true });
+      } catch {
+        setError("Login failed. Please try again.");
+        setLoading(false);
+      }
+    };
+    exchange();
+  }, [code]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleDiscordSignIn = async () => {
     setLoading(true);
     setError(null);
-
     try {
-      // Basic validation
-      if (!formData.userId.trim()) {
-        throw new Error("User ID is required");
-      }
-
-      if (!formData.password.trim()) {
-        throw new Error("Password is required");
-      }
-
-      if (mode === "register") {
-        // Additional validation for registration
-        if (formData.password !== formData.confirmPassword) {
-          throw new Error("Passwords do not match");
-        }
-
-        if (formData.password.length < 6) {
-          throw new Error("Password must be at least 6 characters");
-        }
-
-        // Call register API
-        const response = await authApi.register({
-          userId: formData.userId,
-          password: formData.password,
-        });
-
-        // Auto-login after successful registration
-        login(response.data.user);
-        navigate(redirectTo, { replace: true });
-      } else {
-        // Call login API
-        const response = await authApi.login({
-          userId: formData.userId,
-          password: formData.password,
-        });
-
-        // Update auth context
-        login(response.data.user);
-        navigate(redirectTo, { replace: true });
-      }
-    } catch (err: any) {
-      setError(
-        err.response?.data?.error ||
-          err.message ||
-          `${mode === "login" ? "Login" : "Registration"} failed`,
-      );
-    } finally {
+      const response = await authApi.getDiscordAuthURL(redirectUri);
+      window.location.href = response.data.url;
+    } catch {
+      setError("Failed to reach Discord. Please try again.");
       setLoading(false);
     }
   };
 
-  const toggleMode = () => {
-    setMode(mode === "login" ? "register" : "login");
-    setError(null);
-    setFormData({
-      userId: "",
-      password: "",
-      confirmPassword: "",
-    });
-  };
-
   return (
-    <Box sx={{ maxWidth: 420, mx: "auto", mt: 4 }}>
-      <Typography variant="h4" gutterBottom>
-        {mode === "login" ? "Sign In" : "Create Account"}
-      </Typography>
-
-      <Typography color="text.secondary" sx={{ mb: 3 }}>
-        {mode === "login"
-          ? "Enter your credentials to access your account"
-          : "Create a new account to get started"}
-      </Typography>
-
-      <Card variant="outlined">
+    <Box
+      sx={{
+        minHeight: "80vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <Card variant="outlined" sx={{ maxWidth: 400, width: "100%", p: 2 }}>
         <CardContent>
+          <Typography variant="h5" gutterBottom fontWeight={600} align="center">
+            Sign in to GuildLogger
+          </Typography>
+          <Typography color="text.secondary" align="center" sx={{ mb: 3 }}>
+            {code
+              ? "Completing sign-in…"
+              : "Connect your Discord account to get started."}
+          </Typography>
+
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
             </Alert>
           )}
 
-          <Box component="form" onSubmit={handleSubmit}>
-            <Stack spacing={2}>
-              <TextField
-                fullWidth
-                label="User ID"
-                name="userId"
-                value={formData.userId}
-                onChange={handleInputChange}
-                disabled={loading}
-                autoComplete="username"
-                variant="outlined"
-                helperText={
-                  mode === "register" ? "Choose a unique username" : ""
-                }
-              />
+          {!code && (
+            <LoadingButton
+              loading={loading}
+              onClick={handleDiscordSignIn}
+              variant="contained"
+              fullWidth
+              size="large"
+            >
+              Continue with Discord
+            </LoadingButton>
+          )}
 
-              <TextField
-                fullWidth
-                label="Password"
-                name="password"
-                type="password"
-                value={formData.password}
-                onChange={handleInputChange}
-                disabled={loading}
-                autoComplete={
-                  mode === "login" ? "current-password" : "new-password"
-                }
-                variant="outlined"
-                helperText={mode === "register" ? "Minimum 6 characters" : ""}
-              />
-
-              {mode === "register" && (
-                <TextField
-                  fullWidth
-                  label="Confirm Password"
-                  name="confirmPassword"
-                  type="password"
-                  value={formData.confirmPassword}
-                  onChange={handleInputChange}
-                  disabled={loading}
-                  autoComplete="new-password"
-                  variant="outlined"
-                />
-              )}
-
-              <LoadingButton
-                type="submit"
-                variant="contained"
-                loading={loading}
-                startIcon={mode === "login" ? <LoginIcon /> : <PersonAddIcon />}
-                fullWidth
-                size="large"
-              >
-                {mode === "login" ? "Sign In" : "Create Account"}
-              </LoadingButton>
-
-              <Button
-                variant="text"
-                onClick={toggleMode}
-                disabled={loading}
-                fullWidth
-              >
-                {mode === "login"
-                  ? "Don't have an account? Sign up"
-                  : "Already have an account? Sign in"}
-              </Button>
-            </Stack>
-          </Box>
+          {code && (
+            <LoadingButton loading variant="contained" fullWidth size="large">
+              Signing in…
+            </LoadingButton>
+          )}
         </CardContent>
       </Card>
     </Box>
