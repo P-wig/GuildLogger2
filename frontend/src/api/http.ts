@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { AxiosError, AxiosResponse } from 'axios';
+import type { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 
 export const api = axios.create({
   baseURL: '/api', // Uses Vite proxy from vite.config.ts to route to backend
@@ -17,16 +17,15 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    
+
     // Log requests in development
     if (import.meta.env.DEV) {
       console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`, config.data);
     }
-    
+
     return config;
   },
   (error) => {
-    // Handle request errors
     console.error('Request error:', error);
     return Promise.reject(error);
   }
@@ -38,62 +37,65 @@ api.interceptors.response.use(
     if (import.meta.env.DEV) {
       console.log(`API Response: ${response.config.method?.toUpperCase()} ${response.config.url}`, response.data);
     }
-    
+
     return response;
   },
   (error: AxiosError) => {
-    // Handle response errors
     if (import.meta.env.DEV) {
       console.error(`API Error: ${error.config?.method?.toUpperCase()} ${error.config?.url}`, error.response?.data);
     }
-    
+
     if (error.response) {
       const status = error.response.status;
-      
+
       if (status === 401) {
-        // Unauthorized - clear token and redirect to login
+        // Clear both keys — triggers AuthProvider storage listener which sets user to null
         localStorage.removeItem('authToken');
-        localStorage.removeItem('session_token'); // clear profile so AuthContext syncs
+        localStorage.removeItem('session_token');
       }
-      
+
       if (status === 403) {
         console.error('Access forbidden');
       }
-      
+
       if (status >= 500) {
         console.error('Server error occurred');
       }
     } else {
       console.error('Network error or timeout occurred');
     }
-    
+
     return Promise.reject(error);
   }
 );
 
-// Helper functions for common request types
+// Typed helper functions — B is the request body type, T is the response type
 export const httpClient = {
-  get: <T>(url: string, config = {}) => api.get<T>(url, config),
-  post: <T>(url: string, data?: any, config = {}) => api.post<T>(url, data, config),
-  put: <T>(url: string, data?: any, config = {}) => api.put<T>(url, data, config),
-  patch: <T>(url: string, data?: any, config = {}) => api.patch<T>(url, data, config),
-  delete: <T>(url: string, config = {}) => api.delete<T>(url, config),
+  get: <T>(url: string, config?: AxiosRequestConfig) =>
+    api.get<T>(url, config),
+  post: <T, B = unknown>(url: string, data?: B, config?: AxiosRequestConfig) =>
+    api.post<T>(url, data, config),
+  put: <T, B = unknown>(url: string, data?: B, config?: AxiosRequestConfig) =>
+    api.put<T>(url, data, config),
+  patch: <T, B = unknown>(url: string, data?: B, config?: AxiosRequestConfig) =>
+    api.patch<T>(url, data, config),
+  delete: <T>(url: string, config?: AxiosRequestConfig) =>
+    api.delete<T>(url, config),
 };
 
-// Export types for error handling
 export type ApiError = {
   message: string;
   status?: number;
-  data?: any;
+  data?: unknown;
 };
 
-// Helper function to extract error message
 export const getErrorMessage = (error: AxiosError): string => {
   if (error.response?.data && typeof error.response.data === 'object') {
-    const data = error.response.data as any;
-    return data.message || data.error || 'An error occurred';
+    const data = error.response.data as Record<string, unknown>;
+    const msg = data.message ?? data.error;
+    if (typeof msg === 'string') return msg;
   }
-  
+
   return error.message || 'Network error occurred';
 };
 

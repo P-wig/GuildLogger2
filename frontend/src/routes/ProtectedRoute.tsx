@@ -1,4 +1,6 @@
 import { Navigate, Outlet, useLocation } from "react-router";
+import Box from "@mui/material/Box";
+import CircularProgress from "@mui/material/CircularProgress";
 import { useAuth } from "../auth";
 
 /**
@@ -42,7 +44,15 @@ export const ProtectedRoute = () => {
   const { isAuthenticated, loading } = useAuth();
   const location = useLocation();
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <Box
+        sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "60vh" }}
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   if (!isAuthenticated) {
     return <Navigate to="/auth" replace state={{ from: location }} />;
