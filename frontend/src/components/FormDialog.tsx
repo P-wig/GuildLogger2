@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
+import LoadingButton from "@mui/lab/LoadingButton";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
@@ -40,9 +41,13 @@ export const FormDialog = ({
         <Button onClick={onClose} disabled={loading}>
           Cancel
         </Button>
-        <Button variant="contained" onClick={onSubmit} disabled={loading}>
-          {loading ? "Loading..." : submitLabel}
-        </Button>
+        <LoadingButton
+          variant="contained"
+          onClick={onSubmit}
+          loading={loading}
+        >
+          {submitLabel}
+        </LoadingButton>
       </DialogActions>
     </Dialog>
   );

@@ -8,6 +8,7 @@ Validate and clear invalid/expired session data.
 Keep all open tabs in sync via BroadcastChannel + storage events.
 Expose auth state and actions through AuthContext:
 user, isAuthenticated, loading, login, logout.
+Validate stored JWT against backend on startup; set loading until resolved.
 Notes:
 Session data is base64-encoded for transport/storage convenience, not encryption.
 localStorage is shared per browser profile and can be cleared by the user.
@@ -16,6 +17,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { AuthContext } from "./authContext";
 import { authChannel, broadcastAuthChanged } from "./authSync";
 import type { User } from "../api/auth";
+import { authApi } from "../api/auth";
 
 const SESSION_KEY = "session_token";
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -71,7 +73,31 @@ function loadSession(): User | null {
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(() => loadSession());
-  const loading = false;
+  const [loading, setLoading] = useState(true);
+
+  // Validate stored token against backend on startup.
+  // loading stays true until this resolves so ProtectedRoute doesn't flash-redirect.
+  useEffect(() => {
+    const token = localStorage.getItem("authToken");
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+
+    authApi
+      .getSession()
+      .then((res) => {
+        persistSession(res.data.user);
+        setUser(res.data.user);
+      })
+      .catch(() => {
+        clearSession();
+        setUser(null);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, []);
 
   // Keep all tabs/windows in sync
   useEffect(() => {
@@ -106,6 +132,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         broadcastAuthChanged();
       },
       logout: () => {
+        authApi.logout().catch(() => {}); // fire-and-forget — backend is stateless
         clearSession();
         setUser(null);
         broadcastAuthChanged();
