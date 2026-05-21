@@ -136,3 +136,43 @@ func (c *OAuthClient) GetCurrentUser(ctx context.Context, accessToken string) (*
 	}
 	return &user, nil
 }
+
+type DiscordPartialGuild struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Icon string `json:"icon"`
+}
+
+func (c *OAuthClient) GetUserGuilds(ctx context.Context, accessToken string) ([]DiscordPartialGuild, error) {
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		c.apiBaseURL+"/users/@me/guilds",
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("discord guilds fetch failed: status %d body %s", resp.StatusCode, string(raw))
+	}
+
+	var guilds []DiscordPartialGuild
+	if err := json.Unmarshal(raw, &guilds); err != nil {
+		return nil, err
+	}
+	return guilds, nil
+}
