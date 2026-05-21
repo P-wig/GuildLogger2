@@ -4,12 +4,31 @@ Configuration reference for GuildLogger2 (Go backend, React frontend, MongoDB, D
 
 ## Backend Environment Variables
 
-| Variable | Default | Description |
-|---|---|---|
-| PORT | 5001 | Backend listen port |
-| MONGO_URI | mongodb://localhost:27017 | Mongo connection URI for local runtime |
-| MONGO_DB | test | Mongo database name |
-| CORS_ORIGINS | http://localhost:5173 | Comma-separated CORS origins |
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| PORT | 5001 | No | Backend listen port |
+| MONGO_URI | mongodb://localhost:27017 | No | MongoDB connection URI |
+| MONGO_DB | guildlogger | No | MongoDB database name |
+| CORS_ORIGINS | http://localhost:5173 | No | Comma-separated allowed CORS origins |
+| SECRET_KEY | — | **Yes** | JWT signing secret — use a strong random value |
+| DISCORD_CLIENT_ID | — | **Yes** | Discord application client ID |
+| DISCORD_CLIENT_SECRET | — | **Yes** | Discord application client secret |
+| DISCORD_REDIRECT_URI | — | **Yes** | OAuth2 callback URL — must match frontend `/auth` route and Discord Developer Portal allowlist |
+| DISCORD_BOT_TOKEN | — | No | Bot token for Discord bot API calls |
+| DISCORD_AUTH_BASE_URL | https://discord.com/api/oauth2 | No | Discord OAuth2 base URL |
+| DISCORD_API_BASE_URL | https://discord.com/api/v10 | No | Discord REST API base URL |
+| DISCORD_OAUTH_SCOPES | identify guilds | No | Space-separated OAuth2 scopes |
+
+The backend will refuse to start if `SECRET_KEY`, `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, or `DISCORD_REDIRECT_URI` are missing.
+
+### Local development values
+
+```env
+DISCORD_REDIRECT_URI=http://localhost:5173/auth
+CORS_ORIGINS=http://localhost:5173
+MONGO_URI=mongodb://localhost:27017
+MONGO_DB=guildlogger
+```
 
 ### Container Runtime Values
 

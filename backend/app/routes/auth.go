@@ -41,7 +41,8 @@ func getDiscordAuthURLHandler(oauthClient *discord.OAuthClient) echo.HandlerFunc
 			})
 		}
 
-		authURL := oauthClient.AuthorizeURL(redirectURI, "")
+		state := c.QueryParam("state") // optional — forwarded to Discord as-is
+		authURL := oauthClient.AuthorizeURL(redirectURI, state)
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"ok":  true,
 			"url": authURL,
