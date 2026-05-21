@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
@@ -9,6 +9,15 @@ import LoadingButton from "@mui/lab/LoadingButton";
 import { authApi } from "../api/auth";
 import { useAuth } from "../auth";
 
+const OAUTH_STATE_KEY = "oauth_state";
+
+const DISCORD_ERROR_MESSAGES: Record<string, string> = {
+  access_denied: "You cancelled the Discord login. Click below to try again.",
+  invalid_scope: "The requested Discord permissions are invalid.",
+};
+
+const DEFAULT_ERROR = "Login failed. Please try again.";
+
 export const Auth = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -16,40 +25,67 @@ export const Auth = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const code = searchParams.get("code");
-  const redirectUri = `${window.location.origin}/auth`;
+  // Stable ref — derived from window.location.origin which never changes
+  const redirectUri = useRef(`${window.location.origin}/auth`).current;
 
-  // Handle OAuth callback — exchange code automatically when Discord redirects back
+  const code = searchParams.get("code");
+  const discordError = searchParams.get("error");
+
+  // Handle Discord denial/error before attempting exchange
+  useEffect(() => {
+    if (!discordError) return;
+    const message = DISCORD_ERROR_MESSAGES[discordError] ?? DEFAULT_ERROR;
+    setError(message);
+  }, [discordError]);
+
+  // Handle OAuth callback — verify state then exchange code
   useEffect(() => {
     if (!code) return;
 
     const exchange = async () => {
       setLoading(true);
       setError(null);
+
+      // CSRF check — state returned by Discord must match what we stored
+      const returnedState = searchParams.get("state");
+      const storedState = sessionStorage.getItem(OAUTH_STATE_KEY);
+      sessionStorage.removeItem(OAUTH_STATE_KEY);
+
+      if (!returnedState || returnedState !== storedState) {
+        setError("Login failed: state mismatch. Please try again.");
+        setLoading(false);
+        return;
+      }
+
       try {
         const response = await authApi.discordLogin({ code, redirectUri });
         localStorage.setItem("authToken", response.data.token);
         login(response.data.user);
         navigate("/app", { replace: true });
       } catch {
-        setError("Login failed. Please try again.");
+        setError(DEFAULT_ERROR);
         setLoading(false);
       }
     };
     exchange();
-  }, [code]);
+  }, [code, redirectUri, login, navigate, searchParams]);
 
   const handleDiscordSignIn = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await authApi.getDiscordAuthURL(redirectUri);
+      const state = crypto.randomUUID();
+      sessionStorage.setItem(OAUTH_STATE_KEY, state);
+      const response = await authApi.getDiscordAuthURL(redirectUri, state);
       window.location.href = response.data.url;
     } catch {
+      sessionStorage.removeItem(OAUTH_STATE_KEY);
       setError("Failed to reach Discord. Please try again.");
       setLoading(false);
     }
   };
+
+  const showButton = !code && !discordError;
 
   return (
     <Box
@@ -77,7 +113,7 @@ export const Auth = () => {
             </Alert>
           )}
 
-          {!code && (
+          {showButton && (
             <LoadingButton
               loading={loading}
               onClick={handleDiscordSignIn}
@@ -89,7 +125,20 @@ export const Auth = () => {
             </LoadingButton>
           )}
 
-          {code && (
+          {(discordError || (!code && error)) && (
+            <LoadingButton
+              loading={loading}
+              onClick={handleDiscordSignIn}
+              variant="outlined"
+              fullWidth
+              size="large"
+              sx={{ mt: discordError ? 1 : 0 }}
+            >
+              Try Again
+            </LoadingButton>
+          )}
+
+          {code && !discordError && (
             <LoadingButton loading variant="contained" fullWidth size="large">
               Signing in…
             </LoadingButton>

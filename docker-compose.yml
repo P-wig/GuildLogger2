@@ -1,4 +1,4 @@
-name: cloudnative
+name: GuildLogger
 
 services:
   mongo:
@@ -16,7 +16,7 @@ services:
     environment:
       - PORT=5001
       - MONGO_URI=mongodb://mongo:27017
-      - MONGO_DB=cloudnative
+      - MONGO_DB=GuildLoggerDB
       - CORS_ORIGINS=http://localhost:5173
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
       - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}

@@ -29,9 +29,9 @@ export type SessionResponse = {
 };
 
 export const authApi = {
-  getDiscordAuthURL: (redirectUri: string) =>
+  getDiscordAuthURL: (redirectUri: string, state?: string) =>
     api.get<DiscordAuthURLResponse>("/auth/discord/url", {
-      params: { redirectUri },
+      params: { redirectUri, ...(state !== undefined ? { state } : {}) },
     }),
 
   discordLogin: (payload: DiscordLoginRequest) =>
