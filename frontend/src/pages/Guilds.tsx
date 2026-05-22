@@ -29,8 +29,6 @@ export const Guilds = () => {
   const [connectError, setConnectError] = useState<string | null>(null);
 
   const [inviteLoadingId, setInviteLoadingId] = useState<string | null>(null);
-  const [pendingConfirmIds, setPendingConfirmIds] = useState<Set<string>>(new Set());
-  const [confirmLoadingId, setConfirmLoadingId] = useState<string | null>(null);
 
   const fetchLinkedGuilds = useCallback(async () => {
     setLinkedLoading(true);
@@ -47,6 +45,21 @@ export const Guilds = () => {
 
   useEffect(() => {
     fetchLinkedGuilds();
+  }, [fetchLinkedGuilds]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const guildId = params.get("guild_id");
+    if (!guildId) return;
+
+    // Remove guild_id from URL without reload
+    params.delete("guild_id");
+    const newSearch = params.toString();
+    window.history.replaceState({}, "", window.location.pathname + (newSearch ? `?${newSearch}` : ""));
+
+    guildsApi.verifyBotInstall(guildId)
+      .then(() => fetchLinkedGuilds())
+      .catch(() => {});
   }, [fetchLinkedGuilds]);
 
   const openDialog = async () => {
@@ -75,30 +88,13 @@ export const Guilds = () => {
   const handleInstallBot = async (guildId: string) => {
     setInviteLoadingId(guildId);
     try {
-      const res = await guildsApi.getBotInviteUrl(guildId);
+      const redirectUri = `${window.location.origin}/app/guilds`;
+      const res = await guildsApi.getBotInviteUrl(guildId, redirectUri);
       window.open(res.data.url, "_blank", "noopener,noreferrer");
-      setPendingConfirmIds((prev) => new Set(prev).add(guildId));
     } catch {
       // invite URL fetch failed — button returns to normal state
     } finally {
       setInviteLoadingId(null);
-    }
-  };
-
-  const handleConfirmBot = async (guildId: string) => {
-    setConfirmLoadingId(guildId);
-    try {
-      await guildsApi.installBot(guildId);
-      setPendingConfirmIds((prev) => {
-        const next = new Set(prev);
-        next.delete(guildId);
-        return next;
-      });
-      fetchLinkedGuilds();
-    } catch {
-      // confirm failed — button returns to normal state
-    } finally {
-      setConfirmLoadingId(null);
     }
   };
 
@@ -166,16 +162,7 @@ export const Guilds = () => {
                     >
                       Install Bot
                     </LoadingButton>
-                    {pendingConfirmIds.has(guild.guildId) && (
-                      <LoadingButton
-                        size="small"
-                        variant="contained"
-                        loading={confirmLoadingId === guild.guildId}
-                        onClick={() => handleConfirmBot(guild.guildId)}
-                      >
-                        Confirm Installation
-                      </LoadingButton>
-                    )}
+
                   </Box>
                 )}
               </CardContent>
