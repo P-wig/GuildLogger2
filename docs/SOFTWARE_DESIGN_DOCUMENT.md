@@ -22,9 +22,12 @@ GuildLogger2 uses a web frontend and API backend with MongoDB persistence and Di
 
 - app/config: environment configuration
 - app/db: Mongo connection and utility helpers
+- app/discord: Discord OAuth2 client (authorization URL, code exchange, user and guild fetching)
+- app/middleware: JWT validation middleware
 - app/repositories: data access interfaces and MongoDB implementations
 - app/routes: HTTP route modules
 - app/schemas: request/response payload structures
+- app/session: JWT signing, verification, and claims types
 
 ### Data Access Layering
 

@@ -4,8 +4,8 @@ This matrix maps GuildLogger2 requirements to design and implementation artifact
 
 | Requirement | Description | Design Reference | Implementation Status |
 |---|---|---|---|
-| R-01 | Discord OAuth login | SOFTWARE_DESIGN_DOCUMENT.md (Key Workflows) | Planned |
-| R-02 | Guild connect and bot install | SOFTWARE_DESIGN_DOCUMENT.md (Key Workflows) | Planned |
+| R-01 | Discord OAuth login | SOFTWARE_DESIGN_DOCUMENT.md (Key Workflows) | Implemented |
+| R-02 | Guild connect and bot install | SOFTWARE_DESIGN_DOCUMENT.md (Key Workflows) | Implemented |
 | R-03 | Member sync with role checks | SRS.md (FR-03) | Planned |
 | R-04 | Event create/register/unregister | SRS.md (FR-04) | Planned |
 | R-05 | Hosted/participation stats | SRS.md (FR-05) | Planned |

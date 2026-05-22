@@ -35,7 +35,7 @@ MONGO_DB=guildlogger
 When running in Docker Compose, backend should use:
 
 - MONGO_URI=mongodb://mongo:27017
-- MONGO_DB=cloudnative
+- MONGO_DB=GuildLoggerDB
 - PORT=5001
 
 ## Frontend Environment Variables
@@ -43,15 +43,6 @@ When running in Docker Compose, backend should use:
 | Variable | Default | Description |
 |---|---|---|
 | VITE_API_BASE_URL | http://localhost:5001 | Backend API base URL |
-
-## Discord Integration Variables (Planned)
-
-| Variable | Purpose |
-|---|---|
-| DISCORD_CLIENT_ID | OAuth2 client id |
-| DISCORD_CLIENT_SECRET | OAuth2 secret |
-| DISCORD_REDIRECT_URI | OAuth callback URL |
-| DISCORD_BOT_TOKEN | Bot API token |
 
 ## Local Run Checklist
 
