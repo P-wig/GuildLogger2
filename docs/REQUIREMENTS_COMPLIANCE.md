@@ -8,14 +8,14 @@ Track compliance against GuildLogger2 target requirements during the Flask-to-Go
 
 | Area | Status | Notes |
 |---|---|---|
-| Runtime migration to Go backend | In Progress | Go service and health endpoint are active |
-| Discord OAuth auth flow | Not Started | Contract defined, endpoint not finalized |
-| Guild and bot onboarding | Not Started | Planned in design docs |
+| Runtime migration to Go backend | Implemented | Go service, health endpoint, full auth + guild routes active |
+| Discord OAuth auth flow | Implemented | Full flow: URL generation, code exchange, JWT issuance, session validation |
+| Guild and bot onboarding | Implemented | Guild linking, Discord membership validation, bot invite URL, install confirmation |
 | Member sync and role eligibility | Not Started | Planned domain module |
 | Event operations | Not Started | Planned domain module |
 | Analytics counters and tenure | Not Started | Planned domain module |
 | Notifications (anniversary/reminders) | Not Started | Planned background workflow |
-| Frontend integration with new API domains | In Progress | Base app exists, domain APIs pending |
+| Frontend integration with new API domains | In Progress | Auth and guild domains complete; events, members, analytics pending |
 
 ## Migration Compliance Risks
 

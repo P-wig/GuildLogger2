@@ -51,6 +51,9 @@ func (r *MongoGuildRepository) Create(ctx context.Context, guild *Guild) error {
 	}
 
 	_, err := db.GuildsCollection(r.database).InsertOne(ctx, guild)
+	if mongo.IsDuplicateKeyError(err) {
+		return ErrGuildAlreadyExists
+	}
 	return err
 }
 

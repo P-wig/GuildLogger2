@@ -2,8 +2,11 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+var ErrGuildAlreadyExists = errors.New("guild already connected")
 
 type GuildRoleType string
 

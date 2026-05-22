@@ -57,6 +57,7 @@ Frontend → POST /api/auth/logout            → client discards token from loc
 
 Query parameters:
 - `redirectUri` (required): the URI Discord will redirect back to after authorization.
+- `state` (optional): CSRF token forwarded to Discord and returned in the callback.
 
 Response (200):
 ```json
@@ -83,8 +84,8 @@ Response (200):
   "token": "signed_jwt",
   "user": {
     "discordId": "...",
-    "accessToken": "...",
-    "refreshToken": "..."
+    "createdAt": "...",
+    "updatedAt": "..."
   }
 }
 ```
@@ -127,38 +128,133 @@ Response (404): user not found.
 
 ### Guild and Bot Integration
 
-- GET /api/guilds
-- POST /api/guilds/connect
-- POST /api/guilds/{guildId}/bot/install
-- GET /api/guilds/{guildId}/members/sync-status
+All guild endpoints require `Authorization: Bearer <token>`.
 
-### Event Management
+#### GET /api/guilds
 
-- POST /api/events
-- GET /api/events
-- GET /api/events/{eventId}
-- POST /api/events/{eventId}/register
-- POST /api/events/{eventId}/unregister
+Returns guilds the authenticated user has connected to GuildLogger.
 
-### Member Analytics
+Response (200):
+```json
+{
+  "ok": true,
+  "guilds": [
+    {
+      "guildId": "...",
+      "name": "My Server",
+      "ownerDiscordId": "...",
+      "botInstalled": false,
+      "createdAt": "...",
+      "updatedAt": "..."
+    }
+  ]
+}
+```
 
-- GET /api/members/{memberId}/stats
-- GET /api/guilds/{guildId}/dashboard
+#### GET /api/guilds/discord
 
-### Notifications
+Returns the authenticated user's Discord server list fetched from Discord using their stored access token.
 
-- POST /api/notifications/events/reminders/run
-- POST /api/notifications/members/anniversaries/run
+Response (200):
+```json
+{
+  "ok": true,
+  "guilds": [
+    { "id": "...", "name": "My Server", "icon": "..." }
+  ]
+}
+```
+
+Response (401): no Discord access token stored for the user.
+Response (502): Discord API unreachable or access token expired.
+
+#### POST /api/guilds/connect
+
+Links a Discord server to the authenticated user's account. Verifies the user is a member of the guild on Discord before creating the record.
+
+Request body:
+```json
+{
+  "guildId": "discord_guild_id",
+  "name": "My Server"
+}
+```
+
+Response (200):
+```json
+{
+  "ok": true,
+  "guild": {
+    "guildId": "...",
+    "name": "My Server",
+    "ownerDiscordId": "...",
+    "botInstalled": false
+  }
+}
+```
+
+Response (403): user is not a member of the specified Discord guild.
+Response (409): guild is already connected.
+
+#### GET /api/guilds/:guildId/bot/invite-url
+
+Returns the Discord OAuth2 URL to add the bot to the specified guild. The authenticated user must be the guild owner in GuildLogger.
+
+Response (200):
+```json
+{
+  "ok": true,
+  "url": "https://discord.com/api/oauth2/authorize?..."
+}
+```
+
+Response (403): authenticated user does not own this guild.
+Response (404): guild not found.
+
+#### POST /api/guilds/:guildId/bot/install
+
+Marks the bot as installed for the specified guild. Call after the user completes the Discord bot add flow.
+
+Response (200):
+```json
+{ "ok": true }
+```
+
+Response (404): guild not found.
+
+#### GET /api/guilds/:guildId/members/sync-status
+
+Returns member sync status for a guild.
+
+Response (200):
+```json
+{
+  "ok": true,
+  "memberCount": 42,
+  "synced": true
+}
+```
+
+#### GET /api/guilds/:guildId/dashboard
+
+Returns aggregated summary data from guild, member, and event collections.
+
+Response (200):
+```json
+{
+  "ok": true,
+  "dashboard": {
+    "guild": { "..." : "..." },
+    "memberCount": 42,
+    "eventCount": 7
+  }
+}
+```
+
+Response (404): guild not found.
 
 ## Planned Endpoints (Target Contract)
 
-### Guild and Bot Integration
-
-- GET /api/guilds
-- POST /api/guilds/connect
-- POST /api/guilds/{guildId}/bot/install
-- GET /api/guilds/{guildId}/members/sync-status
-
 ### Event Management
 
 - POST /api/events
@@ -170,7 +266,6 @@ Response (404): user not found.
 ### Member Analytics
 
 - GET /api/members/{memberId}/stats
-- GET /api/guilds/{guildId}/dashboard
 
 ### Notifications
 
