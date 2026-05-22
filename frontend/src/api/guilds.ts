@@ -29,4 +29,8 @@ export const guildsApi = {
 
   connectGuild: (payload: ConnectGuildRequest) =>
     api.post<{ ok: boolean; guild: LinkedGuild }>("/guilds/connect", payload),
+  getBotInviteUrl: (guildId: string) =>
+    api.get<{ ok: boolean; url: string }>(`/guilds/${guildId}/bot/invite-url`),
+  installBot: (guildId: string) =>
+    api.post<{ ok: boolean }>(`/guilds/${guildId}/bot/install`),
 };

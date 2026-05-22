@@ -176,3 +176,12 @@ func (c *OAuthClient) GetUserGuilds(ctx context.Context, accessToken string) ([]
 	}
 	return guilds, nil
 }
+
+// BotInviteURL builds the Discord OAuth2 URL to add the bot to a specific guild.
+func (c *OAuthClient) BotInviteURL(guildID string) string {
+	params := url.Values{}
+	params.Set("client_id", c.clientID)
+	params.Set("scope", "bot applications.commands")
+	params.Set("guild_id", guildID)
+	return c.authBaseURL + "/authorize?" + params.Encode()
+}

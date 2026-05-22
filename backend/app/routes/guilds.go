@@ -31,6 +31,7 @@ func RegisterGuildsProtected(
 	g.POST("/guilds/:guildId/bot/install", installBotHandler(guildRepo))
 	g.GET("/guilds/:guildId/members/sync-status", memberSyncStatusHandler(memberRepo))
 	g.GET("/guilds/:guildId/dashboard", guildDashboardHandler(guildRepo, memberRepo, eventRepo))
+	g.GET("/guilds/:guildId/bot/invite-url", botInviteURLHandler(guildRepo, oauthClient))
 }
 
 func listGuildsHandler(guildRepo repositories.GuildRepository) echo.HandlerFunc {
@@ -112,6 +113,11 @@ func connectGuildHandler(guildRepo repositories.GuildRepository, userRepo reposi
 
 func installBotHandler(guildRepo repositories.GuildRepository) echo.HandlerFunc {
 	return func(c echo.Context) error {
+		claims, ok := c.Get("user").(*session.Claims)
+		if !ok || claims == nil {
+			return c.JSON(http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "missing session"})
+		}
+
 		guildID := strings.TrimSpace(c.Param("guildId"))
 		if guildID == "" {
 			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "guildId is required"})
@@ -123,6 +129,9 @@ func installBotHandler(guildRepo repositories.GuildRepository) echo.HandlerFunc 
 		}
 		if guild == nil {
 			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "guild not found"})
+		}
+		if guild.OwnerDiscordID != claims.DiscordID {
+			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "you do not own this guild"})
 		}
 
 		if err := guildRepo.SetBotInstalled(c.Request().Context(), guildID); err != nil {
@@ -212,5 +221,32 @@ func listDiscordGuildsHandler(userRepo repositories.UserRepository, oauthClient 
 		}
 
 		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true, "guilds": guilds})
+	}
+}
+
+func botInviteURLHandler(guildRepo repositories.GuildRepository, oauthClient *discord.OAuthClient) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		claims, ok := c.Get("user").(*session.Claims)
+		if !ok || claims == nil {
+			return c.JSON(http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "missing session"})
+		}
+
+		guildID := strings.TrimSpace(c.Param("guildId"))
+		if guildID == "" {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "guildId is required"})
+		}
+
+		guild, err := guildRepo.FindByGuildID(c.Request().Context(), guildID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
+		}
+		if guild == nil {
+			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "guild not found"})
+		}
+		if guild.OwnerDiscordID != claims.DiscordID {
+			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "you do not own this guild"})
+		}
+
+		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true, "url": oauthClient.BotInviteURL(guildID)})
 	}
 }
