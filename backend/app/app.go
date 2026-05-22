@@ -136,6 +136,8 @@ func CreateApp() (*echo.Echo, func() error, error) {
 		cfg.DiscordOAuthScopes,
 	)
 
+	botClient := discord.NewBotClient(cfg.DiscordBotToken, cfg.DiscordAPIBaseURL)
+
 	// jwtMiddleware guards any route group that requires an authenticated session.
 	// Routes registered on `protected` will reject requests without a valid JWT.
 	jwtMiddleware := appmiddleware.JWTMiddleware(cfg)
@@ -149,7 +151,7 @@ func CreateApp() (*echo.Echo, func() error, error) {
 	// Protected routes: JWT middleware is enforced by the `protected` group.
 	// Add new authenticated endpoints here as new route files are created.
 	routes.RegisterAuthProtected(protected, userRepo)
-	routes.RegisterGuildsProtected(protected, guildRepo, memberRepo, eventsRepo, userRepo, oauthClient)
+	routes.RegisterGuildsProtected(protected, guildRepo, memberRepo, eventsRepo, userRepo, oauthClient, botClient)
 	routes.RegisterEventsProtected(protected, eventsRepo)
 	routes.RegisterMembersProtected(protected, memberRepo)
 

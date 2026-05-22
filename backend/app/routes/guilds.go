@@ -24,11 +24,13 @@ func RegisterGuildsProtected(
 	eventRepo repositories.EventRepository,
 	userRepo repositories.UserRepository,
 	oauthClient *discord.OAuthClient,
+	botClient *discord.BotClient,
 ) {
 	g.GET("/guilds", listGuildsHandler(guildRepo))
 	g.GET("/guilds/discord", listDiscordGuildsHandler(userRepo, oauthClient))
 	g.POST("/guilds/connect", connectGuildHandler(guildRepo, userRepo, oauthClient))
 	g.POST("/guilds/:guildId/bot/install", installBotHandler(guildRepo))
+	g.POST("/guilds/:guildId/bot/verify", verifyBotInstallHandler(guildRepo, botClient))
 	g.GET("/guilds/:guildId/members/sync-status", memberSyncStatusHandler(memberRepo))
 	g.GET("/guilds/:guildId/dashboard", guildDashboardHandler(guildRepo, memberRepo, eventRepo))
 	g.GET("/guilds/:guildId/bot/invite-url", botInviteURLHandler(guildRepo, oauthClient))
@@ -142,6 +144,47 @@ func installBotHandler(guildRepo repositories.GuildRepository) echo.HandlerFunc 
 	}
 }
 
+func verifyBotInstallHandler(guildRepo repositories.GuildRepository, botClient *discord.BotClient) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		claims, ok := c.Get("user").(*session.Claims)
+		if !ok || claims == nil {
+			return c.JSON(http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "missing session"})
+		}
+
+		guildID := strings.TrimSpace(c.Param("guildId"))
+		if guildID == "" {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "guildId is required"})
+		}
+
+		ctx := c.Request().Context()
+
+		guild, err := guildRepo.FindByGuildID(ctx, guildID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
+		}
+		if guild == nil {
+			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "guild not found"})
+		}
+		if guild.OwnerDiscordID != claims.DiscordID {
+			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "you do not own this guild"})
+		}
+
+		installed, err := botClient.VerifyBotInGuild(ctx, guildID)
+		if err != nil {
+			return c.JSON(http.StatusBadGateway, map[string]interface{}{"ok": false, "error": "failed to verify bot installation"})
+		}
+		if !installed {
+			return c.JSON(http.StatusUnprocessableEntity, map[string]interface{}{"ok": false, "error": "bot is not installed in this guild"})
+		}
+
+		if err := guildRepo.SetBotInstalled(ctx, guildID); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to mark bot as installed"})
+		}
+
+		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true})
+	}
+}
+
 func memberSyncStatusHandler(memberRepo repositories.MemberRepository) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		guildID := strings.TrimSpace(c.Param("guildId"))
@@ -247,6 +290,7 @@ func botInviteURLHandler(guildRepo repositories.GuildRepository, oauthClient *di
 			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "you do not own this guild"})
 		}
 
-		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true, "url": oauthClient.BotInviteURL(guildID)})
+		redirectURI := c.QueryParam("redirectUri")
+		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true, "url": oauthClient.BotInviteURL(guildID, redirectURI)})
 	}
 }

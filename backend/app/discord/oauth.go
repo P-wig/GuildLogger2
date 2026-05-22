@@ -178,10 +178,19 @@ func (c *OAuthClient) GetUserGuilds(ctx context.Context, accessToken string) ([]
 }
 
 // BotInviteURL builds the Discord OAuth2 URL to add the bot to a specific guild.
-func (c *OAuthClient) BotInviteURL(guildID string) string {
+//
+// When redirectURI is provided, Discord will redirect back to that URI after
+// the user authorizes the bot, appending ?guild_id=...&code=... as query params.
+// This enables the app to auto-verify installation instead of requiring a manual
+// confirmation step. When redirectURI is empty, no redirect occurs.
+func (c *OAuthClient) BotInviteURL(guildID, redirectURI string) string {
 	params := url.Values{}
 	params.Set("client_id", c.clientID)
 	params.Set("scope", "bot applications.commands")
 	params.Set("guild_id", guildID)
+	if redirectURI != "" {
+		params.Set("redirect_uri", redirectURI)
+		params.Set("response_type", "code")
+	}
 	return c.authBaseURL + "/authorize?" + params.Encode()
 }
