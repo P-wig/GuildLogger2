@@ -233,3 +233,22 @@ func (r *MongoGuildRepository) SetBotInstalled(ctx context.Context, guildID stri
 	)
 	return err
 }
+
+func (r *MongoGuildRepository) SetBotInstalledWithRoles(ctx context.Context, guildID string, roles []GuildRole) error {
+	if roles == nil {
+		roles = []GuildRole{}
+	}
+
+	now := time.Now()
+	_, err := db.GuildsCollection(r.database).UpdateOne(
+		ctx,
+		bson.M{"guildId": guildID},
+		bson.M{"$set": bson.M{
+			"botInstalled":   true,
+			"botInstalledAt": now,
+			"roles":          roles,
+			"updatedAt":      now,
+		}},
+	)
+	return err
+}

@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -80,4 +81,41 @@ func (c *BotClient) VerifyBotInGuild(ctx context.Context, guildID string) (bool,
 	}
 
 	return false, fmt.Errorf("discord guild verification failed: status %d body %s", resp.StatusCode, string(raw))
+}
+
+type DiscordRole struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Position int    `json:"position"`
+	Managed  bool   `json:"managed"`
+}
+
+func (c *BotClient) GetGuildRoles(ctx context.Context, guildID string) ([]DiscordRole, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiBaseURL+"/guilds/"+guildID+"/roles", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bot "+c.botToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("discord get guild roles failed: status %d body %s", resp.StatusCode, string(raw))
+	}
+
+	var roles []DiscordRole
+	if err := json.Unmarshal(raw, &roles); err != nil {
+		return nil, err
+	}
+
+	return roles, nil
 }
