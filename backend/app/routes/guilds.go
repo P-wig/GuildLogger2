@@ -177,7 +177,24 @@ func verifyBotInstallHandler(guildRepo repositories.GuildRepository, botClient *
 			return c.JSON(http.StatusUnprocessableEntity, map[string]interface{}{"ok": false, "error": "bot is not installed in this guild"})
 		}
 
-		if err := guildRepo.SetBotInstalled(ctx, guildID); err != nil {
+		discordRoles, err := botClient.GetGuildRoles(ctx, guildID)
+		if err != nil {
+			return c.JSON(http.StatusBadGateway, map[string]interface{}{"ok": false, "error": "failed to fetch guild roles"})
+		}
+
+		roles := make([]repositories.GuildRole, 0, len(discordRoles))
+		for _, dr := range discordRoles {
+			roles = append(roles, repositories.GuildRole{
+				DiscordRoleID:  dr.ID,
+				Position:       dr.Position,
+				Type:           repositories.GuildRoleTypeDefault,
+				AppPermissions: []string{},
+				Managed:        dr.Managed,
+				IsDefault:      dr.Name == "@everyone",
+			})
+		}
+
+		if err := guildRepo.SetBotInstalledWithRoles(ctx, guildID, roles); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to mark bot as installed"})
 		}
 

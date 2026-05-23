@@ -70,6 +70,7 @@ type GuildRepository interface {
 
 	// Bot installation
 	SetBotInstalled(ctx context.Context, guildID string) error
+	SetBotInstalledWithRoles(ctx context.Context, guildID string, roles []GuildRole) error
 
 	// Role operations
 	UpsertRole(ctx context.Context, guildID string, role GuildRole) error
