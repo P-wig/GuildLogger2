@@ -14,17 +14,17 @@ services:
     ports:
       - "5001:5001"
     environment:
-      - PORT=5001
+      - PORT=${PORT}
       - MONGO_URI=mongodb://mongo:27017
-      - MONGO_DB=GuildLoggerDB
-      - CORS_ORIGINS=http://localhost:5173
+      - MONGO_DB=${MONGO_DB}
+      - CORS_ORIGINS=${CORS_ORIGINS}
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
       - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
       - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI}
       - SECRET_KEY=${SECRET_KEY}
-      - DISCORD_AUTH_BASE_URL=https://discord.com/api/oauth2
-      - DISCORD_API_BASE_URL=https://discord.com/api/v10
-      - "DISCORD_OAUTH_SCOPES=identify guilds"
+      - DISCORD_AUTH_BASE_URL=${DISCORD_AUTH_BASE_URL}
+      - DISCORD_API_BASE_URL=${DISCORD_API_BASE_URL}
+      - DISCORD_OAUTH_SCOPES=${DISCORD_OAUTH_SCOPES}
     depends_on:
       - mongo
 
