@@ -32,6 +32,7 @@ func RegisterGuildsProtected(
 	g.POST("/guilds/:guildId/bot/install", installBotHandler(guildRepo))
 	g.POST("/guilds/:guildId/bot/verify", verifyBotInstallHandler(guildRepo, botClient))
 	g.GET("/guilds/:guildId/members/sync-status", memberSyncStatusHandler(memberRepo))
+	g.GET("/guilds/:guildId/members/sync", syncMembersHandler(guildRepo, memberRepo, botClient))
 	g.GET("/guilds/:guildId/dashboard", guildDashboardHandler(guildRepo, memberRepo, eventRepo))
 	g.GET("/guilds/:guildId/bot/invite-url", botInviteURLHandler(guildRepo, oauthClient))
 }
@@ -219,6 +220,55 @@ func memberSyncStatusHandler(memberRepo repositories.MemberRepository) echo.Hand
 			"memberCount": len(members),
 			"synced":      len(members) > 0,
 		})
+	}
+}
+
+func syncMembersHandler(guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository, botClient *discord.BotClient) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		claims, ok := c.Get("user").(*session.Claims)
+		if !ok || claims == nil {
+			return c.JSON(http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "missing session"})
+		}
+
+		guildID := strings.TrimSpace(c.Param("guildId"))
+		if guildID == "" {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "guildId is required"})
+		}
+
+		ctx := c.Request().Context()
+
+		guild, err := guildRepo.FindByGuildID(ctx, guildID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
+		}
+		if guild == nil {
+			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "guild not found"})
+		}
+		if guild.OwnerDiscordID != claims.DiscordID {
+			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "you do not own this guild"})
+		}
+
+		discordMembers, err := botClient.GetGuildMembers(ctx, guildID)
+		if err != nil {
+			return c.JSON(http.StatusBadGateway, map[string]interface{}{"ok": false, "error": "failed to fetch guild members from Discord"})
+		}
+
+		synced := 0
+		for _, dm := range discordMembers {
+			if dm.User == nil || dm.User.ID == "" {
+				continue
+			}
+			if err := memberRepo.Upsert(ctx, &repositories.Member{
+				GuildID:   guildID,
+				DiscordID: dm.User.ID,
+				RoleIDs:   dm.Roles,
+			}); err != nil {
+				return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to upsert member"})
+			}
+			synced++
+		}
+
+		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true, "synced": synced})
 	}
 }
 

@@ -119,3 +119,60 @@ func (c *BotClient) GetGuildRoles(ctx context.Context, guildID string) ([]Discor
 
 	return roles, nil
 }
+
+type DiscordMember struct {
+	User *struct {
+		ID string `json:"id"`
+	} `json:"user"`
+	Roles    []string  `json:"roles"`
+	JoinedAt time.Time `json:"joined_at"`
+}
+
+func (c *BotClient) GetGuildMembers(ctx context.Context, guildID string) ([]DiscordMember, error) {
+	const limit = 1000
+	var all []DiscordMember
+	after := ""
+
+	for {
+		rawURL := c.apiBaseURL + "/guilds/" + guildID + "/members?limit=1000"
+		if after != "" {
+			rawURL += "&after=" + after
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bot "+c.botToken)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		raw, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("discord get guild members failed: status %d body %s", resp.StatusCode, string(raw))
+		}
+
+		var page []DiscordMember
+		if err := json.Unmarshal(raw, &page); err != nil {
+			return nil, err
+		}
+
+		all = append(all, page...)
+
+		if len(page) < limit {
+			break
+		}
+
+		after = page[len(page)-1].User.ID
+	}
+
+	return all, nil
+}
