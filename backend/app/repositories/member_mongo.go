@@ -56,9 +56,7 @@ func (r *MongoMemberRepository) Create(ctx context.Context, member *Member) erro
 
 func (r *MongoMemberRepository) Upsert(ctx context.Context, member *Member) error {
 	now := time.Now()
-	if member.RoleIDs == nil {
-		member.RoleIDs = []string{}
-	}
+	normalizeMemberDefaults(member)
 
 	_, err := db.MembersCollection(r.database).UpdateOne(
 		ctx,
@@ -68,8 +66,10 @@ func (r *MongoMemberRepository) Upsert(ctx context.Context, member *Member) erro
 		},
 		bson.M{
 			"$set": bson.M{
-				"roleIds":   member.RoleIDs,
-				"updatedAt": now,
+				"roleIds":      member.RoleIDs,
+				"status":       member.Status,
+				"rankedRoleId": member.RankedRoleID,
+				"updatedAt":    now,
 			},
 			"$setOnInsert": bson.M{
 				"guildId":   member.GuildID,

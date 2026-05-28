@@ -248,6 +248,17 @@ func syncMembersHandler(guildRepo repositories.GuildRepository, memberRepo repos
 			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "you do not own this guild"})
 		}
 
+		// Derive filter and rank data from guild config once, before the member loop.
+		activeRoleID := guild.NotificationConfig.StatusRoles.ActiveRoleID
+
+		// Ranked roles are stored sorted by position descending (highest first) from UpsertRole.
+		var rankedRoles []repositories.GuildRole
+		for _, r := range guild.Roles {
+			if r.Type == repositories.GuildRoleTypeRanked {
+				rankedRoles = append(rankedRoles, r)
+			}
+		}
+
 		discordMembers, err := botClient.GetGuildMembers(ctx, guildID)
 		if err != nil {
 			return c.JSON(http.StatusBadGateway, map[string]interface{}{"ok": false, "error": "failed to fetch guild members from Discord"})
@@ -258,10 +269,35 @@ func syncMembersHandler(guildRepo repositories.GuildRepository, memberRepo repos
 			if dm.User == nil || dm.User.ID == "" {
 				continue
 			}
+
+			// O(1) role lookup set for this member.
+			memberRoleSet := make(map[string]struct{}, len(dm.Roles))
+			for _, rid := range dm.Roles {
+				memberRoleSet[rid] = struct{}{}
+			}
+
+			// Skip unverified members when an active role is configured.
+			if activeRoleID != "" {
+				if _, has := memberRoleSet[activeRoleID]; !has {
+					continue
+				}
+			}
+
+			// Resolve highest-position ranked role the member holds.
+			rankedRoleID := ""
+			for _, rr := range rankedRoles {
+				if _, has := memberRoleSet[rr.DiscordRoleID]; has {
+					rankedRoleID = rr.DiscordRoleID
+					break
+				}
+			}
+
 			if err := memberRepo.Upsert(ctx, &repositories.Member{
-				GuildID:   guildID,
-				DiscordID: dm.User.ID,
-				RoleIDs:   dm.Roles,
+				GuildID:      guildID,
+				DiscordID:    dm.User.ID,
+				RoleIDs:      dm.Roles,
+				Status:       repositories.MemberStatusActive,
+				RankedRoleID: rankedRoleID,
 			}); err != nil {
 				return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to upsert member"})
 			}
