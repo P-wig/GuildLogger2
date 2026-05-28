@@ -167,11 +167,15 @@ func (c *BotClient) GetGuildMembers(ctx context.Context, guildID string) ([]Disc
 
 		all = append(all, page...)
 
-		if len(page) < limit {
+		if len(page) < limit { // handles 0, handles partial page
 			break
 		}
 
-		after = page[len(page)-1].User.ID
+		last := page[len(page)-1] // safe: len >= 1000 here
+		if last.User == nil {
+			break
+		}
+		after = last.User.ID
 	}
 
 	return all, nil

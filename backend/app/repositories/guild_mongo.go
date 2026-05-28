@@ -90,6 +90,9 @@ func (r *MongoGuildRepository) Update(ctx context.Context, guildID string, guild
 		bson.M{"guildId": guildID},
 		guild,
 	)
+	if errors.Is(result.Err(), mongo.ErrNoDocuments) {
+		return ErrGuildNotFound
+	}
 	return result.Err()
 }
 
@@ -104,7 +107,7 @@ func (r *MongoGuildRepository) UpsertRole(ctx context.Context, guildID string, r
 		return err
 	}
 	if guild == nil {
-		return mongo.ErrNoDocuments
+		return ErrGuildNotFound
 	}
 
 	found := false
@@ -134,7 +137,7 @@ func (r *MongoGuildRepository) RemoveRole(ctx context.Context, guildID, discordR
 		return err
 	}
 	if guild == nil {
-		return mongo.ErrNoDocuments
+		return ErrGuildNotFound
 	}
 
 	newRoles := make([]GuildRole, 0, len(guild.Roles))
@@ -155,7 +158,7 @@ func (r *MongoGuildRepository) ReorderRoles(ctx context.Context, guildID string,
 		return err
 	}
 	if guild == nil {
-		return mongo.ErrNoDocuments
+		return ErrGuildNotFound
 	}
 
 	// Assign positions based on order from top (index 0) to bottom.
@@ -186,7 +189,7 @@ func (r *MongoGuildRepository) UpdateStatusRoleConfig(ctx context.Context, guild
 		return err
 	}
 	if guild == nil {
-		return mongo.ErrNoDocuments
+		return ErrGuildNotFound
 	}
 
 	guild.NotificationConfig.StatusRoles = cfg
@@ -201,7 +204,7 @@ func (r *MongoGuildRepository) UpdateMilestoneNotificationConfig(ctx context.Con
 		return err
 	}
 	if guild == nil {
-		return mongo.ErrNoDocuments
+		return ErrGuildNotFound
 	}
 
 	if cfg.AnniversaryYears == nil {
