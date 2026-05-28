@@ -7,6 +7,7 @@ import (
 )
 
 var ErrGuildAlreadyExists = errors.New("guild already connected")
+var ErrGuildNotFound = errors.New("guild not found")
 
 type GuildRoleType string
 

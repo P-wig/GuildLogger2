@@ -48,7 +48,7 @@ func (r *MongoMemberRepository) Create(ctx context.Context, member *Member) erro
 	if member.RankedRoleID == "" {
 		member.RankedRoleID = ""
 	}
-	member.NotificationsOptOut = member.NotificationsOptOut // explicit no-op for clarity
+	member.NotificationsOptOut = member.NotificationsOptOut
 
 	_, err := db.MembersCollection(r.database).InsertOne(ctx, member)
 	return err
@@ -80,6 +80,9 @@ func (r *MongoMemberRepository) Upsert(ctx context.Context, member *Member) erro
 		options.Update().SetUpsert(true),
 	)
 
+	if mongo.IsDuplicateKeyError(err) {
+		return nil
+	}
 	return err
 }
 
