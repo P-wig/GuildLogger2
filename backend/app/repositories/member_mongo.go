@@ -43,12 +43,9 @@ func (r *MongoMemberRepository) Create(ctx context.Context, member *Member) erro
 	now := time.Now()
 	normalizeMemberDefaults(member)
 
-	member.JoinedAt = now
+	member.FirstSyncedAt = now
+	member.LastSyncedAt = now
 	member.UpdatedAt = now
-	if member.RankedRoleID == "" {
-		member.RankedRoleID = ""
-	}
-	member.NotificationsOptOut = member.NotificationsOptOut
 
 	_, err := db.MembersCollection(r.database).InsertOne(ctx, member)
 	return err
@@ -69,12 +66,14 @@ func (r *MongoMemberRepository) Upsert(ctx context.Context, member *Member) erro
 				"roleIds":      member.RoleIDs,
 				"status":       member.Status,
 				"rankedRoleId": member.RankedRoleID,
+				"lastSyncedAt": now,
 				"updatedAt":    now,
 			},
 			"$setOnInsert": bson.M{
-				"guildId":   member.GuildID,
-				"discordId": member.DiscordID,
-				"joinedAt":  now,
+				"guildId":         member.GuildID,
+				"discordId":       member.DiscordID,
+				"discordJoinedAt": member.DiscordJoinedAt,
+				"firstSyncedAt":   now,
 			},
 		},
 		options.Update().SetUpsert(true),
@@ -190,19 +189,31 @@ func (r *MongoMemberRepository) GetStats(ctx context.Context, guildID, discordID
 	return &MemberStats{
 		HostedCount:       result.HostedCount,
 		ParticipatedCount: result.ParticipatedCount,
-		JoinedAt:          member.JoinedAt,
+		DiscordJoinedAt:   member.DiscordJoinedAt,
+		FirstSyncedAt:     member.FirstSyncedAt,
+		DeactivatedAt:     member.DeactivatedAt,
 	}, nil
 }
 
 func (r *MongoMemberRepository) UpdateStatusAndRank(ctx context.Context, guildID, discordID string, status MemberStatus, rankedRoleID string) error {
+	now := time.Now()
+
+	fields := bson.M{
+		"status":       status,
+		"rankedRoleId": rankedRoleID,
+		"updatedAt":    now,
+	}
+
+	if status == MemberStatusInactive {
+		fields["deactivatedAt"] = now
+	} else {
+		fields["deactivatedAt"] = nil
+	}
+
 	_, err := db.MembersCollection(r.database).UpdateOne(
 		ctx,
 		bson.M{"guildId": guildID, "discordId": discordID},
-		bson.M{"$set": bson.M{
-			"status":       status,
-			"rankedRoleId": rankedRoleID,
-			"updatedAt":    time.Now(),
-		}},
+		bson.M{"$set": fields},
 	)
 	return err
 }
