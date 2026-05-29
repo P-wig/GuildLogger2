@@ -323,11 +323,12 @@ func syncMembersHandler(guildRepo repositories.GuildRepository, memberRepo repos
 			}
 
 			if err := memberRepo.Upsert(ctx, &repositories.Member{
-				GuildID:      guildID,
-				DiscordID:    dm.User.ID,
-				RoleIDs:      dm.Roles,
-				Status:       repositories.MemberStatusActive,
-				RankedRoleID: rankedRoleID,
+				GuildID:         guildID,
+				DiscordID:       dm.User.ID,
+				RoleIDs:         dm.Roles,
+				Status:          repositories.MemberStatusActive,
+				RankedRoleID:    rankedRoleID,
+				DiscordJoinedAt: dm.JoinedAt,
 			}); err != nil {
 				return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to upsert member"})
 			}
