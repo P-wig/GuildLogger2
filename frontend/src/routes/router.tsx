@@ -2,7 +2,7 @@ import { createBrowserRouter } from "react-router";
 import { AuthRoute } from "./AuthRoute";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { AppLayout } from "../layouts";
-import { Account, Auth, Home, Welcome, Guilds, Events } from "../pages";
+import { Account, Auth, Home, Welcome, Guilds, Events, GuildDashboard } from "../pages";
 
 export const router = createBrowserRouter([
   {
@@ -27,6 +27,7 @@ export const router = createBrowserRouter([
           { path: "account", element: <Account /> },
           { path: "guilds", element: <Guilds /> },
           { path: "events", element: <Events /> },
+          { path: "guilds/:guildId", element: <GuildDashboard /> },
         ],
       },
     ],

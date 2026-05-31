@@ -66,18 +66,35 @@ MongoDB Driver & Database
 ## Data Design
 
 Primary identifiers:
+- `guildId` — Discord guild snowflake ID
+- `discordId` — Discord user snowflake ID
+- `eventId` — MongoDB ObjectID
 
-- guild_id
-- user_id
-- event_id
+### Member Lifecycle Fields
 
-Collections are separated by concern (identity, guild config, events, participation, notifications).
+The `Member` document tracks the full lifecycle of a guild member:
 
-## Key Workflows
+| Field | Type | Description |
+|---|---|---|
+| `discordJoinedAt` | time | When the member joined the Discord guild (from Discord API) |
+| `firstSyncedAt` | time | When GuildLogger first recorded this member |
+| `lastSyncedAt` | time | Updated on every sync pass that confirms the member is present |
+| `deactivatedAt` | *time (nullable) | Set when status transitions to `inactive`; cleared on reactivation |
+| `status` | string | `active` or `inactive` |
+| `rankedRoleId` | string | The highest-position ranked role the member holds |
+
+### Error Sentinels
+
+Repositories expose typed error sentinels for expected domain failures:
+
+- `ErrGuildAlreadyExists` — returned by `Create` when a guild with the same `guildId` already exists
+- `ErrGuildNotFound` — returned by `Update` and all read-modify-write methods when the guild document is missing
+
+### Key Workflows
 
 1. Discord OAuth login
 2. Guild connect and bot installation
-3. Member sync and eligibility checks
+3. Member sync: fetch from Discord → filter by active role → resolve ranked role → upsert → deactivate departed members
 4. Event create/register/unregister
 5. Scheduled reminders and anniversary notifications
 

@@ -220,6 +220,44 @@ Response (200):
 { "ok": true }
 ```
 
+Response (403): guild not found.
+
+#### GET /api/guilds/:guildId/bot/verify
+
+Returns the bot's verification status for the specified guild.
+
+Response (200):
+```json
+{
+  "ok": true,
+  "verified": true
+}
+```
+
+Response (404): guild not found.
+
+#### POST /api/guilds/:guildId/members/sync
+
+Synchronizes members of the guild. Returns the number of members processed and the number of members that were not synced.
+
+Request body:
+```json
+{
+  "guildId": "discord_guild_id",
+  "name": "My Server"
+}
+```
+
+Response (200):
+```json
+{
+  "ok": true,
+  "memberCount": 42,
+  "synced": true
+}
+```
+
+Response (403): user is not a member of the specified Discord guild.
 Response (404): guild not found.
 
 #### GET /api/guilds/:guildId/members/sync-status
@@ -234,6 +272,9 @@ Response (200):
   "synced": true
 }
 ```
+
+Response (403): user is not a member of the specified Discord guild.
+Response (404): guild not found.
 
 #### GET /api/guilds/:guildId/dashboard
 
@@ -302,6 +343,8 @@ Error shape:
 - 404: resource not found
 - 409: state conflict
 - 500: internal server error
+- 422: invalid request payload
+- 502: internal server error
 
 ## Notes
 

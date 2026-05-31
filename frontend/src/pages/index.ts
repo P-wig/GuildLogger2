@@ -4,3 +4,4 @@ export { Home } from "./Home";
 export { Welcome } from "./Welcome";
 export { Guilds } from "./Guilds";
 export { Events } from "./Events";
+export { GuildDashboard } from "./GuildDashboard";

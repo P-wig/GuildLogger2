@@ -1,6 +1,6 @@
 # GuildLogger2
 
-A full-stack web application for managing Discord guild activity, member roles, and hardware/resource tracking.
+A full-stack web application for managing Discord guild activity, and member roles
 
 ## Tech Stack
 

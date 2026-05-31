@@ -13,6 +13,7 @@ import ListItemText from "@mui/material/ListItemText";
 import Typography from "@mui/material/Typography";
 import { FormDialog } from "../components";
 import { guildsApi, type DiscordGuild, type LinkedGuild } from "../api/guilds";
+import { Link as RouterLink } from "react-router";
 
 export const Guilds = () => {
   const [linkedGuilds, setLinkedGuilds] = useState<LinkedGuild[]>([]);
@@ -152,19 +153,26 @@ export const Guilds = () => {
                 >
                   {guild.botInstalled ? "Bot installed" : "Bot not installed"}
                 </Typography>
-                {!guild.botInstalled && (
                   <Box sx={{ mt: 1, display: "flex", gap: 1 }}>
-                    <LoadingButton
+                    <Button
                       size="small"
-                      variant="outlined"
-                      loading={inviteLoadingId === guild.guildId}
-                      onClick={() => handleInstallBot(guild.guildId)}
+                      variant="contained"
+                      component={RouterLink}
+                      to={`/app/guilds/${guild.guildId}`}
                     >
-                      Install Bot
-                    </LoadingButton>
-
+                      View Dashboard
+                    </Button>
+                    {!guild.botInstalled && (
+                      <LoadingButton
+                        size="small"
+                        variant="outlined"
+                        loading={inviteLoadingId === guild.guildId}
+                        onClick={() => handleInstallBot(guild.guildId)}
+                      >
+                        Install Bot
+                      </LoadingButton>
+                    )}
                   </Box>
-                )}
               </CardContent>
             </Card>
           ))}
