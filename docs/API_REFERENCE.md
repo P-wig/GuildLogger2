@@ -220,45 +220,44 @@ Response (200):
 { "ok": true }
 ```
 
-Response (403): guild not found.
+Response (401): missing, invalid, or expired token.
+Response (403): authenticated user does not own this guild.
+Response (404): guild not found.
 
-#### GET /api/guilds/:guildId/bot/verify
+#### POST /api/guilds/:guildId/bot/verify
 
-Returns the bot's verification status for the specified guild.
+Verifies the bot is present in the guild via the Discord API and syncs guild roles into GuildLogger.
+Only the guild owner can verify. On success, the guild is marked as bot-installed with roles populated.
 
 Response (200):
 ```json
-{
-  "ok": true,
-  "verified": true
-}
+{ "ok": true }
 ```
 
+Response (401): missing, invalid, or expired token.
+Response (403): authenticated user does not own this guild.
 Response (404): guild not found.
+Response (422): bot is not currently installed in this guild.
+Response (502): Discord API unreachable or bot token invalid.
 
 #### POST /api/guilds/:guildId/members/sync
 
-Synchronizes members of the guild. Returns the number of members processed and the number of members that were not synced.
-
-Request body:
-```json
-{
-  "guildId": "discord_guild_id",
-  "name": "My Server"
-}
-```
+Synchronizes Discord guild members into GuildLogger. No request body — the guild ID is taken from the URL.
+Only the guild owner can trigger a sync.
 
 Response (200):
 ```json
 {
   "ok": true,
-  "memberCount": 42,
-  "synced": true
+  "synced": true,
+  "memberCount": 42
 }
 ```
 
-Response (403): user is not a member of the specified Discord guild.
+Response (401): missing, invalid, or expired token.
+Response (403): authenticated user does not own this guild.
 Response (404): guild not found.
+Response (502): failed to fetch members from Discord.
 
 #### GET /api/guilds/:guildId/members/sync-status
 
@@ -294,15 +293,142 @@ Response (200):
 
 Response (404): guild not found.
 
+### Event Operations
+
+All event endpoints require `Authorization: Bearer <token>`.
+
+#### POST /api/events/:eventId/start
+
+Transitions an event from `open` to `active`. Only the event host can start the event.
+
+Response (200):
+```json
+{ "ok": true }
+```
+
+Response (400): missing or invalid `eventId`.
+Response (401): missing, invalid, or expired token.
+Response (403): authenticated user is not the event host.
+Response (404): event not found.
+Response (409): event is not currently in `open` status.
+
+#### POST /api/events/:eventId/close
+
+Transitions an event from `active` to `closed` and creates a permanent EventReport record.
+Only the event host can close the event.
+
+Request body:
+```json
+{
+  "summary": "Event wrap-up notes",
+  "participantIds": ["1234567890", "0987654321"],
+  "eventDate": "2026-06-04T20:00:00Z"
+}
+```
+
+Response (200):
+```json
+{
+  "ok": true,
+  "report": {
+    "id": "...",
+    "eventId": "...",
+    "guildId": "...",
+    "hostDiscordId": "...",
+    "eventDate": "2026-06-04T20:00:00Z",
+    "participantIds": ["1234567890", "0987654321"],
+    "summary": "Event wrap-up notes",
+    "submittedAt": "..."
+  }
+}
+```
+
+Response (400): invalid request body or missing `eventId`.
+Response (401): missing, invalid, or expired token.
+Response (403): authenticated user is not the event host.
+Response (404): event not found.
+Response (409): event is not currently in `active` status.
+
+#### POST /api/events
+
+Creates a new event for a guild. The authenticated user becomes the host.
+
+Request body:
+```json
+{
+  "guildId": "...",
+  "title": "Raid Night",
+  "description": "Optional description, max 3000 characters",
+  "scheduledAt": "2026-06-10T20:00:00Z",
+  "channelId": "...",
+  "reminderEnabled": true,
+  "capacity": 20,
+  "cutoffAt": "2026-06-10T19:00:00Z"
+}
+```
+
+Response (200):
+```json
+{ "ok": true, "event": { "id": "...", "guildId": "...", "title": "Raid Night", "status": "open", "attendingIds": [] } }
+```
+
+Response (400): `guildId` or `title` missing.
+Response (401): missing, invalid, or expired token.
+
+#### GET /api/events
+
+Returns all events for a guild.
+
+Query parameters:
+- `guildId` (required)
+
+Response (200):
+```json
+{ "ok": true, "events": [] }
+```
+
+Response (400): `guildId` query parameter missing.
+Response (401): missing, invalid, or expired token.
+
+#### GET /api/events/:eventId
+
+Returns a single event by ID.
+
+Response (200):
+```json
+{ "ok": true, "event": { "id": "...", "status": "open" } }
+```
+
+Response (401): missing, invalid, or expired token.
+Response (404): event not found.
+
+#### POST /api/events/:eventId/register
+
+Registers the authenticated user for an event using their Discord ID from the session token.
+
+Response (200):
+```json
+{ "ok": true }
+```
+
+Response (401): missing, invalid, or expired token.
+Response (404): event not found.
+Response (409): already registered, registration is closed, or event is at capacity.
+
+#### POST /api/events/:eventId/unregister
+
+Unregisters the authenticated user from an event.
+
+Response (200):
+```json
+{ "ok": true }
+```
+
+Response (401): missing, invalid, or expired token.
+Response (404): event not found.
+Response (409): not registered for this event.
+
 ## Planned Endpoints (Target Contract)
-
-### Event Management
-
-- POST /api/events
-- GET /api/events
-- GET /api/events/{eventId}
-- POST /api/events/{eventId}/register
-- POST /api/events/{eventId}/unregister
 
 ### Member Analytics
 
@@ -343,8 +469,8 @@ Error shape:
 - 404: resource not found
 - 409: state conflict
 - 500: internal server error
-- 422: invalid request payload
-- 502: internal server error
+- 422: precondition not met (e.g. bot not yet installed in guild)
+- 502: upstream Discord API error
 
 ## Notes
 

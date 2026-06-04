@@ -2,48 +2,107 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
-// Event represents an event in a Discord guild where members can register to attend.
+var ErrEventNotFound = errors.New("event not found")
+var ErrAlreadyRegistered = errors.New("already registered for this event")
+var ErrNotRegistered = errors.New("not registered for this event")
+var ErrRegistrationClosed = errors.New("registration is closed for this event")
+var ErrEventAtCapacity = errors.New("event is at capacity")
+var ErrInvalidStatusTransition = errors.New("invalid event status transition")
+var ErrReportNotFound = errors.New("event report not found")
+
+type EventStatus string
+
+const (
+	EventStatusOpen   EventStatus = "open"
+	EventStatusActive EventStatus = "active"
+	EventStatusClosed EventStatus = "closed"
+)
+
+// EventReport is a permanent record submitted by the host when closing an event.
+// Stored in its own collection and outlives the source event document.
+type EventReport struct {
+	ID             string    `bson:"_id,omitempty"`
+	EventID        string    `bson:"eventId"`        // reference to the source event
+	GuildID        string    `bson:"guildId"`        // for guild-scoped queries
+	HostDiscordID  string    `bson:"hostDiscordId"`  // denormalized — event may be deleted
+	EventDate      time.Time `bson:"eventDate"`      // date the event occurred (host-provided)
+	ParticipantIDs []string  `bson:"participantIds"` // confirmed attendees
+	Summary        string    `bson:"summary"`        // post-event summary, compressed in storage
+	SubmittedAt    time.Time `bson:"submittedAt"`    // when the report was filed (server-set)
+}
+
+// Event is the aggregate root for a scheduled guild event.
+// Events may be deleted after closing; reports are the permanent record.
 type Event struct {
-	ID            string    `bson:"_id,omitempty"`
-	EventID       string    `bson:"eventId"`       // User-friendly event identifier
-	GuildID       string    `bson:"guildId"`       // Discord guild this event belongs to
-	HostDiscordID string    `bson:"hostDiscordId"` // Discord ID of the member hosting
-	AttendingIDs  []string  `bson:"attendingIds"`  // List of Discord IDs registered to attend
-	EventDate     time.Time `bson:"eventDate"`     // When the event occurs
-	Notes         string    `bson:"notes"`         // Event description/notes (max 3000 chars)
-	CreatedAt     time.Time `bson:"createdAt"`
-	UpdatedAt     time.Time `bson:"updatedAt"`
+	ID              string      `bson:"_id,omitempty"`
+	GuildID         string      `bson:"guildId"`
+	HostDiscordID   string      `bson:"hostDiscordId"`
+	Title           string      `bson:"title"`
+	Description     string      `bson:"description"`     // pre-event description, max 3000 chars
+	AttendingIDs    []string    `bson:"attendingIds"`    // Discord IDs registered to attend
+	ScheduledAt     time.Time   `bson:"scheduledAt"`     // epoch set by the host
+	Status          EventStatus `bson:"status"`          // open|active|closed
+	ChannelID       string      `bson:"channelId"`       // Discord channel the bot opens/closes
+	ReminderEnabled bool        `bson:"reminderEnabled"` // send 1hr pre-event reminder to registrants
+	Capacity        int         `bson:"capacity"`        // max registrations; 0 = unlimited
+	CutoffAt        *time.Time  `bson:"cutoffAt,omitempty"`
+	ReminderSentAt  *time.Time  `bson:"reminderSentAt,omitempty"`
+	StartedAt       *time.Time  `bson:"startedAt,omitempty"`
+	ClosedAt        *time.Time  `bson:"closedAt,omitempty"`
+	CreatedAt       time.Time   `bson:"createdAt"`
+	UpdatedAt       time.Time   `bson:"updatedAt"`
 }
 
 // EventRepository defines the contract for event data access operations.
 type EventRepository interface {
-	// Create inserts a new event.
 	Create(ctx context.Context, event *Event) error
 
-	// FindByEventID retrieves an event by its event ID.
+	// FindByID retrieves an event by its ID string.
 	// Returns (nil, nil) if not found; only returns error on DB failure.
-	FindByEventID(ctx context.Context, eventID string) (*Event, error)
+	FindByID(ctx context.Context, eventID string) (*Event, error)
 
-	// FindByGuildID retrieves all events for a specific guild.
 	FindByGuildID(ctx context.Context, guildID string) ([]Event, error)
 
-	// Update modifies an existing event.
+	// Update replaces the event document. Returns ErrEventNotFound if missing.
 	Update(ctx context.Context, eventID string, event *Event) error
 
-	// AddAttendee registers a member to attend the event.
-	// No-op if already attending (idempotent).
-	AddAttendee(ctx context.Context, eventID, discordID string) error
-
-	// RemoveAttendee unregisters a member from attending.
-	// No-op if not attending (idempotent).
-	RemoveAttendee(ctx context.Context, eventID, discordID string) error
-
-	// Delete removes an event entirely.
 	Delete(ctx context.Context, eventID string) error
 
-	// EnsureIndexes creates the necessary indexes for the event collection.
+	// AddAttendee registers a member for the event.
+	// Returns ErrAlreadyRegistered if already attending, ErrEventNotFound if event missing.
+	AddAttendee(ctx context.Context, eventID, discordID string) error
+
+	// RemoveAttendee unregisters a member from the event.
+	// Returns ErrNotRegistered if not attending, ErrEventNotFound if event missing.
+	RemoveAttendee(ctx context.Context, eventID, discordID string) error
+
+	// Start transitions the event from open → active and records StartedAt.
+	// Returns ErrInvalidStatusTransition if not currently open.
+	Start(ctx context.Context, eventID string) error
+
+	// Close transitions the event from active → closed and records ClosedAt.
+	// Returns ErrInvalidStatusTransition if not currently active.
+	// The report is created separately via EventReportRepository.
+	Close(ctx context.Context, eventID string) error
+
+	EnsureIndexes(ctx context.Context) error
+}
+
+// EventReportRepository defines the contract for permanent event report storage.
+type EventReportRepository interface {
+	// Create inserts a new report. SubmittedAt is set by the implementation.
+	Create(ctx context.Context, report *EventReport) error
+
+	// FindByEventID retrieves the report for a specific event.
+	// Returns (nil, nil) if not found.
+	FindByEventID(ctx context.Context, eventID string) (*EventReport, error)
+
+	// FindByGuildID retrieves all reports for a guild, ordered by EventDate descending.
+	FindByGuildID(ctx context.Context, guildID string) ([]EventReport, error)
+
 	EnsureIndexes(ctx context.Context) error
 }

@@ -151,7 +151,9 @@ func (r *MongoMemberRepository) GetStats(ctx context.Context, guildID, discordID
 	}
 
 	pipeline := bson.A{
-		bson.M{"$match": bson.M{"guildId": guildID}},
+		bson.M{"$match": bson.M{
+			"guildId": guildID,
+		}},
 		bson.M{"$group": bson.M{
 			"_id": nil,
 			"hostedCount": bson.M{"$sum": bson.M{
@@ -162,14 +164,14 @@ func (r *MongoMemberRepository) GetStats(ctx context.Context, guildID, discordID
 			}},
 			"participatedCount": bson.M{"$sum": bson.M{
 				"$cond": bson.A{
-					bson.M{"$in": bson.A{discordID, "$attendingIds"}},
+					bson.M{"$in": bson.A{discordID, "$participantIds"}},
 					1, 0,
 				},
 			}},
 		}},
 	}
 
-	cursor, err := db.EventsCollection(r.database).Aggregate(ctx, pipeline)
+	cursor, err := db.EventReportsCollection(r.database).Aggregate(ctx, pipeline)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +186,6 @@ func (r *MongoMemberRepository) GetStats(ctx context.Context, guildID, discordID
 			return nil, err
 		}
 	}
-	// If no events exist yet, result stays at zero values — that is correct.
 
 	return &MemberStats{
 		HostedCount:       result.HostedCount,
