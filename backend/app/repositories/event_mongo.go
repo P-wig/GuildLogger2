@@ -16,35 +16,26 @@ import (
 	"github.com/P-wig/GuildLogger2/backend/app/db"
 )
 
-// eventReportDoc is the storage representation of EventReport.
-// Summary is stored as zlib-compressed bytes.
-type eventReportDoc struct {
-	SummaryCompressed []byte    `bson:"summary"`
-	ParticipantIDs    []string  `bson:"participantIds"`
-	SubmittedAt       time.Time `bson:"submittedAt"`
-}
-
-// eventDoc is the internal MongoDB storage struct.
-// Description and report summary are stored as zlib-compressed bytes.
+// eventDoc is the internal MongoDB storage struct for Event.
+// Description is stored as zlib-compressed bytes.
 type eventDoc struct {
-	ID                    string          `bson:"_id,omitempty"`
-	GuildID               string          `bson:"guildId"`
-	HostDiscordID         string          `bson:"hostDiscordId"`
-	Title                 string          `bson:"title"`
-	DescriptionCompressed []byte          `bson:"description"`
-	AttendingIDs          []string        `bson:"attendingIds"`
-	ScheduledAt           time.Time       `bson:"scheduledAt"`
-	Status                EventStatus     `bson:"status"`
-	ChannelID             string          `bson:"channelId"`
-	ReminderEnabled       bool            `bson:"reminderEnabled"`
-	Capacity              int             `bson:"capacity"`
-	CutoffAt              *time.Time      `bson:"cutoffAt,omitempty"`
-	ReminderSentAt        *time.Time      `bson:"reminderSentAt,omitempty"`
-	StartedAt             *time.Time      `bson:"startedAt,omitempty"`
-	ClosedAt              *time.Time      `bson:"closedAt,omitempty"`
-	Report                *eventReportDoc `bson:"report,omitempty"`
-	CreatedAt             time.Time       `bson:"createdAt"`
-	UpdatedAt             time.Time       `bson:"updatedAt"`
+	ID                    string      `bson:"_id,omitempty"`
+	GuildID               string      `bson:"guildId"`
+	HostDiscordID         string      `bson:"hostDiscordId"`
+	Title                 string      `bson:"title"`
+	DescriptionCompressed []byte      `bson:"description"`
+	AttendingIDs          []string    `bson:"attendingIds"`
+	ScheduledAt           time.Time   `bson:"scheduledAt"`
+	Status                EventStatus `bson:"status"`
+	ChannelID             string      `bson:"channelId"`
+	ReminderEnabled       bool        `bson:"reminderEnabled"`
+	Capacity              int         `bson:"capacity"`
+	CutoffAt              *time.Time  `bson:"cutoffAt,omitempty"`
+	ReminderSentAt        *time.Time  `bson:"reminderSentAt,omitempty"`
+	StartedAt             *time.Time  `bson:"startedAt,omitempty"`
+	ClosedAt              *time.Time  `bson:"closedAt,omitempty"`
+	CreatedAt             time.Time   `bson:"createdAt"`
+	UpdatedAt             time.Time   `bson:"updatedAt"`
 }
 
 func zlibCompress(s string) ([]byte, error) {
@@ -73,42 +64,8 @@ func zlibDecompress(data []byte) (string, error) {
 	return string(out), nil
 }
 
-func toReportDoc(report *EventReport) (*eventReportDoc, error) {
-	if report == nil {
-		return nil, nil
-	}
-	compressed, err := zlibCompress(report.Summary)
-	if err != nil {
-		return nil, err
-	}
-	return &eventReportDoc{
-		SummaryCompressed: compressed,
-		ParticipantIDs:    report.ParticipantIDs,
-		SubmittedAt:       report.SubmittedAt,
-	}, nil
-}
-
-func fromReportDoc(doc *eventReportDoc) (*EventReport, error) {
-	if doc == nil {
-		return nil, nil
-	}
-	summary, err := zlibDecompress(doc.SummaryCompressed)
-	if err != nil {
-		return nil, err
-	}
-	return &EventReport{
-		Summary:        summary,
-		ParticipantIDs: doc.ParticipantIDs,
-		SubmittedAt:    doc.SubmittedAt,
-	}, nil
-}
-
 func toEventDoc(event *Event) (*eventDoc, error) {
 	description, err := zlibCompress(event.Description)
-	if err != nil {
-		return nil, err
-	}
-	reportDoc, err := toReportDoc(event.Report)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +85,6 @@ func toEventDoc(event *Event) (*eventDoc, error) {
 		ReminderSentAt:        event.ReminderSentAt,
 		StartedAt:             event.StartedAt,
 		ClosedAt:              event.ClosedAt,
-		Report:                reportDoc,
 		CreatedAt:             event.CreatedAt,
 		UpdatedAt:             event.UpdatedAt,
 	}, nil
@@ -136,10 +92,6 @@ func toEventDoc(event *Event) (*eventDoc, error) {
 
 func fromEventDoc(doc *eventDoc) (*Event, error) {
 	description, err := zlibDecompress(doc.DescriptionCompressed)
-	if err != nil {
-		return nil, err
-	}
-	report, err := fromReportDoc(doc.Report)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +111,6 @@ func fromEventDoc(doc *eventDoc) (*Event, error) {
 		ReminderSentAt:  doc.ReminderSentAt,
 		StartedAt:       doc.StartedAt,
 		ClosedAt:        doc.ClosedAt,
-		Report:          report,
 		CreatedAt:       doc.CreatedAt,
 		UpdatedAt:       doc.UpdatedAt,
 	}, nil
@@ -305,6 +256,57 @@ func (r *MongoEventRepository) RemoveAttendee(ctx context.Context, eventID, disc
 	}
 	if result.ModifiedCount == 0 {
 		return ErrNotRegistered
+	}
+	return nil
+}
+
+func (r *MongoEventRepository) Start(ctx context.Context, eventID string) error {
+	now := time.Now()
+	result, err := db.EventsCollection(r.database).UpdateOne(
+		ctx,
+		bson.M{"_id": eventID, "status": EventStatusOpen},
+		bson.M{"$set": bson.M{
+			"status":    EventStatusActive,
+			"startedAt": now,
+			"updatedAt": now,
+		}},
+	)
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount == 0 {
+		// Either event doesn't exist or it isn't open — distinguish by checking existence.
+		var doc eventDoc
+		err := db.EventsCollection(r.database).FindOne(ctx, bson.M{"_id": eventID}).Decode(&doc)
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return ErrEventNotFound
+		}
+		return ErrInvalidStatusTransition
+	}
+	return nil
+}
+
+func (r *MongoEventRepository) Close(ctx context.Context, eventID string) error {
+	now := time.Now()
+	result, err := db.EventsCollection(r.database).UpdateOne(
+		ctx,
+		bson.M{"_id": eventID, "status": EventStatusActive},
+		bson.M{"$set": bson.M{
+			"status":    EventStatusClosed,
+			"closedAt":  now,
+			"updatedAt": now,
+		}},
+	)
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount == 0 {
+		var doc eventDoc
+		err := db.EventsCollection(r.database).FindOne(ctx, bson.M{"_id": eventID}).Decode(&doc)
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return ErrEventNotFound
+		}
+		return ErrInvalidStatusTransition
 	}
 	return nil
 }

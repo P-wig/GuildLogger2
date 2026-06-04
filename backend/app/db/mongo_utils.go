@@ -53,3 +53,7 @@ func EventsCollection(database *mongo.Database) *mongo.Collection {
 func MembersCollection(database *mongo.Database) *mongo.Collection {
 	return database.Collection("members")
 }
+
+func EventReportsCollection(database *mongo.Database) *mongo.Collection {
+	return database.Collection("event_reports")
+}

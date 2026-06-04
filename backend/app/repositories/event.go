@@ -11,6 +11,8 @@ var ErrAlreadyRegistered = errors.New("already registered for this event")
 var ErrNotRegistered = errors.New("not registered for this event")
 var ErrRegistrationClosed = errors.New("registration is closed for this event")
 var ErrEventAtCapacity = errors.New("event is at capacity")
+var ErrInvalidStatusTransition = errors.New("invalid event status transition")
+var ErrReportNotFound = errors.New("event report not found")
 
 type EventStatus string
 
@@ -20,50 +22,46 @@ const (
 	EventStatusClosed EventStatus = "closed"
 )
 
-// EventReport is submitted by the host when closing an event.
+// EventReport is a permanent record submitted by the host when closing an event.
+// Stored in its own collection and outlives the source event document.
 type EventReport struct {
-    Summary        string    `bson:"summary"`        // post-event summary, compressed in storage
-    ParticipantIDs []string  `bson:"participantIds"` // confirmed attendees at close time
-    SubmittedAt    time.Time `bson:"submittedAt"`
+	ID             string    `bson:"_id,omitempty"`
+	EventID        string    `bson:"eventId"`        // reference to the source event
+	GuildID        string    `bson:"guildId"`        // for guild-scoped queries
+	HostDiscordID  string    `bson:"hostDiscordId"`  // denormalized — event may be deleted
+	EventDate      time.Time `bson:"eventDate"`      // date the event occurred (host-provided)
+	ParticipantIDs []string  `bson:"participantIds"` // confirmed attendees
+	Summary        string    `bson:"summary"`        // post-event summary, compressed in storage
+	SubmittedAt    time.Time `bson:"submittedAt"`    // when the report was filed (server-set)
 }
 
 // Event is the aggregate root for a scheduled guild event.
+// Events may be deleted after closing; reports are the permanent record.
 type Event struct {
-	ID              string       `bson:"_id,omitempty"`
-	GuildID         string       `bson:"guildId"`
-	HostDiscordID   string       `bson:"hostDiscordId"`
-	Title           string       `bson:"title"`
-	Description     string       `bson:"description"`     // pre-event description, max 3000 chars
-	AttendingIDs    []string     `bson:"attendingIds"`    // Discord IDs registered to attend
-	ScheduledAt     time.Time    `bson:"scheduledAt"`     // epoch set by the host
-	Status          EventStatus  `bson:"status"`          // open|active|closed
-	ChannelID       string       `bson:"channelId"`       // Discord channel the bot opens/closes
-	ReminderEnabled bool         `bson:"reminderEnabled"` // send 1hr pre-event reminder to registrants
-	Capacity        int          `bson:"capacity"`        // max registrations; 0 = unlimited
-	CutoffAt        *time.Time   `bson:"cutoffAt,omitempty"`
-	ReminderSentAt  *time.Time   `bson:"reminderSentAt,omitempty"`
-	StartedAt       *time.Time   `bson:"startedAt,omitempty"`
-	ClosedAt        *time.Time   `bson:"closedAt,omitempty"`
-	Report          *EventReport `bson:"report,omitempty"`
-	CreatedAt       time.Time    `bson:"createdAt"`
-	UpdatedAt       time.Time    `bson:"updatedAt"`
-}
-
-// Participation records a single member's registration for an event.
-// Stored in a separate collection keyed on (eventId, discordId).
-type Participation struct {
-	ID           string    `bson:"_id,omitempty"`
-	EventID      string    `bson:"eventId"`
-	GuildID      string    `bson:"guildId"`
-	DiscordID    string    `bson:"discordId"`
-	RegisteredAt time.Time `bson:"registeredAt"`
+	ID              string      `bson:"_id,omitempty"`
+	GuildID         string      `bson:"guildId"`
+	HostDiscordID   string      `bson:"hostDiscordId"`
+	Title           string      `bson:"title"`
+	Description     string      `bson:"description"`     // pre-event description, max 3000 chars
+	AttendingIDs    []string    `bson:"attendingIds"`    // Discord IDs registered to attend
+	ScheduledAt     time.Time   `bson:"scheduledAt"`     // epoch set by the host
+	Status          EventStatus `bson:"status"`          // open|active|closed
+	ChannelID       string      `bson:"channelId"`       // Discord channel the bot opens/closes
+	ReminderEnabled bool        `bson:"reminderEnabled"` // send 1hr pre-event reminder to registrants
+	Capacity        int         `bson:"capacity"`        // max registrations; 0 = unlimited
+	CutoffAt        *time.Time  `bson:"cutoffAt,omitempty"`
+	ReminderSentAt  *time.Time  `bson:"reminderSentAt,omitempty"`
+	StartedAt       *time.Time  `bson:"startedAt,omitempty"`
+	ClosedAt        *time.Time  `bson:"closedAt,omitempty"`
+	CreatedAt       time.Time   `bson:"createdAt"`
+	UpdatedAt       time.Time   `bson:"updatedAt"`
 }
 
 // EventRepository defines the contract for event data access operations.
 type EventRepository interface {
 	Create(ctx context.Context, event *Event) error
 
-	// FindByID retrieves an event by its MongoDB ObjectID string.
+	// FindByID retrieves an event by its ID string.
 	// Returns (nil, nil) if not found; only returns error on DB failure.
 	FindByID(ctx context.Context, eventID string) (*Event, error)
 
@@ -74,22 +72,37 @@ type EventRepository interface {
 
 	Delete(ctx context.Context, eventID string) error
 
+	// AddAttendee registers a member for the event.
+	// Returns ErrAlreadyRegistered if already attending, ErrEventNotFound if event missing.
+	AddAttendee(ctx context.Context, eventID, discordID string) error
+
+	// RemoveAttendee unregisters a member from the event.
+	// Returns ErrNotRegistered if not attending, ErrEventNotFound if event missing.
+	RemoveAttendee(ctx context.Context, eventID, discordID string) error
+
+	// Start transitions the event from open → active and records StartedAt.
+	// Returns ErrInvalidStatusTransition if not currently open.
+	Start(ctx context.Context, eventID string) error
+
+	// Close transitions the event from active → closed and records ClosedAt.
+	// Returns ErrInvalidStatusTransition if not currently active.
+	// The report is created separately via EventReportRepository.
+	Close(ctx context.Context, eventID string) error
+
 	EnsureIndexes(ctx context.Context) error
 }
 
-// ParticipationRepository defines the contract for event registration operations.
-type ParticipationRepository interface {
-	// Register inserts a new participation record. Returns ErrAlreadyRegistered if one exists.
-	Register(ctx context.Context, p *Participation) error
+// EventReportRepository defines the contract for permanent event report storage.
+type EventReportRepository interface {
+	// Create inserts a new report. SubmittedAt is set by the implementation.
+	Create(ctx context.Context, report *EventReport) error
 
-	// Unregister removes a participation record. Returns ErrNotRegistered if none exists.
-	Unregister(ctx context.Context, eventID, discordID string) error
+	// FindByEventID retrieves the report for a specific event.
+	// Returns (nil, nil) if not found.
+	FindByEventID(ctx context.Context, eventID string) (*EventReport, error)
 
-	FindByEventID(ctx context.Context, eventID string) ([]Participation, error)
-	CountByEventID(ctx context.Context, eventID string) (int64, error)
-
-	// IsRegistered returns true if the member has an active registration.
-	IsRegistered(ctx context.Context, eventID, discordID string) (bool, error)
+	// FindByGuildID retrieves all reports for a guild, ordered by EventDate descending.
+	FindByGuildID(ctx context.Context, guildID string) ([]EventReport, error)
 
 	EnsureIndexes(ctx context.Context) error
 }

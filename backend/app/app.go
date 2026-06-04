@@ -105,6 +105,7 @@ func CreateApp() (*echo.Echo, func() error, error) {
 	userRepo := repositories.NewMongoUserRepository(database)
 	memberRepo := repositories.NewMongoMemberRepository(database)
 	eventsRepo := repositories.NewMongoEventRepository(database)
+	eventReportRepo := repositories.NewMongoEventReportRepository(database)
 	guildRepo := repositories.NewMongoGuildRepository(database)
 
 	// Ensure required user/member/event indexes exist at startup.
@@ -122,6 +123,9 @@ func CreateApp() (*echo.Echo, func() error, error) {
 		return nil, nil, err
 	}
 	if err := eventsRepo.EnsureIndexes(idxCtx); err != nil {
+		return nil, nil, err
+	}
+	if err := eventReportRepo.EnsureIndexes(idxCtx); err != nil {
 		return nil, nil, err
 	}
 	if err := guildRepo.EnsureIndexes(idxCtx); err != nil {
@@ -152,7 +156,7 @@ func CreateApp() (*echo.Echo, func() error, error) {
 	// Add new authenticated endpoints here as new route files are created.
 	routes.RegisterAuthProtected(protected, userRepo)
 	routes.RegisterGuildsProtected(protected, guildRepo, memberRepo, eventsRepo, userRepo, oauthClient, botClient)
-	routes.RegisterEventsProtected(protected, eventsRepo)
+	routes.RegisterEventsProtected(protected, eventsRepo, eventReportRepo)
 	routes.RegisterMembersProtected(protected, memberRepo)
 
 	cleanup := func() error {
