@@ -428,16 +428,73 @@ Response (401): missing, invalid, or expired token.
 Response (404): event not found.
 Response (409): not registered for this event.
 
-## Planned Endpoints (Target Contract)
-
 ### Member Analytics
 
-- GET /api/members/{memberId}/stats
+All member endpoints require `Authorization: Bearer <token>`.
+
+#### GET /api/members/:discordId/stats
+
+Returns aggregated stats for a member within a guild. Includes hosted and participation counts derived from the `event_reports` collection, plus tenure timestamps.
+
+Query parameters:
+- `guildId` (required)
+
+Response (200):
+```json
+{
+  "ok": true,
+  "stats": {
+    "hostedCount": 5,
+    "participatedCount": 12,
+    "discordJoinedAt": "2023-06-08T00:00:00Z",
+    "firstSyncedAt": "2024-01-01T00:00:00Z",
+    "deactivatedAt": null
+  }
+}
+```
+
+Response (400): `discordId` or `guildId` missing.
+Response (401): missing, invalid, or expired token.
+Response (404): member not found.
+
+### Notifications
+
+All notification endpoints require `Authorization: Bearer <token>`.
+
+#### POST /api/notifications/members/anniversaries/run
+
+Scans guild members for Discord join date anniversaries matching the guild's configured milestone years and posts a congratulatory message to the guild's configured notification channel for each match. Respects each member's `notificationsOptOut` preference.
+
+Request body:
+```json
+{
+  "guildId": "..."
+}
+```
+
+Response (200):
+```json
+{
+  "ok": true,
+  "notified": 2,
+  "members": ["1234567890", "0987654321"],
+  "failed": []
+}
+```
+
+Response (200, disabled): `{ "ok": true, "notified": 0, "skipped": "milestone notifications are disabled for this guild" }`
+Response (200, none configured): `{ "ok": true, "notified": 0, "skipped": "no anniversary years configured" }`
+Response (400): `guildId` missing or invalid.
+Response (401): missing, invalid, or expired token.
+Response (404): guild not found.
+Response (422): no notification channel configured for this guild.
+Response (502): one or more Discord channel messages failed to send (partial success reported in `failed` array).
+
+## Planned Endpoints (Target Contract)
 
 ### Notifications
 
 - POST /api/notifications/events/reminders/run
-- POST /api/notifications/members/anniversaries/run
 
 ## Response Format Guidance
 

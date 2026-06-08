@@ -35,10 +35,11 @@ type GuildStatusRoleConfig struct {
 
 // Milestones are now notification-only (no automatic Discord role assignment).
 type GuildMilestoneNotificationConfig struct {
-	Enabled             bool  `bson:"enabled"`
-	AnniversaryYears    []int `bson:"anniversaryYears"`
-	HostedEventCounts   []int `bson:"hostedEventCounts"`
-	AttendedEventCounts []int `bson:"attendedEventCounts"`
+	Enabled               bool   `bson:"enabled"`
+	NotificationChannelID string `bson:"notificationChannelId"` // Discord channel to post anniversary messages
+	AnniversaryYears      []int  `bson:"anniversaryYears"`
+	HostedEventCounts     []int  `bson:"hostedEventCounts"`
+	AttendedEventCounts   []int  `bson:"attendedEventCounts"`
 }
 
 // GuildNotificationConfig stores guild-level communication settings.

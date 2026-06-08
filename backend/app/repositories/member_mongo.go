@@ -247,3 +247,39 @@ func (r *MongoMemberRepository) FindNotificationTargets(ctx context.Context, gui
 	}
 	return members, nil
 }
+
+func (r *MongoMemberRepository) FindAnniversaryMembers(ctx context.Context, guildID string, anniversaryYears []int) ([]Member, error) {
+	if len(anniversaryYears) == 0 {
+		return []Member{}, nil
+	}
+
+	today := time.Now().UTC()
+
+	// For each configured year, compute the exact join date window that represents
+	// that anniversary today. AddDate handles Feb 29 → Feb 28 automatically.
+	dateRanges := make([]bson.M, 0, len(anniversaryYears))
+	for _, years := range anniversaryYears {
+		target := today.AddDate(-years, 0, 0)
+		dayStart := time.Date(target.Year(), target.Month(), target.Day(), 0, 0, 0, 0, time.UTC)
+		dayEnd := dayStart.Add(24 * time.Hour)
+		dateRanges = append(dateRanges, bson.M{
+			"discordJoinedAt": bson.M{"$gte": dayStart, "$lt": dayEnd},
+		})
+	}
+
+	cursor, err := db.MembersCollection(r.database).Find(ctx, bson.M{
+		"guildId":             guildID,
+		"notificationsOptOut": false,
+		"$or":                 dateRanges,
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var members []Member
+	if err := cursor.All(ctx, &members); err != nil {
+		return nil, err
+	}
+	return members, nil
+}

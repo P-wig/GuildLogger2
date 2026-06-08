@@ -1,6 +1,7 @@
 package discord
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -179,4 +180,42 @@ func (c *BotClient) GetGuildMembers(ctx context.Context, guildID string) ([]Disc
 	}
 
 	return all, nil
+}
+
+// SendChannelMessage posts a message to a Discord channel as the bot.
+// Calls POST /channels/{channelID}/messages.
+func (c *BotClient) SendChannelMessage(ctx context.Context, channelID, content string) error {
+    body, err := json.Marshal(map[string]string{"content": content})
+    if err != nil {
+        return err
+    }
+
+    req, err := http.NewRequestWithContext(
+        ctx,
+        http.MethodPost,
+        c.apiBaseURL+"/channels/"+channelID+"/messages",
+        bytes.NewReader(body),
+    )
+    if err != nil {
+        return err
+    }
+    req.Header.Set("Authorization", "Bot "+c.botToken)
+    req.Header.Set("Content-Type", "application/json")
+
+    resp, err := c.httpClient.Do(req)
+    if err != nil {
+        return err
+    }
+    defer resp.Body.Close()
+
+    raw, err := io.ReadAll(resp.Body)
+    if err != nil {
+        return err
+    }
+
+    if resp.StatusCode != http.StatusOK {
+        return fmt.Errorf("discord send message failed: status %d body %s", resp.StatusCode, string(raw))
+    }
+
+    return nil
 }
