@@ -376,7 +376,7 @@ func guildDashboardHandler(guildRepo repositories.GuildRepository, memberRepo re
 			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "guild not found"})
 		}
 
-		members, err := memberRepo.FindByGuildID(ctx, guildID)
+		members, err := memberRepo.FindSummariesByGuildID(ctx, guildID)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
 		}
@@ -391,6 +391,7 @@ func guildDashboardHandler(guildRepo repositories.GuildRepository, memberRepo re
 			"dashboard": map[string]interface{}{
 				"guild":       guild,
 				"memberCount": len(members),
+				"members":     members,
 				"eventCount":  len(events),
 			},
 		})

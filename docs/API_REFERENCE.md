@@ -278,19 +278,30 @@ Response (404): guild not found.
 #### GET /api/guilds/:guildId/dashboard
 
 Returns aggregated summary data from guild, member, and event collections.
+Includes a queryable `members` array of projected member summaries.
 
 Response (200):
 ```json
 {
   "ok": true,
   "dashboard": {
-    "guild": { "..." : "..." },
+    "guild": { "guildId": "...", "name": "My Server", "ownerDiscordId": "...", "botInstalled": true },
     "memberCount": 42,
+    "members": [
+      {
+        "discordId": "1234567890",
+        "rankedRoleId": "...",
+        "status": "active",
+        "discordJoinedAt": "2023-06-08T00:00:00Z",
+        "roleIds": ["...", "..."]
+      }
+    ],
     "eventCount": 7
   }
 }
 ```
 
+Response (401): missing, invalid, or expired token.
 Response (404): guild not found.
 
 ### Event Operations

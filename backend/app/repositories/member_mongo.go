@@ -283,3 +283,25 @@ func (r *MongoMemberRepository) FindAnniversaryMembers(ctx context.Context, guil
 	}
 	return members, nil
 }
+
+func (r *MongoMemberRepository) FindSummariesByGuildID(ctx context.Context, guildID string) ([]MemberSummary, error) {
+	opts := options.Find().SetProjection(bson.M{
+		"discordId":       1,
+		"rankedRoleId":    1,
+		"status":          1,
+		"discordJoinedAt": 1,
+		"roleIds":         1,
+	})
+
+	cursor, err := db.MembersCollection(r.database).Find(ctx, bson.M{"guildId": guildID}, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var summaries []MemberSummary
+	if err := cursor.All(ctx, &summaries); err != nil {
+		return nil, err
+	}
+	return summaries, nil
+}
