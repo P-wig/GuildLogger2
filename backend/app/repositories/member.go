@@ -35,6 +35,14 @@ type MemberStats struct {
 	DeactivatedAt     *time.Time `json:"deactivatedAt,omitempty"`
 }
 
+type MemberSummary struct {
+	DiscordID       string       `bson:"discordId"    json:"discordId"`
+	RankedRoleID    string       `bson:"rankedRoleId" json:"rankedRoleId"`
+	Status          MemberStatus `bson:"status"       json:"status"`
+	DiscordJoinedAt time.Time    `bson:"discordJoinedAt" json:"discordJoinedAt"`
+	RoleIDs         []string     `bson:"roleIds"      json:"roleIds"`
+}
+
 type MemberRepository interface {
 	Create(ctx context.Context, member *Member) error
 	Upsert(ctx context.Context, member *Member) error
@@ -56,6 +64,10 @@ type MemberRepository interface {
 	// FindAnniversaryMembers returns opted-in members whose discordJoinedAt
 	// falls on today's month/day and whose tenure in years matches one of anniversaryYears.
 	FindAnniversaryMembers(ctx context.Context, guildID string, anniversaryYears []int) ([]Member, error)
+
+	// FindSummariesByGuildID returns a projected member list for dashboard use.
+	// Only display-relevant fields are fetched from the database.
+	FindSummariesByGuildID(ctx context.Context, guildID string) ([]MemberSummary, error)
 
 	EnsureIndexes(ctx context.Context) error
 }
