@@ -68,6 +68,15 @@ type MemberRepository interface {
 	// FindSummariesByGuildID returns a projected member list for dashboard use.
 	// Only display-relevant fields are fetched from the database.
 	FindSummariesByGuildID(ctx context.Context, guildID string) ([]MemberSummary, error)
+	// GetGuildMemberCounts returns total/active/inactive member counts for a guild.
+	GetGuildMemberCounts(ctx context.Context, guildID string) (*GuildDashboardStats, error)
+
+	// GetDashboardMemberRows returns member rows and inactive members using the configured inactivity window.
+	GetDashboardMemberRows(
+		ctx context.Context,
+		guildID string,
+		inactivityDays int,
+	) ([]GuildDashboardMemberRow, []GuildDashboardInactiveMember, error)
 
 	EnsureIndexes(ctx context.Context) error
 }

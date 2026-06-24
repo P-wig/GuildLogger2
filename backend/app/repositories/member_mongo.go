@@ -305,3 +305,78 @@ func (r *MongoMemberRepository) FindSummariesByGuildID(ctx context.Context, guil
 	}
 	return summaries, nil
 }
+
+func (r *MongoMemberRepository) GetGuildMemberCounts(ctx context.Context, guildID string) (*GuildDashboardStats, error) {
+	pipeline := bson.A{
+		bson.M{"$match": bson.M{"guildId": guildID}},
+		bson.M{"$group": bson.M{
+			"_id":          nil,
+			"totalMembers": bson.M{"$sum": 1},
+			"activeMembers": bson.M{"$sum": bson.M{
+				"$cond": bson.A{bson.M{"$eq": bson.A{"$status", MemberStatusActive}}, 1, 0},
+			}},
+			"inactiveMembers": bson.M{"$sum": bson.M{
+				"$cond": bson.A{bson.M{"$eq": bson.A{"$status", MemberStatusInactive}}, 1, 0},
+			}},
+		}},
+	}
+
+	cursor, err := db.MembersCollection(r.database).Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	stats := &GuildDashboardStats{}
+	if cursor.Next(ctx) {
+		if err := cursor.Decode(stats); err != nil {
+			return nil, err
+		}
+	}
+	return stats, nil
+}
+
+func (r *MongoMemberRepository) GetDashboardMemberRows(
+	ctx context.Context,
+	guildID string,
+	inactivityDays int,
+) ([]GuildDashboardMemberRow, []GuildDashboardInactiveMember, error) {
+	summaries, err := r.FindSummariesByGuildID(ctx, guildID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cutoff := time.Now().UTC().AddDate(0, 0, -inactivityDays)
+	rows := make([]GuildDashboardMemberRow, 0, len(summaries))
+	inactive := make([]GuildDashboardInactiveMember, 0)
+
+	for _, m := range summaries {
+		row := GuildDashboardMemberRow{
+			DiscordID:       m.DiscordID,
+			RankedRoleID:    m.RankedRoleID,
+			Status:          m.Status,
+			DiscordJoinedAt: m.DiscordJoinedAt,
+			RoleIDs:         m.RoleIDs,
+		}
+
+		rows = append(rows, row)
+
+		if m.Status == MemberStatusInactive {
+			lastActivity := m.DiscordJoinedAt
+			if lastActivity.Before(cutoff) {
+				days := int64(time.Since(lastActivity).Hours() / 24)
+				activityCopy := lastActivity
+				inactive = append(inactive, GuildDashboardInactiveMember{
+					DiscordID:         m.DiscordID,
+					RankedRoleID:      m.RankedRoleID,
+					Status:            m.Status,
+					DiscordJoinedAt:   m.DiscordJoinedAt,
+					LastActivityDate:  &activityCopy,
+					DaysSinceActivity: &days,
+				})
+			}
+		}
+	}
+
+	return rows, inactive, nil
+}

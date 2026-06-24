@@ -310,3 +310,15 @@ func (r *MongoEventRepository) Close(ctx context.Context, eventID string) error 
 	}
 	return nil
 }
+
+func (r *MongoEventRepository) GetLiveEventCounts(ctx context.Context, guildID string) (int64, error) {
+	filter := bson.M{
+		"guildId": guildID,
+		"status":  bson.M{"$in": bson.A{EventStatusOpen, EventStatusActive}},
+	}
+	count, err := db.EventsCollection(r.database).CountDocuments(ctx, filter)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
