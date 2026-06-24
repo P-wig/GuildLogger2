@@ -60,10 +60,10 @@ export const GuildDashboard = () => {
     );
   }
 
-  const { guild, memberCount, eventCount } = dashboard;
+  const { guild, stats, leaderboard, members, inactiveMembers, events } = dashboard;
 
   return (
-    <Box sx={{ maxWidth: 700, mx: "auto" }}>
+    <Box sx={{ maxWidth: 1200, mx: "auto" }}>
       <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 3 }}>
         <Button component={RouterLink} to="/app/guilds" size="small">
           ← Guilds
@@ -76,26 +76,124 @@ export const GuildDashboard = () => {
         />
       </Stack>
 
+      {/* Stats Cards */}
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 3 }} flexWrap="wrap">
+        <Card variant="outlined" sx={{ flex: 1, minWidth: 150 }}>
+          <CardContent>
+            <Typography color="text.secondary" variant="body2">
+              Total Members
+            </Typography>
+            <Typography variant="h6">{stats.totalMembers}</Typography>
+          </CardContent>
+        </Card>
+        <Card variant="outlined" sx={{ flex: 1, minWidth: 150 }}>
+          <CardContent>
+            <Typography color="text.secondary" variant="body2">
+              Active Members
+            </Typography>
+            <Typography variant="h6">{stats.activeMembers}</Typography>
+          </CardContent>
+        </Card>
+        <Card variant="outlined" sx={{ flex: 1, minWidth: 150 }}>
+          <CardContent>
+            <Typography color="text.secondary" variant="body2">
+              Total Events
+            </Typography>
+            <Typography variant="h6">{stats.totalEvents}</Typography>
+          </CardContent>
+        </Card>
+        <Card variant="outlined" sx={{ flex: 1, minWidth: 150 }}>
+          <CardContent>
+            <Typography color="text.secondary" variant="body2">
+              Closed Events
+            </Typography>
+            <Typography variant="h6">{stats.closedEvents}</Typography>
+          </CardContent>
+        </Card>
+        <Card variant="outlined" sx={{ flex: 1, minWidth: 150 }}>
+          <CardContent>
+            <Typography color="text.secondary" variant="body2">
+              Participation Rate
+            </Typography>
+            <Typography variant="h6">{stats.participationRate.toFixed(1)}%</Typography>
+          </CardContent>
+        </Card>
+      </Stack>
+
+      {/* Leaderboard Section */}
       <Card variant="outlined" sx={{ mb: 3 }}>
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            Overview
+            Top Contributors
           </Typography>
           <Divider sx={{ mb: 2 }} />
-          <Stack spacing={1}>
-            <Stack direction="row" justifyContent="space-between">
-              <Typography color="text.secondary">Members</Typography>
-              <Typography>{memberCount}</Typography>
+          {leaderboard && leaderboard.length > 0 ? (
+            <Stack spacing={1}>
+              {leaderboard.slice(0, 10).map((entry, idx) => (
+                <Stack key={idx} direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography variant="body2">
+                    #{entry.rank} - {entry.discordId.slice(0, 8)}...
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {entry.eventsHosted} hosted · {entry.eventsAttended} attended
+                  </Typography>
+                </Stack>
+              ))}
             </Stack>
-            <Stack direction="row" justifyContent="space-between">
-              <Typography color="text.secondary">Events</Typography>
-              <Typography>{eventCount}</Typography>
-            </Stack>
-            <Stack direction="row" justifyContent="space-between">
-              <Typography color="text.secondary">Connected</Typography>
-              <Typography>{new Date(guild.createdAt).toLocaleDateString()}</Typography>
-            </Stack>
-          </Stack>
+          ) : (
+            <Typography color="text.secondary">No leaderboard data available.</Typography>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Members Section */}
+      <Card variant="outlined" sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Members ({members?.length ?? 0})
+          </Typography>
+          <Divider sx={{ mb: 2 }} />
+          {members && members.length > 0 ? (
+            <Typography color="text.secondary" variant="body2">
+              Showing {Math.min(5, members.length)} of {members.length} members
+            </Typography>
+          ) : (
+            <Typography color="text.secondary">No members to display.</Typography>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Inactive Members Section */}
+      <Card variant="outlined" sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Inactive Members ({inactiveMembers?.length ?? 0})
+          </Typography>
+          <Divider sx={{ mb: 2 }} />
+          {inactiveMembers && inactiveMembers.length > 0 ? (
+            <Typography color="text.secondary" variant="body2">
+              Showing {Math.min(5, inactiveMembers.length)} of {inactiveMembers.length} inactive members
+            </Typography>
+          ) : (
+            <Typography color="text.secondary">No inactive members to display.</Typography>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Events Section */}
+      <Card variant="outlined" sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Recent Events ({events?.length ?? 0})
+          </Typography>
+          <Divider sx={{ mb: 2 }} />
+          {events && events.length > 0 ? (
+            <Typography color="text.secondary" variant="body2">
+              Showing {Math.min(5, events.length)} of {events.length} events
+            </Typography>
+          ) : (
+            <Typography color="text.secondary">No events to display.</Typography>
+          )}
         </CardContent>
       </Card>
 

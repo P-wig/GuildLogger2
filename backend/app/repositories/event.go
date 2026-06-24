@@ -89,6 +89,9 @@ type EventRepository interface {
 	// The report is created separately via EventReportRepository.
 	Close(ctx context.Context, eventID string) error
 
+	// GetLiveEventCounts returns count of open/active events from the events collection.
+	GetLiveEventCounts(ctx context.Context, guildID string) (openOrActiveCount int64, err error)
+
 	EnsureIndexes(ctx context.Context) error
 }
 
@@ -103,6 +106,19 @@ type EventReportRepository interface {
 
 	// FindByGuildID retrieves all reports for a guild, ordered by EventDate descending.
 	FindByGuildID(ctx context.Context, guildID string) ([]EventReport, error)
+
+	// GetGuildClosedEventCount returns closed-event count from event_reports (source of truth).
+	GetGuildClosedEventCount(ctx context.Context, guildID string) (int64, error)
+
+	// GetGuildMemberActivity returns hosted/attended aggregates per member for leaderboard/table enrichment.
+	GetGuildMemberActivity(ctx context.Context, guildID string) ([]GuildDashboardLeaderboardEntry, error)
+
+	// GetGuildParticipationStats returns participant slot totals and unique reported event count.
+	GetGuildParticipationStats(ctx context.Context, guildID string) (participantSlots int64, uniqueReportedEvents int64, err error)
+
+	// FindDashboardEvents retrieves and filters event reports for dashboard display.
+	// Returns rows containing event summaries and participant info, suitable for search/filter UI.
+	FindDashboardEvents(ctx context.Context, guildID string, filter GuildDashboardEventFilter) ([]GuildDashboardEventRow, error)
 
 	EnsureIndexes(ctx context.Context) error
 }

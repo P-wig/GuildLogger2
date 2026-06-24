@@ -249,8 +249,7 @@ Response (200):
 ```json
 {
   "ok": true,
-  "synced": true,
-  "memberCount": 42
+  "synced": 42
 }
 ```
 
@@ -272,37 +271,94 @@ Response (200):
 }
 ```
 
-Response (403): user is not a member of the specified Discord guild.
+Response (401): missing, invalid, or expired token.
+Response (403): authenticated user does not own this guild.
 Response (404): guild not found.
 
 #### GET /api/guilds/:guildId/dashboard
 
-Returns aggregated summary data from guild, member, and event collections.
-Includes a queryable `members` array of projected member summaries.
+Returns one aggregated dashboard payload from guild, members, events, and event_reports sources.
+
+Query parameters:
+- `leaderboardBy` (optional): `score` | `hosted` | `attended`. Default: `score`.
+- `leaderboardLimit` (optional): positive integer, max 200. Default: 10.
+- `inactiveDays` (optional): positive integer. Default: 30.
+- `eventStart` (optional): RFC3339 timestamp.
+- `eventEnd` (optional): RFC3339 timestamp, must be greater than or equal to `eventStart`.
+- `attendeeId` (optional): Discord user ID; filters events to reports containing this attendee.
+
+Stats definitions:
+- `totalMembers`, `activeMembers`, `inactiveMembers`: from `members` collection.
+- `liveEvents`: count of `events` where status is `open` or `active`.
+- `closedEvents`: count of `event_reports` (source of truth for completed events).
+- `totalEvents = liveEvents + closedEvents`.
+- `participationRate` (percentage): `(distinct members with at least one attended closed event / activeMembers) * 100`.
+- `participationRate` returns `0` when `activeMembers` is `0`.
 
 Response (200):
 ```json
 {
   "ok": true,
   "dashboard": {
-    "guild": { "guildId": "...", "name": "My Server", "ownerDiscordId": "...", "botInstalled": true },
-    "memberCount": 42,
+    "guild": {
+      "guildId": "...",
+      "name": "My Server",
+      "ownerDiscordId": "...",
+      "botInstalled": true,
+      "createdAt": "...",
+      "updatedAt": "..."
+    },
+    "stats": {
+      "totalMembers": 42,
+      "activeMembers": 38,
+      "inactiveMembers": 4,
+      "totalEvents": 17,
+      "closedEvents": 12,
+      "participationRate": 62.5
+    },
+    "leaderboard": [
+      {
+        "discordId": "1234567890",
+        "eventsHosted": 5,
+        "eventsAttended": 11,
+        "score": 21,
+        "lastHostedDate": "2026-06-10T20:00:00Z",
+        "lastAttendedDate": "2026-06-14T20:00:00Z",
+        "rank": 1
+      }
+    ],
     "members": [
       {
         "discordId": "1234567890",
         "rankedRoleId": "...",
         "status": "active",
         "discordJoinedAt": "2023-06-08T00:00:00Z",
-        "roleIds": ["...", "..."]
+        "roleIds": ["...", "..."],
+        "eventsHosted": 5,
+        "eventsAttended": 11,
+        "lastHostedDate": "2026-06-10T20:00:00Z",
+        "lastAttendedDate": "2026-06-14T20:00:00Z",
+        "isInactiveByCutoff": false
       }
     ],
-    "eventCount": 7
+    "inactiveMembers": [],
+    "events": [
+      {
+        "eventId": "...",
+        "hostDiscordId": "...",
+        "eventDate": "2026-06-14T20:00:00Z",
+        "participantIds": ["1234567890", "0987654321"],
+        "summary": "Event wrap-up notes"
+      }
+    ]
   }
 }
 ```
 
+Response (400): invalid `leaderboardBy`, `leaderboardLimit`, `inactiveDays`, `eventStart`, or `eventEnd`.
 Response (401): missing, invalid, or expired token.
 Response (404): guild not found.
+Response (500): failed to load one or more dashboard data sources.
 
 ### Event Operations
 

@@ -20,11 +20,67 @@ export type ConnectGuildRequest = {
   name: string;
 };
 
-export type GuildDashboardData = {
-  guild: LinkedGuild;
-  memberCount: number;
-  eventCount: number;
+export type GuildDashboardLeaderboardEntry = {
+  discordId: string;
+  eventsHosted: number;
+  eventsAttended: number;
+  score: number;
+  lastHostedDate?: string;
+  lastAttendedDate?: string;
+  rank: number;
 };
+
+export type GuildDashboardMemberRow = {
+  discordId: string;
+  rankedRoleId: string;
+  status: "active" | "inactive";
+  discordJoinedAt: string;
+  roleIds: string[];
+  eventsHosted: number;
+  eventsAttended: number;
+  lastHostedDate?: string;
+  lastAttendedDate?: string;
+  isInactiveByCutoff: boolean;
+};
+
+export type GuildDashboardInactiveMember = {
+  discordId: string;
+  rankedRoleId: string;
+  status: "active" | "inactive";
+  discordJoinedAt: string;
+  lastHostedDate?: string;
+  lastAttendedDate?: string;
+  lastActivityDate?: string;
+  daysSinceActivity?: number;
+};
+
+export type GuildDashboardStats = {
+  totalMembers: number;
+  activeMembers: number;
+  inactiveMembers: number;
+  totalEvents: number;
+  closedEvents: number;
+  participationRate: number;
+};
+
+export type GuildDashboardEventRow = {
+  eventId: string;
+  hostDiscordId: string;
+  eventDate: string;
+  participantIds: string[];
+  summary: string;
+};
+
+export type GuildDashboardResponse = {
+  guild: LinkedGuild;
+  stats: GuildDashboardStats;
+  leaderboard: GuildDashboardLeaderboardEntry[];
+  members: GuildDashboardMemberRow[];
+  inactiveMembers: GuildDashboardInactiveMember[];
+  events: GuildDashboardEventRow[];
+};
+
+export type GuildDashboardData = GuildDashboardResponse;
 
 export type SyncStatus = {
   memberCount: number;
@@ -49,7 +105,7 @@ export const guildsApi = {
   verifyBotInstall: (guildId: string) =>
     api.post<{ ok: boolean }>(`/guilds/${guildId}/bot/verify`),
   getDashboard: (guildId: string) =>
-    api.get<{ ok: boolean; dashboard: GuildDashboardData }>(
+    api.get<{ ok: boolean; dashboard: GuildDashboardResponse }>(
       `/guilds/${guildId}/dashboard`
     ),
   getMemberSyncStatus: (guildId: string) =>

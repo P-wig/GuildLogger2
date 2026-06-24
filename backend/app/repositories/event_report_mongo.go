@@ -129,3 +129,137 @@ func (r *MongoEventReportRepository) FindByGuildID(ctx context.Context, guildID 
 	}
 	return reports, nil
 }
+
+func (r *MongoEventReportRepository) GetGuildClosedEventCount(ctx context.Context, guildID string) (int64, error) {
+	count, err := db.EventReportsCollection(r.database).CountDocuments(ctx, bson.M{"guildId": guildID})
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (r *MongoEventReportRepository) GetGuildMemberActivity(ctx context.Context, guildID string) ([]GuildDashboardLeaderboardEntry, error) {
+	reports, err := r.FindByGuildID(ctx, guildID)
+	if err != nil {
+		return nil, err
+	}
+
+	byMember := make(map[string]*GuildDashboardLeaderboardEntry)
+	for _, report := range reports {
+		hostID := report.HostDiscordID
+		if hostID != "" {
+			entry, ok := byMember[hostID]
+			if !ok {
+				entry = &GuildDashboardLeaderboardEntry{DiscordID: hostID}
+				byMember[hostID] = entry
+			}
+			entry.HostedCount++
+			if entry.LastHostedDate == nil || report.EventDate.After(*entry.LastHostedDate) {
+				t := report.EventDate
+				entry.LastHostedDate = &t
+			}
+		}
+
+		for _, attendeeID := range report.ParticipantIDs {
+			if attendeeID == "" {
+				continue
+			}
+			entry, ok := byMember[attendeeID]
+			if !ok {
+				entry = &GuildDashboardLeaderboardEntry{DiscordID: attendeeID}
+				byMember[attendeeID] = entry
+			}
+			entry.AttendedCount++
+			if entry.LastAttendedDate == nil || report.EventDate.After(*entry.LastAttendedDate) {
+				t := report.EventDate
+				entry.LastAttendedDate = &t
+			}
+		}
+	}
+
+	out := make([]GuildDashboardLeaderboardEntry, 0, len(byMember))
+	for _, entry := range byMember {
+		entry.Score = (entry.HostedCount * 2) + entry.AttendedCount
+		out = append(out, *entry)
+	}
+	return out, nil
+}
+
+func (r *MongoEventReportRepository) GetGuildParticipationStats(ctx context.Context, guildID string) (int64, int64, error) {
+	pipeline := bson.A{
+		bson.M{"$match": bson.M{"guildId": guildID}},
+		bson.M{"$group": bson.M{
+			"_id": bson.M{"$const": 1},
+			"participantSlots": bson.M{"$sum": bson.M{
+				"$size": bson.M{"$ifNull": bson.A{"$participantIds", bson.A{}}},
+			}},
+			"uniqueReportedEvents": bson.M{"$sum": 1},
+		}},
+	}
+
+	cursor, err := db.EventReportsCollection(r.database).Aggregate(ctx, pipeline)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer cursor.Close(ctx)
+
+	var result struct {
+		ParticipantSlots     int64 `bson:"participantSlots"`
+		UniqueReportedEvents int64 `bson:"uniqueReportedEvents"`
+	}
+	if cursor.Next(ctx) {
+		if err := cursor.Decode(&result); err != nil {
+			return 0, 0, err
+		}
+	}
+
+	return result.ParticipantSlots, result.UniqueReportedEvents, nil
+}
+
+func (r *MongoEventReportRepository) FindDashboardEvents(ctx context.Context, guildID string, filter GuildDashboardEventFilter) ([]GuildDashboardEventRow, error) {
+	mongoFilter := bson.M{"guildId": guildID}
+
+	if filter.AttendeeID != "" {
+		mongoFilter["participantIds"] = filter.AttendeeID
+	}
+
+	if filter.StartDate != nil || filter.EndDate != nil {
+		dateFilter := bson.M{}
+		if filter.StartDate != nil {
+			dateFilter["$gte"] = *filter.StartDate
+		}
+		if filter.EndDate != nil {
+			dateFilter["$lte"] = *filter.EndDate
+		}
+		mongoFilter["eventDate"] = dateFilter
+	}
+
+	limit := int64(filter.Limit)
+	if limit <= 0 {
+		limit = 100
+	}
+
+	opts := options.Find().
+		SetSort(bson.D{{Key: "eventDate", Value: -1}}).
+		SetLimit(limit).
+		SetProjection(bson.M{
+			"eventId":        1,
+			"hostDiscordId":  1,
+			"eventDate":      1,
+			"participantIds": 1,
+			"summary":        1,
+		})
+
+	cursor, err := db.EventReportsCollection(r.database).Find(ctx, mongoFilter, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	rows := make([]GuildDashboardEventRow, 0)
+	if err := cursor.All(ctx, &rows); err != nil {
+		return nil, err
+	}
+
+	return rows, nil
+}
