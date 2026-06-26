@@ -32,6 +32,8 @@ type GuildDashboardLeaderboardEntry struct {
 
 type GuildDashboardMemberRow struct {
 	DiscordID          string       `json:"discordId" bson:"discordId"`
+	Username           string       `json:"username" bson:"username"`
+	AvatarHash         string       `json:"avatarHash" bson:"avatarHash"`
 	RankedRoleID       string       `json:"rankedRoleId" bson:"rankedRoleId"`
 	Status             MemberStatus `json:"status" bson:"status"`
 	DiscordJoinedAt    time.Time    `json:"discordJoinedAt" bson:"discordJoinedAt"`

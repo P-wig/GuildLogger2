@@ -32,6 +32,8 @@ export type GuildDashboardLeaderboardEntry = {
 
 export type GuildDashboardMemberRow = {
   discordId: string;
+  username: string;
+  avatarHash: string;
   rankedRoleId: string;
   status: "active" | "inactive";
   discordJoinedAt: string;
