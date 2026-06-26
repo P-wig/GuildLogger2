@@ -3,6 +3,7 @@ import { useParams, Link as RouterLink } from "react-router";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import LoadingButton from "@mui/lab/LoadingButton";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -19,6 +20,8 @@ export const GuildDashboard = () => {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!guildId) return;
@@ -40,6 +43,21 @@ export const GuildDashboard = () => {
       .catch(() => setError("Failed to load guild dashboard."))
       .finally(() => setLoading(false));
   }, [guildId]);
+
+  const handleSync = async () => {
+    if (!guildId) return;
+    setSyncing(true);
+    setSyncError(null);
+    try {
+      await guildsApi.syncMembers(guildId);
+      const syncRes = await guildsApi.getMemberSyncStatus(guildId);
+      setSyncStatus({ memberCount: syncRes.data.memberCount, synced: syncRes.data.synced });
+    } catch {
+      setSyncError("Sync failed. Ensure the bot is installed and has permission to read members.");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -203,7 +221,7 @@ export const GuildDashboard = () => {
             Member Sync
           </Typography>
           <Divider sx={{ mb: 2 }} />
-          <Stack spacing={1}>
+          <Stack spacing={2}>
             <Stack direction="row" justifyContent="space-between">
               <Typography color="text.secondary">Synced Members</Typography>
               <Typography>{syncStatus?.memberCount ?? 0}</Typography>
@@ -216,6 +234,16 @@ export const GuildDashboard = () => {
                 size="small"
               />
             </Stack>
+            {syncError && <Alert severity="error">{syncError}</Alert>}
+            <LoadingButton
+              variant="contained"
+              size="small"
+              loading={syncing}
+              onClick={handleSync}
+              disabled={!dashboard?.guild.botInstalled}
+            >
+              Sync Members
+            </LoadingButton>
           </Stack>
         </CardContent>
       </Card>

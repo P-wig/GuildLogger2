@@ -112,4 +112,6 @@ export const guildsApi = {
     api.get<{ ok: boolean; memberCount: number; synced: boolean }>(
       `/guilds/${guildId}/members/sync-status`
     ),
+  syncMembers: (guildId: string) =>
+    api.post<{ ok: boolean; synced: number }>(`/guilds/${guildId}/members/sync`),
 };

@@ -30,6 +30,7 @@ export const Guilds = () => {
   const [connectError, setConnectError] = useState<string | null>(null);
 
   const [inviteLoadingId, setInviteLoadingId] = useState<string | null>(null);
+  const [installErrorId, setInstallErrorId] = useState<string | null>(null);
 
   const fetchLinkedGuilds = useCallback(async () => {
     setLinkedLoading(true);
@@ -88,12 +89,32 @@ export const Guilds = () => {
 
   const handleInstallBot = async (guildId: string) => {
     setInviteLoadingId(guildId);
+    setInstallErrorId(null);
+    try {
+      // Try verify first — if bot is already in the server this will mark it
+      // installed and refresh the list without needing the invite flow.
+      await guildsApi.verifyBotInstall(guildId);
+      await fetchLinkedGuilds();
+      return;
+    } catch (err) {
+      const status = (err as AxiosError)?.response?.status;
+      // 422 = bot not in the guild yet — proceed to invite URL flow.
+      // Any other status is a real error; surface it and stop.
+      if (status !== 422) {
+        setInstallErrorId(guildId);
+        setInviteLoadingId(null);
+        return;
+      }
+    }
+    // Bot is not installed yet — open Discord invite URL.
+    // Discord will redirect back to /app/guilds?guild_id=... after authorization,
+    // where the page effect will call verifyBotInstall automatically.
     try {
       const redirectUri = `${window.location.origin}/app/guilds`;
       const res = await guildsApi.getBotInviteUrl(guildId, redirectUri);
       window.open(res.data.url, "_blank", "noopener,noreferrer");
     } catch {
-      // invite URL fetch failed — button returns to normal state
+      setInstallErrorId(guildId);
     } finally {
       setInviteLoadingId(null);
     }
@@ -163,14 +184,21 @@ export const Guilds = () => {
                       View Dashboard
                     </Button>
                     {!guild.botInstalled && (
-                      <LoadingButton
-                        size="small"
-                        variant="outlined"
-                        loading={inviteLoadingId === guild.guildId}
-                        onClick={() => handleInstallBot(guild.guildId)}
-                      >
-                        Install Bot
-                      </LoadingButton>
+                      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+                        <LoadingButton
+                          size="small"
+                          variant="outlined"
+                          loading={inviteLoadingId === guild.guildId}
+                          onClick={() => handleInstallBot(guild.guildId)}
+                        >
+                          Install Bot
+                        </LoadingButton>
+                        {installErrorId === guild.guildId && (
+                          <Typography variant="caption" color="error.main">
+                            Failed to install. Please try again.
+                          </Typography>
+                        )}
+                      </Box>
                     )}
                   </Box>
               </CardContent>

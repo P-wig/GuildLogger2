@@ -19,47 +19,47 @@ const (
 // GuildRole mirrors a Discord role and stores app-specific metadata.
 // Position should mirror Discord role position (higher number = higher role).
 type GuildRole struct {
-	DiscordRoleID  string        `bson:"discordRoleId"`
-	Position       int           `bson:"position"`
-	Type           GuildRoleType `bson:"type"`
-	AppPermissions []string      `bson:"appPermissions"`
-	Managed        bool          `bson:"managed"`
-	IsDefault      bool          `bson:"isDefault"`
+	DiscordRoleID  string        `bson:"discordRoleId"  json:"discordRoleId"`
+	Position       int           `bson:"position"       json:"position"`
+	Type           GuildRoleType `bson:"type"           json:"type"`
+	AppPermissions []string      `bson:"appPermissions" json:"appPermissions"`
+	Managed        bool          `bson:"managed"        json:"managed"`
+	IsDefault      bool          `bson:"isDefault"      json:"isDefault"`
 }
 
 // GuildStatusRoleConfig defines which role IDs represent active/inactive members.
 type GuildStatusRoleConfig struct {
-	ActiveRoleID   string `bson:"activeRoleId"`
-	InactiveRoleID string `bson:"inactiveRoleId"`
+	ActiveRoleID   string `bson:"activeRoleId"   json:"activeRoleId"`
+	InactiveRoleID string `bson:"inactiveRoleId" json:"inactiveRoleId"`
 }
 
 // Milestones are now notification-only (no automatic Discord role assignment).
 type GuildMilestoneNotificationConfig struct {
-	Enabled               bool   `bson:"enabled"`
-	NotificationChannelID string `bson:"notificationChannelId"` // Discord channel to post anniversary messages
-	AnniversaryYears      []int  `bson:"anniversaryYears"`
-	HostedEventCounts     []int  `bson:"hostedEventCounts"`
-	AttendedEventCounts   []int  `bson:"attendedEventCounts"`
+	Enabled               bool   `bson:"enabled"               json:"enabled"`
+	NotificationChannelID string `bson:"notificationChannelId" json:"notificationChannelId"`
+	AnniversaryYears      []int  `bson:"anniversaryYears"      json:"anniversaryYears"`
+	HostedEventCounts     []int  `bson:"hostedEventCounts"     json:"hostedEventCounts"`
+	AttendedEventCounts   []int  `bson:"attendedEventCounts"   json:"attendedEventCounts"`
 }
 
 // GuildNotificationConfig stores guild-level communication settings.
 type GuildNotificationConfig struct {
-	StatusRoles            GuildStatusRoleConfig            `bson:"statusRoles"`
-	MilestoneNotifications GuildMilestoneNotificationConfig `bson:"milestoneNotifications"`
+	StatusRoles            GuildStatusRoleConfig            `bson:"statusRoles"            json:"statusRoles"`
+	MilestoneNotifications GuildMilestoneNotificationConfig `bson:"milestoneNotifications" json:"milestoneNotifications"`
 }
 
 // Guild is the aggregate root for guild configuration and role hierarchy.
 type Guild struct {
-	ID                 string                  `bson:"_id,omitempty"`
-	GuildID            string                  `bson:"guildId"`
-	Name               string                  `bson:"name"`
-	OwnerDiscordID     string                  `bson:"ownerDiscordId"`
-	Roles              []GuildRole             `bson:"roles"`
-	NotificationConfig GuildNotificationConfig `bson:"notificationConfig"`
-	BotInstalled       bool                    `bson:"botInstalled"`
-	BotInstalledAt     *time.Time              `bson:"botInstalledAt,omitempty"`
-	CreatedAt          time.Time               `bson:"createdAt"`
-	UpdatedAt          time.Time               `bson:"updatedAt"`
+	ID                 string                  `bson:"_id,omitempty"            json:"-"`
+	GuildID            string                  `bson:"guildId"                  json:"guildId"`
+	Name               string                  `bson:"name"                     json:"name"`
+	OwnerDiscordID     string                  `bson:"ownerDiscordId"           json:"ownerDiscordId"`
+	Roles              []GuildRole             `bson:"roles"                    json:"roles"`
+	NotificationConfig GuildNotificationConfig `bson:"notificationConfig"       json:"notificationConfig"`
+	BotInstalled       bool                    `bson:"botInstalled"             json:"botInstalled"`
+	BotInstalledAt     *time.Time              `bson:"botInstalledAt,omitempty" json:"botInstalledAt,omitempty"`
+	CreatedAt          time.Time               `bson:"createdAt"                json:"createdAt"`
+	UpdatedAt          time.Time               `bson:"updatedAt"                json:"updatedAt"`
 }
 
 type GuildRepository interface {
