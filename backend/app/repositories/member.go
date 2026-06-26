@@ -16,6 +16,8 @@ type Member struct {
 	ID                  string       `bson:"_id,omitempty"`
 	GuildID             string       `bson:"guildId"`
 	DiscordID           string       `bson:"discordId"`
+	Username            string       `bson:"username"`                // display name: nick > global_name > username
+	AvatarHash          string       `bson:"avatarHash"`              // discord avatar hash for CDN URL
 	RoleIDs             []string     `bson:"roleIds"`                 // full mirrored discord role IDs
 	RankedRoleID        string       `bson:"rankedRoleId"`            // one app-selected ranked role
 	Status              MemberStatus `bson:"status"`                  // active|inactive
@@ -36,11 +38,13 @@ type MemberStats struct {
 }
 
 type MemberSummary struct {
-	DiscordID       string       `bson:"discordId"    json:"discordId"`
-	RankedRoleID    string       `bson:"rankedRoleId" json:"rankedRoleId"`
-	Status          MemberStatus `bson:"status"       json:"status"`
+	DiscordID       string       `bson:"discordId"       json:"discordId"`
+	Username        string       `bson:"username"        json:"username"`
+	AvatarHash      string       `bson:"avatarHash"      json:"avatarHash"`
+	RankedRoleID    string       `bson:"rankedRoleId"    json:"rankedRoleId"`
+	Status          MemberStatus `bson:"status"          json:"status"`
 	DiscordJoinedAt time.Time    `bson:"discordJoinedAt" json:"discordJoinedAt"`
-	RoleIDs         []string     `bson:"roleIds"      json:"roleIds"`
+	RoleIDs         []string     `bson:"roleIds"         json:"roleIds"`
 }
 
 type MemberRepository interface {

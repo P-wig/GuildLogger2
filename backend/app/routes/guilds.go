@@ -326,9 +326,20 @@ func syncMembersHandler(guildRepo repositories.GuildRepository, memberRepo repos
 				}
 			}
 
+			// Prefer server nick > global display name > username for display.
+			displayName := dm.User.Username
+			if dm.User.GlobalName != "" {
+				displayName = dm.User.GlobalName
+			}
+			if dm.Nick != "" {
+				displayName = dm.Nick
+			}
+
 			if err := memberRepo.Upsert(ctx, &repositories.Member{
 				GuildID:         guildID,
 				DiscordID:       dm.User.ID,
+				Username:        displayName,
+				AvatarHash:      dm.User.Avatar,
 				RoleIDs:         dm.Roles,
 				Status:          repositories.MemberStatusActive,
 				RankedRoleID:    rankedRoleID,

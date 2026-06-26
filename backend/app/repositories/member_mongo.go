@@ -66,6 +66,8 @@ func (r *MongoMemberRepository) Upsert(ctx context.Context, member *Member) erro
 				"roleIds":      member.RoleIDs,
 				"status":       member.Status,
 				"rankedRoleId": member.RankedRoleID,
+				"username":     member.Username,
+				"avatarHash":   member.AvatarHash,
 				"lastSyncedAt": now,
 				"updatedAt":    now,
 			},
@@ -287,6 +289,8 @@ func (r *MongoMemberRepository) FindAnniversaryMembers(ctx context.Context, guil
 func (r *MongoMemberRepository) FindSummariesByGuildID(ctx context.Context, guildID string) ([]MemberSummary, error) {
 	opts := options.Find().SetProjection(bson.M{
 		"discordId":       1,
+		"username":        1,
+		"avatarHash":      1,
 		"rankedRoleId":    1,
 		"status":          1,
 		"discordJoinedAt": 1,
@@ -353,6 +357,8 @@ func (r *MongoMemberRepository) GetDashboardMemberRows(
 	for _, m := range summaries {
 		row := GuildDashboardMemberRow{
 			DiscordID:       m.DiscordID,
+			Username:        m.Username,
+			AvatarHash:      m.AvatarHash,
 			RankedRoleID:    m.RankedRoleID,
 			Status:          m.Status,
 			DiscordJoinedAt: m.DiscordJoinedAt,

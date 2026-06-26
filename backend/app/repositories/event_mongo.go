@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -129,7 +130,7 @@ func (r *MongoEventRepository) EnsureIndexes(ctx context.Context) error {
 	indexes := []mongo.IndexModel{
 		{
 			Keys:    bson.D{{Key: "guildId", Value: 1}},
-			Options: options.Index().SetName("idx_event_guild"),
+			Options: options.Index().SetName("idx_event_guild_id"),
 		},
 		{
 			Keys:    bson.D{{Key: "guildId", Value: 1}, {Key: "status", Value: 1}},
@@ -141,8 +142,18 @@ func (r *MongoEventRepository) EnsureIndexes(ctx context.Context) error {
 		},
 	}
 
-	_, err := db.EventsCollection(r.database).Indexes().CreateMany(ctx, indexes)
-	return err
+	for _, index := range indexes {
+		_, err := db.EventsCollection(r.database).Indexes().CreateOne(ctx, index)
+		if err != nil {
+			// Existing deployments may already have equivalent indexes with legacy names.
+			// In that case, keep startup idempotent instead of failing the app boot.
+			if strings.Contains(err.Error(), "IndexOptionsConflict") || strings.Contains(err.Error(), "Index already exists with a different name") {
+				continue
+			}
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *MongoEventRepository) Create(ctx context.Context, event *Event) error {

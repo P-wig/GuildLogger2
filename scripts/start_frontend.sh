@@ -6,32 +6,21 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-FRONTEND_DIR="./frontend"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+FRONTEND_DIR="$REPO_ROOT/frontend"
 
-# Navigate to frontend directory
 if ! pushd "$FRONTEND_DIR" > /dev/null 2>&1; then
-  echo -e "${RED}❌ Error: Could not navigate to $FRONTEND_DIR${NC}"
+  echo -e "${RED}Error: Could not navigate to $FRONTEND_DIR${NC}"
   exit 1
 fi
 
-# Install dependencies if node_modules doesn't exist or package-lock.json is newer
 if [ ! -d "node_modules" ] || [ "package-lock.json" -nt "node_modules" ]; then
-  echo -e "${YELLOW}⚙️  Installing dependencies...${NC}"
-  if ! npm install; then
-    echo -e "${RED}❌ Error: npm install failed${NC}"
-    popd > /dev/null
-    exit 1
-  fi
+  echo -e "${YELLOW}Installing dependencies...${NC}"
+  npm install
 else
-  echo -e "${GREEN}✓ Dependencies already installed${NC}"
+  echo -e "${GREEN}Dependencies already installed${NC}"
 fi
 
-# Start Vite dev server
-echo -e "${GREEN}🚀 Starting Vite Dev server...${NC}"
-if ! npm run dev; then
-  echo -e "${RED}❌ Error: Failed to start Vite dev server${NC}"
-  popd > /dev/null
-  exit 1
-fi
-
-popd > /dev/null
+echo -e "${GREEN}Starting Vite Dev server...${NC}"
+npm run dev -- --host 127.0.0.1 --port 5173 --strictPort

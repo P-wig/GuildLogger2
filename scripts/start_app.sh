@@ -72,7 +72,7 @@ if ! docker compose --project-directory "$REPO_ROOT" --env-file "$ENV_FILE" -f "
  fi
  
  # Wait for backend health endpoint (max 30s)
- HEALTH_URL="http://localhost:5001/api/health"
+ HEALTH_URL="http://127.0.0.1:5001/api/health"
  READY=0
  for i in $(seq 1 30); do
     if curl -fsS "$HEALTH_URL" > /dev/null 2>&1; then
@@ -111,6 +111,26 @@ if ! docker compose --project-directory "$REPO_ROOT" --env-file "$ENV_FILE" -f "
     cleanup
  fi
 
+FRONTEND_URL="http://127.0.0.1:5173"
+FRONTEND_READY=0
+for i in $(seq 1 30); do
+  if curl -fsS "$FRONTEND_URL" > /dev/null 2>&1; then
+    FRONTEND_READY=1
+    break
+  fi
+  if ! kill -0 $FRONTEND_PID 2>/dev/null; then
+    break
+  fi
+  sleep 1
+done
+
+if [ "$FRONTEND_READY" -ne 1 ]; then
+  echo -e "${RED}Frontend did not become healthy at ${FRONTEND_URL}${NC}"
+  echo -e "${BLUE}FRONTEND LOG${NC}"
+  cat "$FRONTEND_LOG"
+  cleanup
+fi
+
  echo -e "${GREEN}✓ Frontend started (PID: $FRONTEND_PID)${NC}"
  echo ""
 
@@ -119,9 +139,9 @@ if ! docker compose --project-directory "$REPO_ROOT" --env-file "$ENV_FILE" -f "
  echo -e "${BLUE}═══════════════════════════════════════${NC}"
  echo ""
  echo -e "${CYAN}🌐 Application URLs:${NC}"
- echo -e "${YELLOW}Frontend:${NC} http://localhost:5173"
- echo -e "${YELLOW}Backend:${NC}  http://localhost:5001"
- echo -e "${YELLOW}API Health:${NC} http://localhost:5001/api/health"
+ echo -e "${YELLOW}Frontend:${NC} http://127.0.0.1:5173"
+ echo -e "${YELLOW}Backend:${NC}  http://127.0.0.1:5001"
+ echo -e "${YELLOW}API Health:${NC} http://127.0.0.1:5001/api/health"
  echo ""
  echo -e "${CYAN}📋 Logs:${NC}"
  echo -e "${YELLOW}Backend logs:${NC}  tail -f /tmp/backend.log"
