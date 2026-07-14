@@ -1,10 +1,30 @@
 import { api } from "./http";
 
+export type GuildRole = {
+  discordRoleId: string;
+  name: string;
+  position: number;
+  type: string;
+  appPermissions: string[];
+  managed: boolean;
+  isDefault: boolean;
+};
+
 export type LinkedGuild = {
   guildId: string;
   name: string;
   ownerDiscordId: string;
   botInstalled: boolean;
+  roles: GuildRole[];
+  notificationConfig: {
+    statusRoles: {
+      activeRoleId: string;
+      inactiveRoleId: string;
+    };
+    milestoneNotifications: {
+      enabled: boolean;
+    };
+  };
   createdAt: string;
   updatedAt: string;
 };
@@ -116,4 +136,8 @@ export const guildsApi = {
     ),
   syncMembers: (guildId: string) =>
     api.post<{ ok: boolean; synced: number }>(`/guilds/${guildId}/members/sync`),
+  setMemberRole: (guildId: string, roleId: string) =>
+    api.put<{ ok: boolean }>(`/guilds/${guildId}/config/member-role`, { roleId }),
+  updateGuildConfig: (guildId: string, config: { activeRoleId: string; inactiveRoleId?: string; rankedRoleIds?: string[] }) =>
+    api.put<{ ok: boolean }>(`/guilds/${guildId}/config`, config),
 };

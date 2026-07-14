@@ -243,7 +243,7 @@ Response (502): Discord API unreachable or bot token invalid.
 #### POST /api/guilds/:guildId/members/sync
 
 Synchronizes Discord guild members into GuildLogger. No request body — the guild ID is taken from the URL.
-Only the guild owner can trigger a sync.
+Only the guild owner can trigger a sync. Requires the member role to be configured first.
 
 Response (200):
 ```json
@@ -256,7 +256,36 @@ Response (200):
 Response (401): missing, invalid, or expired token.
 Response (403): authenticated user does not own this guild.
 Response (404): guild not found.
+Response (422): member role not configured — call `PUT /api/guilds/:guildId/config` first.
 Response (502): failed to fetch members from Discord.
+
+#### PUT /api/guilds/:guildId/config
+
+Sets the guild's member role, inactive role, and ranked roles in a single operation.
+Only the guild owner can configure. All role IDs must exist in the guild's stored role list (populated by bot verify).
+
+Request body:
+```json
+{
+  "activeRoleId": "discord_role_id",
+  "inactiveRoleId": "discord_role_id",
+  "rankedRoleIds": ["role_id_1", "role_id_2"]
+}
+```
+
+- `activeRoleId` (required): role that marks a member as active; members without this role are skipped during sync.
+- `inactiveRoleId` (optional): role that marks inactive members.
+- `rankedRoleIds` (optional): roles that represent member ranks used in leaderboard sorting. Roles not listed are reset to `default` type.
+
+Response (200):
+```json
+{ "ok": true }
+```
+
+Response (400): `activeRoleId` missing or any provided role ID not found in guild roles.
+Response (401): missing, invalid, or expired token.
+Response (403): authenticated user does not own this guild.
+Response (404): guild not found.
 
 #### GET /api/guilds/:guildId/members/sync-status
 

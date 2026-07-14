@@ -20,6 +20,7 @@ const (
 // Position should mirror Discord role position (higher number = higher role).
 type GuildRole struct {
 	DiscordRoleID  string        `bson:"discordRoleId"  json:"discordRoleId"`
+	Name           string        `bson:"name"           json:"name"`
 	Position       int           `bson:"position"       json:"position"`
 	Type           GuildRoleType `bson:"type"           json:"type"`
 	AppPermissions []string      `bson:"appPermissions" json:"appPermissions"`

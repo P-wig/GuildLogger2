@@ -48,6 +48,8 @@ func RegisterGuildsProtected(
 	g.GET("/guilds/:guildId/dashboard", guildDashboardHandler(guildRepo, memberRepo, eventRepo, eventReportRepo))
 	g.GET("/guilds/:guildId/bot/invite-url", botInviteURLHandler(guildRepo, oauthClient))
 	g.PUT("/guilds/:guildId/roles", upsertRoleHandler(guildRepo))
+	g.PUT("/guilds/:guildId/config/member-role", updateMemberRoleHandler(guildRepo))
+	g.PUT("/guilds/:guildId/config", updateGuildConfigHandler(guildRepo))
 }
 
 func listGuildsHandler(guildRepo repositories.GuildRepository) echo.HandlerFunc {
@@ -200,6 +202,7 @@ func verifyBotInstallHandler(guildRepo repositories.GuildRepository, botClient *
 		for _, dr := range discordRoles {
 			roles = append(roles, repositories.GuildRole{
 				DiscordRoleID:  dr.ID,
+				Name:           dr.Name,
 				Position:       dr.Position,
 				Type:           repositories.GuildRoleTypeDefault,
 				AppPermissions: []string{},
@@ -277,6 +280,10 @@ func syncMembersHandler(guildRepo repositories.GuildRepository, memberRepo repos
 		}
 		if guild.OwnerDiscordID != claims.DiscordID {
 			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "you do not own this guild"})
+		}
+
+		if guild.NotificationConfig.StatusRoles.ActiveRoleID == "" {
+			return c.JSON(http.StatusUnprocessableEntity, map[string]interface{}{"ok": false, "error": "member role not configured: set a member role in the guild dashboard before syncing"})
 		}
 
 		// Derive filter and rank data from guild config once, before the member loop.
@@ -675,6 +682,141 @@ func upsertRoleHandler(guildRepo repositories.GuildRepository) echo.HandlerFunc 
 				return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "guild not found"})
 			}
 			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to upsert role"})
+		}
+
+		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true})
+	}
+}
+
+func updateGuildConfigHandler(guildRepo repositories.GuildRepository) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		claims, ok := c.Get("user").(*session.Claims)
+		if !ok || claims == nil {
+			return c.JSON(http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "missing session"})
+		}
+
+		guildID := strings.TrimSpace(c.Param("guildId"))
+		if guildID == "" {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "guildId is required"})
+		}
+
+		var in struct {
+			ActiveRoleID   string   `json:"activeRoleId"`
+			InactiveRoleID string   `json:"inactiveRoleId"`
+			RankedRoleIDs  []string `json:"rankedRoleIds"`
+		}
+		if err := c.Bind(&in); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "invalid request body"})
+		}
+		in.ActiveRoleID = strings.TrimSpace(in.ActiveRoleID)
+		if in.ActiveRoleID == "" {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "activeRoleId is required"})
+		}
+
+		ctx := c.Request().Context()
+
+		guild, err := guildRepo.FindByGuildID(ctx, guildID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
+		}
+		if guild == nil {
+			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "guild not found"})
+		}
+		if guild.OwnerDiscordID != claims.DiscordID {
+			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "you do not own this guild"})
+		}
+
+		roleSet := make(map[string]struct{}, len(guild.Roles))
+		for _, r := range guild.Roles {
+			roleSet[r.DiscordRoleID] = struct{}{}
+		}
+		if _, ok := roleSet[in.ActiveRoleID]; !ok {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "activeRoleId not found in guild roles"})
+		}
+		in.InactiveRoleID = strings.TrimSpace(in.InactiveRoleID)
+		if in.InactiveRoleID != "" {
+			if _, ok := roleSet[in.InactiveRoleID]; !ok {
+				return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "inactiveRoleId not found in guild roles"})
+			}
+		}
+
+		guild.NotificationConfig.StatusRoles.ActiveRoleID = in.ActiveRoleID
+		guild.NotificationConfig.StatusRoles.InactiveRoleID = in.InactiveRoleID
+
+		rankedSet := make(map[string]struct{}, len(in.RankedRoleIDs))
+		for _, id := range in.RankedRoleIDs {
+			rankedSet[strings.TrimSpace(id)] = struct{}{}
+		}
+		for i, r := range guild.Roles {
+			if _, isRanked := rankedSet[r.DiscordRoleID]; isRanked {
+				guild.Roles[i].Type = repositories.GuildRoleTypeRanked
+			} else {
+				guild.Roles[i].Type = repositories.GuildRoleTypeDefault
+			}
+		}
+
+		guild.UpdatedAt = time.Now()
+		if err := guildRepo.Update(ctx, guildID, guild); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to save guild config"})
+		}
+
+		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true})
+	}
+}
+
+func updateMemberRoleHandler(guildRepo repositories.GuildRepository) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		claims, ok := c.Get("user").(*session.Claims)
+		if !ok || claims == nil {
+			return c.JSON(http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "missing session"})
+		}
+
+		guildID := strings.TrimSpace(c.Param("guildId"))
+		if guildID == "" {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "guildId is required"})
+		}
+
+		var in struct {
+			RoleID string `json:"roleId"`
+		}
+		if err := c.Bind(&in); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "invalid request body"})
+		}
+		in.RoleID = strings.TrimSpace(in.RoleID)
+		if in.RoleID == "" {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "roleId is required"})
+		}
+
+		ctx := c.Request().Context()
+
+		guild, err := guildRepo.FindByGuildID(ctx, guildID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
+		}
+		if guild == nil {
+			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "guild not found"})
+		}
+		if guild.OwnerDiscordID != claims.DiscordID {
+			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "you do not own this guild"})
+		}
+
+		valid := false
+		for _, r := range guild.Roles {
+			if r.DiscordRoleID == in.RoleID {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "role not found in this guild"})
+		}
+
+		cfg := repositories.GuildStatusRoleConfig{
+			ActiveRoleID:   in.RoleID,
+			InactiveRoleID: guild.NotificationConfig.StatusRoles.InactiveRoleID,
+		}
+		if err := guildRepo.UpdateStatusRoleConfig(ctx, guildID, cfg); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to update member role"})
 		}
 
 		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true})
