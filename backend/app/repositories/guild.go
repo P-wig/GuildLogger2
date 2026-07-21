@@ -34,7 +34,7 @@ type GuildStatusRoleConfig struct {
 	InactiveRoleID string `bson:"inactiveRoleId" json:"inactiveRoleId"`
 }
 
-// Milestones are now notification-only (no automatic Discord role assignment).
+// Milestones are notification-only.
 type GuildMilestoneNotificationConfig struct {
 	Enabled               bool   `bson:"enabled"               json:"enabled"`
 	NotificationChannelID string `bson:"notificationChannelId" json:"notificationChannelId"`
@@ -83,6 +83,7 @@ type GuildRepository interface {
 	// Guild-level configuration
 	UpdateStatusRoleConfig(ctx context.Context, guildID string, cfg GuildStatusRoleConfig) error
 	UpdateMilestoneNotificationConfig(ctx context.Context, guildID string, cfg GuildMilestoneNotificationConfig) error
+	UpdateConfigAndRoles(ctx context.Context, guildID string, cfg GuildStatusRoleConfig, roles []GuildRole) error
 
 	EnsureIndexes(ctx context.Context) error
 }

@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import type { AxiosError } from "axios";
-import { useParams, Link as RouterLink } from "react-router";
+import { useParams, Link as RouterLink, useNavigate } from "react-router";
 import Alert from "@mui/material/Alert";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import LoadingButton from "@mui/lab/LoadingButton";
 import Card from "@mui/material/Card";
+import CardActionArea from "@mui/material/CardActionArea";
 import CardContent from "@mui/material/CardContent";
 import CircularProgress from "@mui/material/CircularProgress";
 import Chip from "@mui/material/Chip";
@@ -39,6 +40,9 @@ export const GuildDashboard = () => {
   const [cfgActiveRoleId, setCfgActiveRoleId] = useState("");
   const [cfgInactiveRoleId, setCfgInactiveRoleId] = useState("");
   const [cfgRankedRoleIds, setCfgRankedRoleIds] = useState<string[]>([]);
+  const [disconnectOpen, setDisconnectOpen] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!guildId) return;
@@ -67,7 +71,11 @@ export const GuildDashboard = () => {
     setSyncError(null);
     try {
       await guildsApi.syncMembers(guildId);
-      const syncRes = await guildsApi.getMemberSyncStatus(guildId);
+      const [dashRes, syncRes] = await Promise.all([
+        guildsApi.getDashboard(guildId),
+        guildsApi.getMemberSyncStatus(guildId),
+      ]);
+      setDashboard(dashRes.data.dashboard);
       setSyncStatus({ memberCount: syncRes.data.memberCount, synced: syncRes.data.synced });
     } catch (err) {
       const axiosErr = err as AxiosError<{ error?: string }>;
@@ -118,10 +126,24 @@ export const GuildDashboard = () => {
           : null
       );
       setConfigOpen(false);
-    } catch {
-      setConfigError("Failed to save configuration. Please try again.");
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ error?: string }>;
+      setConfigError(axiosErr.response?.data?.error ?? "Failed to save configuration. Please try again.");
     } finally {
       setConfigSaving(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    if (!guildId) return;
+    setDisconnecting(true);
+    try {
+      await guildsApi.deleteGuild(guildId);
+      navigate("/app/guilds");
+    } catch {
+      setDisconnectOpen(false);
+    } finally {
+      setDisconnecting(false);
     }
   };
 
@@ -163,6 +185,15 @@ export const GuildDashboard = () => {
         <Button
           variant="outlined"
           size="small"
+          color="error"
+          onClick={() => setDisconnectOpen(true)}
+          sx={{ mr: 1 }}
+        >
+          Disconnect
+        </Button>
+        <Button
+          variant="outlined"
+          size="small"
           startIcon={<SettingsIcon />}
           onClick={handleOpenConfig}
           disabled={!guild.botInstalled}
@@ -200,10 +231,26 @@ export const GuildDashboard = () => {
         <Card variant="outlined" sx={{ flex: 1, minWidth: 150 }}>
           <CardContent>
             <Typography color="text.secondary" variant="body2">
-              Closed Events
+              Active Events
             </Typography>
-            <Typography variant="h6">{stats.closedEvents}</Typography>
+            <Typography variant="h6">{stats.liveEvents}</Typography>
           </CardContent>
+        </Card>
+        <Card
+          variant="outlined"
+          sx={{ flex: 1, minWidth: 150, cursor: "pointer" }}
+          component={RouterLink}
+          to={`/app/guilds/${guildId}/events`}
+        >
+          <CardActionArea sx={{ height: "100%" }}>
+            <CardContent>
+              <Typography color="text.secondary" variant="body2">
+                Event Logs
+              </Typography>
+              <Typography variant="h6">{stats.closedEvents}</Typography>
+              <Typography variant="caption" color="primary">View →</Typography>
+            </CardContent>
+          </CardActionArea>
         </Card>
         <Card variant="outlined" sx={{ flex: 1, minWidth: 150 }}>
           <CardContent>
@@ -252,12 +299,17 @@ export const GuildDashboard = () => {
             <Stack spacing={1}>
               <Stack direction="row" justifyContent="space-between" sx={{ px: 1 }}>
                 <Typography variant="caption" color="text.secondary" sx={{ flex: 3 }}>Member</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ flex: 2, textAlign: "center" }}>Rank</Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "center" }}>Status</Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "right" }}>Hosted</Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "right" }}>Attended</Typography>
               </Stack>
               <Divider />
-              {members.map((m) => (
+              {members.map((m) => {
+                const rankName = m.rankedRoleId
+                  ? (guild.roles?.find((r) => r.discordRoleId === m.rankedRoleId)?.name || m.rankedRoleId)
+                  : null;
+                return (
                 <Stack key={m.discordId} direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 1 }}>
                   <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 3 }}>
                     <Avatar
@@ -275,47 +327,28 @@ export const GuildDashboard = () => {
                       )}
                     </Box>
                   </Stack>
+                  <Box sx={{ flex: 2, display: "flex", justifyContent: "center" }}>
+                    {rankName ? (
+                      <Chip label={rankName} size="small" variant="outlined" />
+                    ) : (
+                      <Typography variant="body2" color="text.disabled">—</Typography>
+                    )}
+                  </Box>
                   <Box sx={{ flex: 1, display: "flex", justifyContent: "center" }}>
-                    <Chip label={m.status} color={m.status === "active" ? "success" : "default"} size="small" />
+                    <Chip
+                      label={m.status === "active" ? "Active" : "Retired"}
+                      color={m.status === "active" ? "success" : "warning"}
+                      size="small"
+                    />
                   </Box>
                   <Typography variant="body2" sx={{ flex: 1, textAlign: "right" }}>{m.eventsHosted}</Typography>
                   <Typography variant="body2" sx={{ flex: 1, textAlign: "right" }}>{m.eventsAttended}</Typography>
                 </Stack>
-              ))}
+                );
+              })}
             </Stack>
           ) : (
             <Typography color="text.secondary">No members to display.</Typography>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Inactive Members Section */}
-      <Card variant="outlined" sx={{ mb: 3 }}>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Inactive Members ({inactiveMembers?.length ?? 0})
-          </Typography>
-          <Divider sx={{ mb: 2 }} />
-          {inactiveMembers && inactiveMembers.length > 0 ? (
-            <Stack spacing={1}>
-              <Stack direction="row" justifyContent="space-between" sx={{ px: 1 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ flex: 2 }}>Discord ID</Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "right" }}>Days Inactive</Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ flex: 2, textAlign: "right" }}>Last Activity</Typography>
-              </Stack>
-              <Divider />
-              {inactiveMembers.map((m) => (
-                <Stack key={m.discordId} direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 1 }}>
-                  <Typography variant="body2" sx={{ flex: 2, fontFamily: "monospace" }}>{m.discordId}</Typography>
-                  <Typography variant="body2" sx={{ flex: 1, textAlign: "right" }}>{m.daysSinceActivity ?? "—"}</Typography>
-                  <Typography variant="body2" sx={{ flex: 2, textAlign: "right" }}>
-                    {m.lastActivityDate ? new Date(m.lastActivityDate).toLocaleDateString() : "—"}
-                  </Typography>
-                </Stack>
-              ))}
-            </Stack>
-          ) : (
-            <Typography color="text.secondary">No inactive members to display.</Typography>
           )}
         </CardContent>
       </Card>
@@ -436,6 +469,11 @@ export const GuildDashboard = () => {
             {selectableRoles.length === 0 && (
               <Alert severity="info">No roles available. Re-verify the bot to refresh the role list.</Alert>
             )}
+            {selectableRoles.length > 0 && selectableRoles.every((r) => !r.name) && (
+              <Alert severity="warning">
+                Role names are missing — re-verify the bot from the Guilds page to refresh them.
+              </Alert>
+            )}
 
             {/* Active Member Role */}
             <Box>
@@ -523,6 +561,30 @@ export const GuildDashboard = () => {
             disabled={!cfgActiveRoleId}
           >
             Save
+          </LoadingButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* Disconnect Confirmation Dialog */}
+      <Dialog open={disconnectOpen} onClose={() => !disconnecting && setDisconnectOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Disconnect Guild?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            This will permanently remove <strong>{guild.name}</strong> and all its synced members from GuildLogger.
+            Event history is preserved. This cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDisconnectOpen(false)} disabled={disconnecting}>
+            Cancel
+          </Button>
+          <LoadingButton
+            variant="contained"
+            color="error"
+            loading={disconnecting}
+            onClick={handleDisconnect}
+          >
+            Disconnect
           </LoadingButton>
         </DialogActions>
       </Dialog>

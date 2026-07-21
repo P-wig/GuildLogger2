@@ -62,7 +62,6 @@ export const AppLayout = () => {
               {[
                 { to: "/app", label: "Home" },
                 { to: "/app/guilds", label: "Guilds" },
-                { to: "/app/events", label: "Events" },
                 { to: "/account", label: "Account" },
               ].map(({ to, label }) => (
                 <Button
@@ -132,7 +131,6 @@ export const AppLayout = () => {
             {[
               { to: "/app", label: "Home" },
               { to: "/app/guilds", label: "Guilds" },
-              { to: "/app/events", label: "Events" },
               { to: "/account", label: "Account" },
             ].map(({ to, label }) => (
               <ListItem key={to} disablePadding>

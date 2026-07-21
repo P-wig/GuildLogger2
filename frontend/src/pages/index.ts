@@ -5,3 +5,4 @@ export { Welcome } from "./Welcome";
 export { Guilds } from "./Guilds";
 export { Events } from "./Events";
 export { GuildDashboard } from "./GuildDashboard";
+export { GuildEvents } from "./GuildEvents";

@@ -80,6 +80,7 @@ export type GuildDashboardStats = {
   totalMembers: number;
   activeMembers: number;
   inactiveMembers: number;
+  liveEvents: number;
   totalEvents: number;
   closedEvents: number;
   participationRate: number;
@@ -103,6 +104,17 @@ export type GuildDashboardResponse = {
 };
 
 export type GuildDashboardData = GuildDashboardResponse;
+
+export type EventLog = {
+  id: string;
+  eventId: string;
+  guildId: string;
+  hostDiscordId: string;
+  eventDate: string;
+  participantIds: string[];
+  summary: string;
+  submittedAt: string;
+};
 
 export type SyncStatus = {
   memberCount: number;
@@ -140,4 +152,14 @@ export const guildsApi = {
     api.put<{ ok: boolean }>(`/guilds/${guildId}/config/member-role`, { roleId }),
   updateGuildConfig: (guildId: string, config: { activeRoleId: string; inactiveRoleId?: string; rankedRoleIds?: string[] }) =>
     api.put<{ ok: boolean }>(`/guilds/${guildId}/config`, config),
+  deleteGuild: (guildId: string) =>
+    api.delete<{ ok: boolean }>(`/guilds/${guildId}`),
+  getEventLogs: (guildId: string) =>
+    api.get<{ ok: boolean; logs: EventLog[] }>(`/guilds/${guildId}/event-logs`),
+  createEventLog: (guildId: string, payload: { summary: string; eventDate: string; participantIds: string[]; hostDiscordId?: string }) =>
+    api.post<{ ok: boolean; log: EventLog }>(`/guilds/${guildId}/event-logs`, payload),
+  updateEventLog: (guildId: string, logId: string, payload: { summary: string; eventDate: string; participantIds: string[]; hostDiscordId?: string }) =>
+    api.put<{ ok: boolean }>(`/guilds/${guildId}/event-logs/${logId}`, payload),
+  deleteEventLog: (guildId: string, logId: string) =>
+    api.delete<{ ok: boolean }>(`/guilds/${guildId}/event-logs/${logId}`),
 };

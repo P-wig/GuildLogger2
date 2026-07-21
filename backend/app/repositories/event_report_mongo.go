@@ -17,7 +17,7 @@ import (
 // Summary is stored as zlib-compressed bytes.
 type eventReportDoc struct {
 	ID                string    `bson:"_id,omitempty"`
-	EventID           string    `bson:"eventId"`
+	EventID           string    `bson:"eventId,omitempty"`
 	GuildID           string    `bson:"guildId"`
 	HostDiscordID     string    `bson:"hostDiscordId"`
 	EventDate         time.Time `bson:"eventDate"`
@@ -72,7 +72,7 @@ func (r *MongoEventReportRepository) EnsureIndexes(ctx context.Context) error {
 	indexes := []mongo.IndexModel{
 		{
 			Keys:    bson.D{{Key: "eventId", Value: 1}},
-			Options: options.Index().SetName("idx_report_event").SetUnique(true),
+			Options: options.Index().SetName("idx_report_event_sparse").SetUnique(true).SetSparse(true),
 		},
 		{
 			Keys:    bson.D{{Key: "guildId", Value: 1}, {Key: "eventDate", Value: -1}},
@@ -81,6 +81,40 @@ func (r *MongoEventReportRepository) EnsureIndexes(ctx context.Context) error {
 	}
 	_, err := db.EventReportsCollection(r.database).Indexes().CreateMany(ctx, indexes)
 	return err
+}
+
+func (r *MongoEventReportRepository) Update(ctx context.Context, logID string, report *EventReport) error {
+	compressed, err := zlibCompress(report.Summary)
+	if err != nil {
+		return err
+	}
+	result, err := db.EventReportsCollection(r.database).UpdateOne(ctx,
+		bson.M{"_id": logID},
+		bson.M{"$set": bson.M{
+			"hostDiscordId":  report.HostDiscordID,
+			"eventDate":      report.EventDate,
+			"participantIds": report.ParticipantIDs,
+			"summary":        compressed,
+		}},
+	)
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount == 0 {
+		return ErrReportNotFound
+	}
+	return nil
+}
+
+func (r *MongoEventReportRepository) Delete(ctx context.Context, logID string) error {
+	result, err := db.EventReportsCollection(r.database).DeleteOne(ctx, bson.M{"_id": logID})
+	if err != nil {
+		return err
+	}
+	if result.DeletedCount == 0 {
+		return ErrReportNotFound
+	}
+	return nil
 }
 
 func (r *MongoEventReportRepository) Create(ctx context.Context, report *EventReport) error {

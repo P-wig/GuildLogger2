@@ -15,6 +15,7 @@ type GuildDashboardStats struct {
 	TotalMembers      int64   `json:"totalMembers"`
 	ActiveMembers     int64   `json:"activeMembers"`
 	InactiveMembers   int64   `json:"inactiveMembers"`
+	LiveEvents        int64   `json:"liveEvents"`
 	TotalEvents       int64   `json:"totalEvents"`
 	ClosedEvents      int64   `json:"closedEvents"`
 	ParticipationRate float64 `json:"participationRate"`
