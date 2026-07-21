@@ -25,14 +25,14 @@ const (
 // EventReport is a permanent record submitted by the host when closing an event.
 // Stored in its own collection and outlives the source event document.
 type EventReport struct {
-	ID             string    `bson:"_id,omitempty"`
-	EventID        string    `bson:"eventId"`        // reference to the source event
-	GuildID        string    `bson:"guildId"`        // for guild-scoped queries
-	HostDiscordID  string    `bson:"hostDiscordId"`  // denormalized — event may be deleted
-	EventDate      time.Time `bson:"eventDate"`      // date the event occurred (host-provided)
-	ParticipantIDs []string  `bson:"participantIds"` // confirmed attendees
-	Summary        string    `bson:"summary"`        // post-event summary, compressed in storage
-	SubmittedAt    time.Time `bson:"submittedAt"`    // when the report was filed (server-set)
+	ID             string    `bson:"_id,omitempty" json:"id"`
+	EventID        string    `bson:"eventId,omitempty" json:"eventId,omitempty"`
+	GuildID        string    `bson:"guildId" json:"guildId"`
+	HostDiscordID  string    `bson:"hostDiscordId" json:"hostDiscordId"`
+	EventDate      time.Time `bson:"eventDate" json:"eventDate"`
+	ParticipantIDs []string  `bson:"participantIds" json:"participantIds"`
+	Summary        string    `bson:"summary" json:"summary"`
+	SubmittedAt    time.Time `bson:"submittedAt" json:"submittedAt"`
 }
 
 // Event is the aggregate root for a scheduled guild event.
@@ -119,6 +119,14 @@ type EventReportRepository interface {
 	// FindDashboardEvents retrieves and filters event reports for dashboard display.
 	// Returns rows containing event summaries and participant info, suitable for search/filter UI.
 	FindDashboardEvents(ctx context.Context, guildID string, filter GuildDashboardEventFilter) ([]GuildDashboardEventRow, error)
+
+	// Update replaces mutable fields (host, eventDate, participantIds, summary) for an existing report.
+	// Returns ErrReportNotFound if no document matches logID.
+	Update(ctx context.Context, logID string, report *EventReport) error
+
+	// Delete removes a report by its ID.
+	// Returns ErrReportNotFound if no document matches logID.
+	Delete(ctx context.Context, logID string) error
 
 	EnsureIndexes(ctx context.Context) error
 }

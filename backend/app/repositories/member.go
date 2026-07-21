@@ -61,6 +61,7 @@ type MemberRepository interface {
 	FindNotificationTargets(ctx context.Context, guildID string) ([]Member, error)
 
 	Delete(ctx context.Context, guildID, discordID string) error
+	DeleteAllByGuildID(ctx context.Context, guildID string) error
 
 	// Derived from events collection combined with member record.
 	GetStats(ctx context.Context, guildID, discordID string) (*MemberStats, error)

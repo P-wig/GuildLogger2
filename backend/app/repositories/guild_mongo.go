@@ -255,3 +255,27 @@ func (r *MongoGuildRepository) SetBotInstalledWithRoles(ctx context.Context, gui
 	)
 	return err
 }
+
+// UpdateConfigAndRoles atomically sets the guild's status role config and role type assignments.
+func (r *MongoGuildRepository) UpdateConfigAndRoles(ctx context.Context, guildID string, cfg GuildStatusRoleConfig, roles []GuildRole) error {
+	if roles == nil {
+		roles = []GuildRole{}
+	}
+	now := time.Now()
+	result, err := db.GuildsCollection(r.database).UpdateOne(
+		ctx,
+		bson.M{"guildId": guildID},
+		bson.M{"$set": bson.M{
+			"notificationConfig.statusRoles": cfg,
+			"roles":                          roles,
+			"updatedAt":                      now,
+		}},
+	)
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount == 0 {
+		return ErrGuildNotFound
+	}
+	return nil
+}

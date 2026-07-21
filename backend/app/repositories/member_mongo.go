@@ -143,6 +143,14 @@ func (r *MongoMemberRepository) Delete(ctx context.Context, guildID, discordID s
 	return err
 }
 
+func (r *MongoMemberRepository) DeleteAllByGuildID(ctx context.Context, guildID string) error {
+	_, err := db.MembersCollection(r.database).DeleteMany(
+		ctx,
+		bson.M{"guildId": guildID},
+	)
+	return err
+}
+
 func (r *MongoMemberRepository) GetStats(ctx context.Context, guildID, discordID string) (*MemberStats, error) {
 	member, err := r.FindByGuildAndDiscordID(ctx, guildID, discordID)
 	if err != nil {
