@@ -90,6 +90,16 @@ export const GuildEvents = () => {
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Per-row summary expansion
+  const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set());
+  const SUMMARY_LIMIT = 140;
+  const toggleExpanded = (id: string) =>
+    setExpandedLogIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
   useEffect(() => {
     if (!guildId) return;
     setLoading(true);
@@ -226,6 +236,11 @@ export const GuildEvents = () => {
                     id,
                     member: memberMap.get(id),
                   }));
+                  const isLong = log.summary.length > SUMMARY_LIMIT;
+                  const isExpanded = expandedLogIds.has(log.id);
+                  const displaySummary = isLong && !isExpanded
+                    ? log.summary.slice(0, SUMMARY_LIMIT).trimEnd() + "…"
+                    : log.summary;
                   return (
                     <Stack
                       key={log.id}
@@ -237,7 +252,17 @@ export const GuildEvents = () => {
                         {new Date(log.eventDate).toLocaleDateString()}
                       </Typography>
                       <Box sx={{ flex: 5 }}>
-                        <Typography variant="body2">{log.summary}</Typography>
+                        <Typography variant="body2">{displaySummary}</Typography>
+                        {isLong && (
+                          <Typography
+                            variant="caption"
+                            color="primary"
+                            onClick={() => toggleExpanded(log.id)}
+                            sx={{ cursor: "pointer", userSelect: "none", display: "block" }}
+                          >
+                            {isExpanded ? "Show less ▲" : "Show more ▼"}
+                          </Typography>
+                        )}
                         <Typography variant="caption" color="text.secondary">
                           Logged {new Date(log.submittedAt).toLocaleDateString()}
                         </Typography>
