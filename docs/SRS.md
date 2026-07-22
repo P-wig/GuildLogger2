@@ -65,5 +65,6 @@ The system supports Discord-authenticated users, guild onboarding, member sync, 
 
 ## Current Implementation Status
 
-- Implemented now: service root and health endpoint in Go backend.
-- In progress: migration from legacy Flask routes to Go route modules.
+- Fully implemented: Go backend with all core domains — auth, guild management, member sync, event logs, analytics, and anniversary notifications.
+- Flask-to-Go migration complete.
+- Remaining planned work: event reminder notifications (POST /api/notifications/events/reminders/run).

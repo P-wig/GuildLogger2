@@ -196,6 +196,19 @@ Response (200):
 Response (403): user is not a member of the specified Discord guild.
 Response (409): guild is already connected.
 
+#### DELETE /api/guilds/:guildId
+
+Disconnects a guild from GuildLogger. Permanently deletes the guild record and all associated member records. Only the guild owner can disconnect.
+
+Response (200):
+```json
+{ "ok": true }
+```
+
+Response (401): missing, invalid, or expired token.
+Response (403): authenticated user does not own this guild.
+Response (404): guild not found.
+
 #### GET /api/guilds/:guildId/bot/invite-url
 
 Returns the Discord OAuth2 URL to add the bot to the specified guild. The authenticated user must be the guild owner in GuildLogger.
@@ -388,6 +401,111 @@ Response (400): invalid `leaderboardBy`, `leaderboardLimit`, `inactiveDays`, `ev
 Response (401): missing, invalid, or expired token.
 Response (404): guild not found.
 Response (500): failed to load one or more dashboard data sources.
+
+### Guild Event Logs
+
+All event log endpoints require `Authorization: Bearer <token>`.
+Access is permitted for the guild owner or any active guild member.
+
+#### GET /api/guilds/:guildId/event-logs
+
+Returns all event log records for a guild.
+
+Response (200):
+```json
+{
+  "ok": true,
+  "logs": [
+    {
+      "id": "...",
+      "eventId": "",
+      "guildId": "...",
+      "hostDiscordId": "...",
+      "eventDate": "2026-06-14T20:00:00Z",
+      "participantIds": ["1234567890", "0987654321"],
+      "summary": "Event wrap-up notes",
+      "submittedAt": "..."
+    }
+  ]
+}
+```
+
+Response (401): missing, invalid, or expired token.
+Response (403): authenticated user is not the guild owner or an active guild member.
+Response (404): guild not found.
+
+#### POST /api/guilds/:guildId/event-logs
+
+Creates a manual event log record. Does not require a linked event document — used for logging events tracked outside the automated flow.
+
+Request body:
+```json
+{
+  "summary": "Event wrap-up notes",
+  "eventDate": "2026-06-14T20:00:00Z",
+  "participantIds": ["1234567890", "0987654321"],
+  "hostDiscordId": "1234567890"
+}
+```
+
+- `summary` (required): wrap-up text for the event.
+- `eventDate` (required): RFC3339 timestamp for when the event occurred.
+- `participantIds` (optional): list of attendee Discord IDs.
+- `hostDiscordId` (optional): Discord ID of the host. Defaults to the authenticated user.
+
+Response (200):
+```json
+{
+  "ok": true,
+  "log": {
+    "id": "...",
+    "guildId": "...",
+    "hostDiscordId": "...",
+    "eventDate": "2026-06-14T20:00:00Z",
+    "participantIds": ["1234567890", "0987654321"],
+    "summary": "Event wrap-up notes",
+    "submittedAt": "..."
+  }
+}
+```
+
+Response (400): `summary` or `eventDate` missing or invalid.
+Response (401): missing, invalid, or expired token.
+Response (403): authenticated user is not the guild owner or an active guild member.
+Response (404): guild not found.
+
+#### PUT /api/guilds/:guildId/event-logs/:logId
+
+Updates an existing event log record.
+
+Request body:
+```json
+{
+  "summary": "Updated wrap-up notes",
+  "eventDate": "2026-06-14T20:00:00Z",
+  "participantIds": ["1234567890", "0987654321"],
+  "hostDiscordId": "1234567890"
+}
+```
+
+All fields follow the same rules as `POST /api/guilds/:guildId/event-logs`.
+
+Response (200): `{ "ok": true }`
+
+Response (400): `summary` or `eventDate` missing or invalid.
+Response (401): missing, invalid, or expired token.
+Response (403): authenticated user is not the guild owner or an active guild member.
+Response (404): guild or event log not found.
+
+#### DELETE /api/guilds/:guildId/event-logs/:logId
+
+Permanently deletes an event log record.
+
+Response (200): `{ "ok": true }`
+
+Response (401): missing, invalid, or expired token.
+Response (403): authenticated user is not the guild owner or an active guild member.
+Response (404): guild or event log not found.
 
 ### Event Operations
 

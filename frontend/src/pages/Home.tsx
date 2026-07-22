@@ -44,17 +44,7 @@ export const Home = () => {
                   My Guilds
                 </Button>
               </Grid>
-              <Grid size={{ xs: 12, sm: "auto" }}>
-                <Button
-                  variant="outlined"
-                  fullWidth
-                  component={RouterLink}
-                  to="/app/events"
-                  size="large"
-                >
-                  Events
-                </Button>
-              </Grid>
+
             </Grid>
           </CardContent>
         </Card>

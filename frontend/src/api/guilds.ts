@@ -87,6 +87,7 @@ export type GuildDashboardStats = {
 };
 
 export type GuildDashboardEventRow = {
+  id: string;
   eventId: string;
   hostDiscordId: string;
   eventDate: string;

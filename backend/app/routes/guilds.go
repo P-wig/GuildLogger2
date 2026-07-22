@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"sort"
@@ -51,10 +52,10 @@ func RegisterGuildsProtected(
 	g.PUT("/guilds/:guildId/config/member-role", updateMemberRoleHandler(guildRepo))
 	g.PUT("/guilds/:guildId/config", updateGuildConfigHandler(guildRepo))
 	g.DELETE("/guilds/:guildId", deleteGuildHandler(guildRepo, memberRepo))
-	g.GET("/guilds/:guildId/event-logs", listGuildEventLogsHandler(eventReportRepo))
-	g.POST("/guilds/:guildId/event-logs", createGuildEventLogHandler(guildRepo, eventReportRepo))
-	g.PUT("/guilds/:guildId/event-logs/:logId", updateGuildEventLogHandler(guildRepo, eventReportRepo))
-	g.DELETE("/guilds/:guildId/event-logs/:logId", deleteGuildEventLogHandler(guildRepo, eventReportRepo))
+	g.GET("/guilds/:guildId/event-logs", listGuildEventLogsHandler(guildRepo, memberRepo, eventReportRepo))
+	g.POST("/guilds/:guildId/event-logs", createGuildEventLogHandler(guildRepo, memberRepo, eventReportRepo))
+	g.PUT("/guilds/:guildId/event-logs/:logId", updateGuildEventLogHandler(guildRepo, memberRepo, eventReportRepo))
+	g.DELETE("/guilds/:guildId/event-logs/:logId", deleteGuildEventLogHandler(guildRepo, memberRepo, eventReportRepo))
 }
 
 func listGuildsHandler(guildRepo repositories.GuildRepository) echo.HandlerFunc {
@@ -832,6 +833,16 @@ func updateMemberRoleHandler(guildRepo repositories.GuildRepository) echo.Handle
 	}
 }
 
+// isGuildOwnerOrMember returns true if discordID is the guild owner
+// or a synced member of the guild.
+func isGuildOwnerOrMember(ctx context.Context, memberRepo repositories.MemberRepository, guildID string, guild *repositories.Guild, discordID string) bool {
+	if guild.OwnerDiscordID == discordID {
+		return true
+	}
+	m, err := memberRepo.FindByGuildAndDiscordID(ctx, guildID, discordID)
+	return err == nil && m != nil
+}
+
 func deleteGuildHandler(guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		claims, ok := c.Get("user").(*session.Claims)
@@ -869,20 +880,32 @@ func deleteGuildHandler(guildRepo repositories.GuildRepository, memberRepo repos
 	}
 }
 
-func listGuildEventLogsHandler(reportRepo repositories.EventReportRepository) echo.HandlerFunc {
+func listGuildEventLogsHandler(guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository, reportRepo repositories.EventReportRepository) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		claims, ok := c.Get("user").(*session.Claims)
 		if !ok || claims == nil {
 			return c.JSON(http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "missing session"})
 		}
-		_ = claims
 
 		guildID := strings.TrimSpace(c.Param("guildId"))
 		if guildID == "" {
 			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "guildId is required"})
 		}
 
-		reports, err := reportRepo.FindByGuildID(c.Request().Context(), guildID)
+		ctx := c.Request().Context()
+
+		guild, err := guildRepo.FindByGuildID(ctx, guildID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
+		}
+		if guild == nil {
+			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "guild not found"})
+		}
+		if !isGuildOwnerOrMember(ctx, memberRepo, guildID, guild, claims.DiscordID) {
+			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "access denied"})
+		}
+
+		reports, err := reportRepo.FindByGuildID(ctx, guildID)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
 		}
@@ -893,7 +916,7 @@ func listGuildEventLogsHandler(reportRepo repositories.EventReportRepository) ec
 	}
 }
 
-func createGuildEventLogHandler(guildRepo repositories.GuildRepository, reportRepo repositories.EventReportRepository) echo.HandlerFunc {
+func createGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository, reportRepo repositories.EventReportRepository) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		claims, ok := c.Get("user").(*session.Claims)
 		if !ok || claims == nil {
@@ -936,8 +959,8 @@ func createGuildEventLogHandler(guildRepo repositories.GuildRepository, reportRe
 		if guild == nil {
 			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "guild not found"})
 		}
-		if guild.OwnerDiscordID != claims.DiscordID {
-			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "you do not own this guild"})
+		if !isGuildOwnerOrMember(ctx, memberRepo, guildID, guild, claims.DiscordID) {
+			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "access denied"})
 		}
 
 		if in.ParticipantIDs == nil {
@@ -960,7 +983,7 @@ func createGuildEventLogHandler(guildRepo repositories.GuildRepository, reportRe
 	}
 }
 
-func updateGuildEventLogHandler(guildRepo repositories.GuildRepository, reportRepo repositories.EventReportRepository) echo.HandlerFunc {
+func updateGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository, reportRepo repositories.EventReportRepository) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		claims, ok := c.Get("user").(*session.Claims)
 		if !ok || claims == nil {
@@ -999,8 +1022,8 @@ func updateGuildEventLogHandler(guildRepo repositories.GuildRepository, reportRe
 		if guild == nil {
 			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "guild not found"})
 		}
-		if guild.OwnerDiscordID != claims.DiscordID {
-			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "you do not own this guild"})
+		if !isGuildOwnerOrMember(ctx, memberRepo, guildID, guild, claims.DiscordID) {
+			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "access denied"})
 		}
 
 		hostID := strings.TrimSpace(in.HostDiscordID)
@@ -1028,7 +1051,7 @@ func updateGuildEventLogHandler(guildRepo repositories.GuildRepository, reportRe
 	}
 }
 
-func deleteGuildEventLogHandler(guildRepo repositories.GuildRepository, reportRepo repositories.EventReportRepository) echo.HandlerFunc {
+func deleteGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository, reportRepo repositories.EventReportRepository) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		claims, ok := c.Get("user").(*session.Claims)
 		if !ok || claims == nil {
@@ -1050,8 +1073,8 @@ func deleteGuildEventLogHandler(guildRepo repositories.GuildRepository, reportRe
 		if guild == nil {
 			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "guild not found"})
 		}
-		if guild.OwnerDiscordID != claims.DiscordID {
-			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "you do not own this guild"})
+		if !isGuildOwnerOrMember(ctx, memberRepo, guildID, guild, claims.DiscordID) {
+			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "access denied"})
 		}
 
 		if err := reportRepo.Delete(ctx, logID); err != nil {

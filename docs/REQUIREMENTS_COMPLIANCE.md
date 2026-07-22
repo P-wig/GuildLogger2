@@ -8,11 +8,12 @@ Track compliance against GuildLogger2 target requirements during the Flask-to-Go
 
 | Area | Status | Notes |
 |---|---|---|
-| Runtime migration to Go backend | Implemented | Go service, health endpoint, full auth + guild routes active |
+| Runtime migration to Go backend | Implemented | Flask-to-Go migration complete; Go is the sole active backend runtime |
 | Discord OAuth auth flow | Implemented | Full flow: URL generation, code exchange, JWT issuance, session validation |
 | Guild and bot onboarding | Implemented | Guild linking, Discord membership validation, bot invite URL, install confirmation |
 | Member sync and role eligibility | Implemented | Sync pipeline, verified role filter, idempotency, departed member deactivation |
-| Frontend integration with new API domains | In Progress | Auth, guild, dashboard complete; events, members, analytics pending |
+| Frontend integration with new API domains | Implemented | Auth, guild, dashboard, event logs, and member stats complete |
+| Manual event log CRUD (guild owner / member) | Implemented | GET/POST/PUT/DELETE /api/guilds/:guildId/event-logs; GuildEvents frontend page |
 
 ## Migration Compliance Risks
 

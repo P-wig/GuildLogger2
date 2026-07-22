@@ -146,7 +146,7 @@ export const GuildEvents = () => {
 
     const payload = {
       summary: logSummary.trim(),
-      eventDate: new Date(logDate).toISOString(),
+      eventDate: new Date(logDate + "T12:00:00").toISOString(),
       hostDiscordId: logHost.discordId,
       participantIds: logSelectedMembers.map((m) => m.discordId),
     };
@@ -224,6 +224,7 @@ export const GuildEvents = () => {
               <Stack spacing={0}>
                 <Stack direction="row" sx={{ px: 1, pb: 0.5 }}>
                   <Typography variant="caption" color="text.secondary" sx={{ flex: 2 }}>Date</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ flex: 2, fontFamily: "monospace" }}>Log ID</Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ flex: 5 }}>Summary</Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ flex: 2 }}>Host</Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ flex: 4 }}>Participants</Typography>
@@ -249,8 +250,13 @@ export const GuildEvents = () => {
                       sx={{ px: 1, py: 1, borderBottom: "1px solid", borderColor: "divider" }}
                     >
                       <Typography variant="body2" sx={{ flex: 2, pt: 0.5 }}>
-                        {new Date(log.eventDate).toLocaleDateString()}
+                        {new Date(log.eventDate).toLocaleDateString(undefined, { timeZone: "UTC" })}
                       </Typography>
+                      <Tooltip title={log.id} placement="top">
+                        <Typography variant="body2" sx={{ flex: 2, pt: 0.5, fontFamily: "monospace", color: "text.secondary", cursor: "default" }}>
+                          {log.id ? log.id.slice(0, 8) + "…" : "—"}
+                        </Typography>
+                      </Tooltip>
                       <Box sx={{ flex: 5 }}>
                         <Typography variant="body2">{displaySummary}</Typography>
                         {isLong && (

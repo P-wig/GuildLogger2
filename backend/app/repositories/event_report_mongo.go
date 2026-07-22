@@ -69,6 +69,21 @@ func NewMongoEventReportRepository(database *mongo.Database) *MongoEventReportRe
 }
 
 func (r *MongoEventReportRepository) EnsureIndexes(ctx context.Context) error {
+	coll := db.EventReportsCollection(r.database)
+
+	// Migration: drop the old non-sparse unique index on eventId if it exists.
+	// That index treats absent fields as null, which blocks multiple manually-logged
+	// events (which store no eventId). Safe to ignore "not found" errors.
+	_, _ = coll.Indexes().DropOne(ctx, "idx_report_event")
+
+	// Migration: remove the eventId field from documents where it was stored as ""
+	// (written before the omitempty bson tag was added). A sparse unique index still
+	// indexes present-but-empty strings, so those rows must have the field unset.
+	_, _ = coll.UpdateMany(ctx,
+		bson.M{"eventId": ""},
+		bson.M{"$unset": bson.M{"eventId": ""}},
+	)
+
 	indexes := []mongo.IndexModel{
 		{
 			Keys:    bson.D{{Key: "eventId", Value: 1}},
@@ -79,7 +94,7 @@ func (r *MongoEventReportRepository) EnsureIndexes(ctx context.Context) error {
 			Options: options.Index().SetName("idx_report_guild_date"),
 		},
 	}
-	_, err := db.EventReportsCollection(r.database).Indexes().CreateMany(ctx, indexes)
+	_, err := coll.Indexes().CreateMany(ctx, indexes)
 	return err
 }
 
@@ -290,9 +305,25 @@ func (r *MongoEventReportRepository) FindDashboardEvents(ctx context.Context, gu
 	}
 	defer cursor.Close(ctx)
 
-	rows := make([]GuildDashboardEventRow, 0)
-	if err := cursor.All(ctx, &rows); err != nil {
+	var docs []eventReportDoc
+	if err := cursor.All(ctx, &docs); err != nil {
 		return nil, err
+	}
+
+	rows := make([]GuildDashboardEventRow, 0, len(docs))
+	for _, doc := range docs {
+		summary, err := zlibDecompress(doc.SummaryCompressed)
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, GuildDashboardEventRow{
+			ID:             doc.ID,
+			EventID:        doc.EventID,
+			HostDiscordID:  doc.HostDiscordID,
+			EventDate:      doc.EventDate,
+			ParticipantIDs: doc.ParticipantIDs,
+			Summary:        summary,
+		})
 	}
 
 	return rows, nil
