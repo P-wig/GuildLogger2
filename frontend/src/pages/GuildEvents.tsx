@@ -90,6 +90,16 @@ export const GuildEvents = () => {
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Per-row summary expansion
+  const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set());
+  const SUMMARY_LIMIT = 140;
+  const toggleExpanded = (id: string) =>
+    setExpandedLogIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
   useEffect(() => {
     if (!guildId) return;
     setLoading(true);
@@ -136,7 +146,7 @@ export const GuildEvents = () => {
 
     const payload = {
       summary: logSummary.trim(),
-      eventDate: new Date(logDate).toISOString(),
+      eventDate: new Date(logDate + "T12:00:00").toISOString(),
       hostDiscordId: logHost.discordId,
       participantIds: logSelectedMembers.map((m) => m.discordId),
     };
@@ -214,6 +224,7 @@ export const GuildEvents = () => {
               <Stack spacing={0}>
                 <Stack direction="row" sx={{ px: 1, pb: 0.5 }}>
                   <Typography variant="caption" color="text.secondary" sx={{ flex: 2 }}>Date</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ flex: 2, fontFamily: "monospace" }}>Log ID</Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ flex: 5 }}>Summary</Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ flex: 2 }}>Host</Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ flex: 4 }}>Participants</Typography>
@@ -226,6 +237,11 @@ export const GuildEvents = () => {
                     id,
                     member: memberMap.get(id),
                   }));
+                  const isLong = log.summary.length > SUMMARY_LIMIT;
+                  const isExpanded = expandedLogIds.has(log.id);
+                  const displaySummary = isLong && !isExpanded
+                    ? log.summary.slice(0, SUMMARY_LIMIT).trimEnd() + "…"
+                    : log.summary;
                   return (
                     <Stack
                       key={log.id}
@@ -234,10 +250,25 @@ export const GuildEvents = () => {
                       sx={{ px: 1, py: 1, borderBottom: "1px solid", borderColor: "divider" }}
                     >
                       <Typography variant="body2" sx={{ flex: 2, pt: 0.5 }}>
-                        {new Date(log.eventDate).toLocaleDateString()}
+                        {new Date(log.eventDate).toLocaleDateString(undefined, { timeZone: "UTC" })}
                       </Typography>
+                      <Tooltip title={log.id} placement="top">
+                        <Typography variant="body2" sx={{ flex: 2, pt: 0.5, fontFamily: "monospace", color: "text.secondary", cursor: "default" }}>
+                          {log.id ? log.id.slice(0, 8) + "…" : "—"}
+                        </Typography>
+                      </Tooltip>
                       <Box sx={{ flex: 5 }}>
-                        <Typography variant="body2">{log.summary}</Typography>
+                        <Typography variant="body2">{displaySummary}</Typography>
+                        {isLong && (
+                          <Typography
+                            variant="caption"
+                            color="primary"
+                            onClick={() => toggleExpanded(log.id)}
+                            sx={{ cursor: "pointer", userSelect: "none", display: "block" }}
+                          >
+                            {isExpanded ? "Show less ▲" : "Show more ▼"}
+                          </Typography>
+                        )}
                         <Typography variant="caption" color="text.secondary">
                           Logged {new Date(log.submittedAt).toLocaleDateString()}
                         </Typography>

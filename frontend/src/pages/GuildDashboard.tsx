@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { AxiosError } from "axios";
 import { useParams, Link as RouterLink, useNavigate } from "react-router";
 import Alert from "@mui/material/Alert";
@@ -17,13 +17,16 @@ import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import FormControl from "@mui/material/FormControl";
+import IconButton from "@mui/material/IconButton";
 import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import InfoIcon from "@mui/icons-material/Info";
 import SettingsIcon from "@mui/icons-material/Settings";
-import { guildsApi, type GuildDashboardData, type SyncStatus } from "../api/guilds";
+import { guildsApi, type GuildDashboardData, type GuildDashboardMemberRow, type SyncStatus } from "../api/guilds";
 
 export const GuildDashboard = () => {
   const { guildId } = useParams<{ guildId: string }>();
@@ -34,6 +37,8 @@ export const GuildDashboard = () => {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncCooldown, setSyncCooldown] = useState(0);
+  const [statsModalMember, setStatsModalMember] = useState<GuildDashboardMemberRow | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [configSaving, setConfigSaving] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
@@ -43,6 +48,28 @@ export const GuildDashboard = () => {
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const navigate = useNavigate();
+
+  // Restore sync cooldown from localStorage on mount
+  useEffect(() => {
+    if (!guildId) return;
+    const until = Number(localStorage.getItem(`syncCooldownUntil_${guildId}`) ?? 0);
+    const remaining = Math.max(0, Math.ceil((until - Date.now()) / 1000));
+    if (remaining > 0) setSyncCooldown(remaining);
+  }, [guildId]);
+
+  // Countdown tick for sync cooldown
+  useEffect(() => {
+    if (syncCooldown <= 0) return;
+    const timer = setInterval(() => setSyncCooldown((c) => c - 1), 1000);
+    return () => clearInterval(timer);
+  }, [syncCooldown]);
+
+  // Member lookup map for leaderboard enrichment
+  const memberMap = useMemo(() => {
+    const m = new Map<string, GuildDashboardMemberRow>();
+    (dashboard?.members ?? []).forEach((mbr) => m.set(mbr.discordId, mbr));
+    return m;
+  }, [dashboard?.members]);
 
   useEffect(() => {
     if (!guildId) return;
@@ -77,6 +104,9 @@ export const GuildDashboard = () => {
       ]);
       setDashboard(dashRes.data.dashboard);
       setSyncStatus({ memberCount: syncRes.data.memberCount, synced: syncRes.data.synced });
+      const cooldownUntil = Date.now() + 60_000;
+      localStorage.setItem(`syncCooldownUntil_${guildId}`, String(cooldownUntil));
+      setSyncCooldown(60);
     } catch (err) {
       const axiosErr = err as AxiosError<{ error?: string }>;
       setSyncError(axiosErr.response?.data?.error ?? "Sync failed. Ensure the bot is installed and has permission to read members.");
@@ -271,16 +301,26 @@ export const GuildDashboard = () => {
           <Divider sx={{ mb: 2 }} />
           {leaderboard && leaderboard.length > 0 ? (
             <Stack spacing={1}>
-              {leaderboard.slice(0, 10).map((entry, idx) => (
-                <Stack key={idx} direction="row" justifyContent="space-between" alignItems="center">
-                  <Typography variant="body2">
-                    #{entry.rank} - {entry.discordId.slice(0, 8)}...
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {entry.eventsHosted} hosted · {entry.eventsAttended} attended
-                  </Typography>
-                </Stack>
-              ))}
+              {leaderboard.slice(0, 10).map((entry) => {
+                const mbr = memberMap.get(entry.discordId);
+                return (
+                  <Stack key={entry.discordId} direction="row" justifyContent="space-between" alignItems="center">
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Typography variant="body2" color="text.secondary" sx={{ minWidth: 24 }}>#{entry.rank}</Typography>
+                      <Avatar
+                        src={mbr?.avatarHash ? `https://cdn.discordapp.com/avatars/${mbr.discordId}/${mbr.avatarHash}.png?size=32` : undefined}
+                        sx={{ width: 24, height: 24, fontSize: 10 }}
+                      >
+                        {mbr ? mbr.username[0]?.toUpperCase() : "?"}
+                      </Avatar>
+                      <Typography variant="body2">{mbr?.username ?? entry.discordId.slice(0, 10) + "…"}</Typography>
+                    </Stack>
+                    <Typography variant="body2" color="text.secondary">
+                      {entry.eventsHosted} hosted · {entry.eventsAttended} attended
+                    </Typography>
+                  </Stack>
+                );
+              })}
             </Stack>
           ) : (
             <Typography color="text.secondary">No leaderboard data available.</Typography>
@@ -301,8 +341,7 @@ export const GuildDashboard = () => {
                 <Typography variant="caption" color="text.secondary" sx={{ flex: 3 }}>Member</Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ flex: 2, textAlign: "center" }}>Rank</Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "center" }}>Status</Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "right" }}>Hosted</Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "right" }}>Attended</Typography>
+                <Box sx={{ width: 36 }} />
               </Stack>
               <Divider />
               {members.map((m) => {
@@ -341,8 +380,11 @@ export const GuildDashboard = () => {
                       size="small"
                     />
                   </Box>
-                  <Typography variant="body2" sx={{ flex: 1, textAlign: "right" }}>{m.eventsHosted}</Typography>
-                  <Typography variant="body2" sx={{ flex: 1, textAlign: "right" }}>{m.eventsAttended}</Typography>
+                  <Tooltip title="View stats">
+                    <IconButton size="small" onClick={() => setStatsModalMember(m)}>
+                      <InfoIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                 </Stack>
                 );
               })}
@@ -370,10 +412,14 @@ export const GuildDashboard = () => {
               </Stack>
               <Divider />
               {events.map((e) => (
-                <Stack key={e.eventId} direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 1 }}>
-                  <Typography variant="body2" sx={{ flex: 2, fontFamily: "monospace" }}>{e.eventId.slice(0, 12)}…</Typography>
-                  <Typography variant="body2" sx={{ flex: 2, fontFamily: "monospace" }}>{e.hostDiscordId}</Typography>
-                  <Typography variant="body2" sx={{ flex: 1, textAlign: "right" }}>{new Date(e.eventDate).toLocaleDateString()}</Typography>
+                <Stack key={e.id || e.eventId} direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 1 }}>
+                  <Typography variant="body2" sx={{ flex: 2, fontFamily: "monospace" }}>
+                    {e.id ? e.id.slice(0, 10) + "…" : e.eventId ? e.eventId.slice(0, 10) + "…" : "—"}
+                  </Typography>
+                  <Typography variant="body2" sx={{ flex: 2 }}>
+                    {memberMap.get(e.hostDiscordId)?.username ?? e.hostDiscordId.slice(0, 10) + "…"}
+                  </Typography>
+                  <Typography variant="body2" sx={{ flex: 1, textAlign: "right" }}>{new Date(e.eventDate).toLocaleDateString(undefined, { timeZone: "UTC" })}</Typography>
                   <Typography variant="body2" sx={{ flex: 1, textAlign: "right" }}>{e.participantIds?.length ?? 0}</Typography>
                 </Stack>
               ))}
@@ -453,9 +499,9 @@ export const GuildDashboard = () => {
               size="small"
               loading={syncing}
               onClick={handleSync}
-              disabled={!dashboard?.guild.botInstalled || !dashboard?.guild.notificationConfig?.statusRoles?.activeRoleId}
+              disabled={syncCooldown > 0 || !dashboard?.guild.botInstalled || !dashboard?.guild.notificationConfig?.statusRoles?.activeRoleId}
             >
-              Sync Members
+              {syncCooldown > 0 ? `Sync Members (${syncCooldown}s)` : "Sync Members"}
             </LoadingButton>
           </Stack>
         </CardContent>
@@ -563,6 +609,61 @@ export const GuildDashboard = () => {
             Save
           </LoadingButton>
         </DialogActions>
+      </Dialog>
+
+      {/* Member Stats Modal */}
+      <Dialog open={statsModalMember !== null} onClose={() => setStatsModalMember(null)} maxWidth="xs" fullWidth>
+        {statsModalMember && (
+          <>
+            <DialogTitle>
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <Avatar
+                  src={statsModalMember.avatarHash ? `https://cdn.discordapp.com/avatars/${statsModalMember.discordId}/${statsModalMember.avatarHash}.png?size=64` : undefined}
+                  sx={{ width: 36, height: 36 }}
+                >
+                  {statsModalMember.username?.[0]?.toUpperCase()}
+                </Avatar>
+                <Box>
+                  <Typography variant="subtitle1" fontWeight="bold">{statsModalMember.username}</Typography>
+                  <Typography variant="caption" color="text.secondary" fontFamily="monospace">{statsModalMember.discordId}</Typography>
+                </Box>
+              </Stack>
+            </DialogTitle>
+            <DialogContent>
+              <Stack spacing={1.5}>
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography color="text.secondary" variant="body2">Status</Typography>
+                  <Chip label={statsModalMember.status === "active" ? "Active" : "Retired"} color={statsModalMember.status === "active" ? "success" : "warning"} size="small" />
+                </Stack>
+                <Divider />
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography color="text.secondary" variant="body2">Events Hosted</Typography>
+                  <Typography variant="body2">{statsModalMember.eventsHosted}</Typography>
+                </Stack>
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography color="text.secondary" variant="body2">Events Attended</Typography>
+                  <Typography variant="body2">{statsModalMember.eventsAttended}</Typography>
+                </Stack>
+                <Divider />
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography color="text.secondary" variant="body2">Joined Discord</Typography>
+                  <Typography variant="body2">{statsModalMember.discordJoinedAt ? new Date(statsModalMember.discordJoinedAt).toLocaleDateString(undefined, { timeZone: "UTC" }) : "—"}</Typography>
+                </Stack>
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography color="text.secondary" variant="body2">Last Hosted</Typography>
+                  <Typography variant="body2">{statsModalMember.lastHostedDate ? new Date(statsModalMember.lastHostedDate).toLocaleDateString(undefined, { timeZone: "UTC" }) : "Never"}</Typography>
+                </Stack>
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography color="text.secondary" variant="body2">Last Attended</Typography>
+                  <Typography variant="body2">{statsModalMember.lastAttendedDate ? new Date(statsModalMember.lastAttendedDate).toLocaleDateString(undefined, { timeZone: "UTC" }) : "Never"}</Typography>
+                </Stack>
+              </Stack>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setStatsModalMember(null)}>Close</Button>
+            </DialogActions>
+          </>
+        )}
       </Dialog>
 
       {/* Disconnect Confirmation Dialog */}

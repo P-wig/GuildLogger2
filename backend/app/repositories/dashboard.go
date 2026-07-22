@@ -65,6 +65,7 @@ type GuildDashboardEventFilter struct {
 }
 
 type GuildDashboardEventRow struct {
+	ID             string    `json:"id" bson:"_id"`
 	EventID        string    `json:"eventId" bson:"eventId"`
 	HostDiscordID  string    `json:"hostDiscordId" bson:"hostDiscordId"`
 	EventDate      time.Time `json:"eventDate" bson:"eventDate"`

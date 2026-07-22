@@ -63,6 +63,18 @@ MongoDB Driver & Database
 - API client layer centralizes backend requests.
 - Auth state managed in a shared context/provider.
 
+### Frontend Routes
+
+| Path | Component | Access |
+|---|---|---|
+| `/` | Welcome | Public |
+| `/auth` | Auth | Unauthenticated only |
+| `/app` | Home | Protected |
+| `/app/account` | Account | Protected |
+| `/app/guilds` | Guilds | Protected |
+| `/app/guilds/:guildId` | GuildDashboard | Protected |
+| `/app/guilds/:guildId/events` | GuildEvents | Protected |
+
 ## Data Design
 
 Primary identifiers:
@@ -89,6 +101,22 @@ Repositories expose typed error sentinels for expected domain failures:
 
 - `ErrGuildAlreadyExists` — returned by `Create` when a guild with the same `guildId` already exists
 - `ErrGuildNotFound` — returned by `Update` and all read-modify-write methods when the guild document is missing
+- `ErrReportNotFound` — returned by `Update` and `Delete` when the event report document is missing
+
+### EventReport Document
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string (ObjectID hex) | Unique report identifier, generated on create |
+| `eventId` | string (optional) | Links to a bot-managed `Event` document; absent for manual logs |
+| `guildId` | string | Discord guild snowflake ID |
+| `hostDiscordId` | string | Discord ID of the event host |
+| `eventDate` | time | When the event occurred |
+| `participantIds` | []string | Discord IDs of attendees |
+| `summary` | []byte | Event wrap-up text, stored zlib-compressed in MongoDB |
+| `submittedAt` | time | When the log was created |
+
+The `summary` field is compressed on write and decompressed on read inside the MongoDB repository. Callers always receive a plain string.
 
 ### Key Workflows
 
@@ -97,6 +125,7 @@ Repositories expose typed error sentinels for expected domain failures:
 3. Member sync: fetch from Discord → filter by active role → resolve ranked role → upsert → deactivate departed members
 4. Event create/register/unregister
 5. Scheduled reminders and anniversary notifications
+6. Manual event log CRUD: guild owner or active member submits a log → stored as `EventReport` without a linked `eventId` → accessible via guild event logs page
 
 ## Deployment Model
 
@@ -105,6 +134,6 @@ Repositories expose typed error sentinels for expected domain failures:
 
 ## Migration Notes
 
-- Legacy Flask code is retained temporarily as a reference baseline.
-- Route migration proceeds domain-by-domain to Go modules.
-- Documentation should describe current Go behavior, not historical Flask behavior.
+- Flask-to-Go migration is complete. The Go backend is the sole active runtime.
+- Documentation describes current Go behavior only.
+- Legacy Flask code is no longer referenced.
