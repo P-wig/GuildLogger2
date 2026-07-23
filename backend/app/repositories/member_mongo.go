@@ -117,6 +117,31 @@ func (r *MongoMemberRepository) FindByGuildID(ctx context.Context, guildID strin
 	return members, nil
 }
 
+func (r *MongoMemberRepository) FindGuildIDsByMemberDiscordID(ctx context.Context, discordID string) ([]string, error) {
+	cursor, err := db.MembersCollection(r.database).Find(
+		ctx,
+		bson.M{"discordId": discordID, "status": MemberStatusActive},
+		options.Find().SetProjection(bson.M{"guildId": 1, "_id": 0}),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var rows []struct {
+		GuildID string `bson:"guildId"`
+	}
+	if err := cursor.All(ctx, &rows); err != nil {
+		return nil, err
+	}
+
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.GuildID)
+	}
+	return ids, nil
+}
+
 func (r *MongoMemberRepository) UpdateRoles(ctx context.Context, guildID, discordID string, roleIDs []string) error {
 	if roleIDs == nil {
 		roleIDs = []string{}

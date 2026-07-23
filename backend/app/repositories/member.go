@@ -66,6 +66,9 @@ type MemberRepository interface {
 	// Derived from events collection combined with member record.
 	GetStats(ctx context.Context, guildID, discordID string) (*MemberStats, error)
 
+	// FindGuildIDsByMemberDiscordID returns IDs of guilds where discordID is an active member.
+	FindGuildIDsByMemberDiscordID(ctx context.Context, discordID string) ([]string, error)
+
 	// FindAnniversaryMembers returns opted-in members whose discordJoinedAt
 	// falls on today's month/day and whose tenure in years matches one of anniversaryYears.
 	FindAnniversaryMembers(ctx context.Context, guildID string, anniversaryYears []int) ([]Member, error)

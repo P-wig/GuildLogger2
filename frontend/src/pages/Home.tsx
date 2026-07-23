@@ -9,7 +9,7 @@ import { Link as RouterLink } from "react-router";
 import { useAuth } from "../auth";
 
 export const Home = () => {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated } = useAuth();
 
   return (
     <Box sx={{ textAlign: "center" }}>
@@ -29,7 +29,7 @@ export const Home = () => {
             </Typography>
 
             <Typography color="text.secondary" sx={{ mb: 3 }}>
-              Welcome back, <strong>{user?.discordId}</strong>!
+              Welcome back!
             </Typography>
 
             <Grid container spacing={2} justifyContent="center">

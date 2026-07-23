@@ -24,12 +24,20 @@ import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
 import InfoIcon from "@mui/icons-material/Info";
 import SettingsIcon from "@mui/icons-material/Settings";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip,
+  Legend, ResponsiveContainer, PieChart, Pie, Cell,
+} from "recharts";
 import { guildsApi, type GuildDashboardData, type GuildDashboardMemberRow, type SyncStatus } from "../api/guilds";
+import { useAuth } from "../auth";
 
 export const GuildDashboard = () => {
   const { guildId } = useParams<{ guildId: string }>();
+  const { user } = useAuth();
+  const theme = useTheme();
 
   const [dashboard, setDashboard] = useState<GuildDashboardData | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
@@ -45,6 +53,7 @@ export const GuildDashboard = () => {
   const [cfgActiveRoleId, setCfgActiveRoleId] = useState("");
   const [cfgInactiveRoleId, setCfgInactiveRoleId] = useState("");
   const [cfgRankedRoleIds, setCfgRankedRoleIds] = useState<string[]>([]);
+  const [cfgModeratorRoleIds, setCfgModeratorRoleIds] = useState<string[]>([]);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const navigate = useNavigate();
@@ -71,6 +80,47 @@ export const GuildDashboard = () => {
     return m;
   }, [dashboard?.members]);
 
+  // Chart data: member status breakdown
+  const memberStatusData = useMemo(() => {
+    const s = dashboard?.stats;
+    if (!s) return [];
+    return [
+      { name: "Active", value: s.activeMembers },
+      { name: "Inactive", value: s.inactiveMembers },
+    ].filter((d) => d.value > 0);
+  }, [dashboard?.stats]);
+
+  // Chart data: events per calendar month (from recent events list)
+  const eventsByMonth = useMemo(() => {
+    const evts = dashboard?.events ?? [];
+    const byMonth: Record<string, { label: string; events: number; participants: number }> = {};
+    evts.forEach((e) => {
+      const key = e.eventDate.slice(0, 7);
+      const label = new Date(e.eventDate).toLocaleDateString("en-US", {
+        month: "short", year: "2-digit", timeZone: "UTC",
+      });
+      if (!byMonth[key]) byMonth[key] = { label, events: 0, participants: 0 };
+      byMonth[key].events++;
+      byMonth[key].participants += e.participantIds?.length ?? 0;
+    });
+    return Object.keys(byMonth).sort().map((k) => ({
+      month: byMonth[k].label,
+      Events: byMonth[k].events,
+      "Avg Attendance": byMonth[k].events > 0 ? Math.round(byMonth[k].participants / byMonth[k].events) : 0,
+    }));
+  }, [dashboard?.events]);
+
+  // Chart data: top contributors (reversed so #1 appears at top of horizontal bar)
+  const leaderboardChartData = useMemo(
+    () =>
+      (dashboard?.leaderboard ?? []).slice(0, 10).map((entry) => ({
+        name: memberMap.get(entry.discordId)?.username ?? "…" + entry.discordId.slice(-4),
+        Hosted: entry.eventsHosted,
+        Attended: entry.eventsAttended,
+      })).reverse(),
+    [dashboard?.leaderboard, memberMap]
+  );
+
   useEffect(() => {
     if (!guildId) return;
 
@@ -79,14 +129,16 @@ export const GuildDashboard = () => {
 
     Promise.all([
       guildsApi.getDashboard(guildId),
-      guildsApi.getMemberSyncStatus(guildId),
+      guildsApi.getMemberSyncStatus(guildId).catch(() => null),
     ])
       .then(([dashRes, syncRes]) => {
         setDashboard(dashRes.data.dashboard);
-        setSyncStatus({
-          memberCount: syncRes.data.memberCount,
-          synced: syncRes.data.synced,
-        });
+        if (syncRes) {
+          setSyncStatus({
+            memberCount: syncRes.data.memberCount,
+            synced: syncRes.data.synced,
+          });
+        }
       })
       .catch(() => setError("Failed to load guild dashboard."))
       .finally(() => setLoading(false));
@@ -120,6 +172,7 @@ export const GuildDashboard = () => {
     setCfgActiveRoleId(g?.notificationConfig?.statusRoles?.activeRoleId ?? "");
     setCfgInactiveRoleId(g?.notificationConfig?.statusRoles?.inactiveRoleId ?? "");
     setCfgRankedRoleIds(g?.roles?.filter((r) => r.type === "ranked").map((r) => r.discordRoleId) ?? []);
+    setCfgModeratorRoleIds(g?.notificationConfig?.statusRoles?.moderatorRoleIds ?? []);
     setConfigError(null);
     setConfigOpen(true);
   };
@@ -133,6 +186,7 @@ export const GuildDashboard = () => {
         activeRoleId: cfgActiveRoleId,
         inactiveRoleId: cfgInactiveRoleId,
         rankedRoleIds: cfgRankedRoleIds,
+        moderatorRoleIds: cfgModeratorRoleIds,
       });
       setDashboard((prev) =>
         prev
@@ -145,6 +199,7 @@ export const GuildDashboard = () => {
                   statusRoles: {
                     activeRoleId: cfgActiveRoleId,
                     inactiveRoleId: cfgInactiveRoleId,
+                    moderatorRoleIds: cfgModeratorRoleIds,
                   },
                 },
                 roles: prev.guild.roles.map((r) => ({
@@ -196,8 +251,9 @@ export const GuildDashboard = () => {
     );
   }
 
-  const { guild, stats, leaderboard, members, inactiveMembers, events } = dashboard;
+  const { guild, stats, members, events } = dashboard;
   const selectableRoles = (guild.roles ?? []).filter((r) => !r.managed && !r.isDefault).sort((a, b) => b.position - a.position);
+  const isOwner = !!user && user.discordId === guild.ownerDiscordId;
 
   return (
     <Box sx={{ maxWidth: 1200, mx: "auto" }}>
@@ -212,24 +268,28 @@ export const GuildDashboard = () => {
           size="small"
         />
         <Box sx={{ flexGrow: 1 }} />
-        <Button
-          variant="outlined"
-          size="small"
-          color="error"
-          onClick={() => setDisconnectOpen(true)}
-          sx={{ mr: 1 }}
-        >
-          Disconnect
-        </Button>
-        <Button
-          variant="outlined"
-          size="small"
-          startIcon={<SettingsIcon />}
-          onClick={handleOpenConfig}
-          disabled={!guild.botInstalled}
-        >
-          Configure
-        </Button>
+        {isOwner && (
+          <>
+            <Button
+              variant="outlined"
+              size="small"
+              color="error"
+              onClick={() => setDisconnectOpen(true)}
+              sx={{ mr: 1 }}
+            >
+              Disconnect
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<SettingsIcon />}
+              onClick={handleOpenConfig}
+              disabled={!guild.botInstalled}
+            >
+              Configure
+            </Button>
+          </>
+        )}
       </Stack>
 
       {/* Stats Cards */}
@@ -292,6 +352,81 @@ export const GuildDashboard = () => {
         </Card>
       </Stack>
 
+      {/* Analytics Section */}
+      <Card variant="outlined" sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>Analytics</Typography>
+          <Divider sx={{ mb: 2 }} />
+          <Stack direction={{ xs: "column", md: "row" }} spacing={3} alignItems="flex-start">
+
+            {/* Member Status Donut */}
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="subtitle2" color="text.secondary" gutterBottom>Member Status</Typography>
+              {memberStatusData.length > 0 ? (
+                <Box sx={{ position: "relative" }}>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={memberStatusData}
+                        cx="50%" cy="50%"
+                        innerRadius={65} outerRadius={95}
+                        startAngle={90} endAngle={-270}
+                        dataKey="value"
+                        paddingAngle={memberStatusData.length > 1 ? 3 : 0}
+                      >
+                        <Cell fill={theme.palette.success.main} />
+                        <Cell fill={theme.palette.warning.main} />
+                      </Pie>
+                      <RechartsTooltip formatter={(v, n) => [`${v} members`, String(n)]} />
+                      <Legend
+                        formatter={(value) => (
+                          <span style={{ fontSize: 12, color: theme.palette.text.secondary }}>{value}</span>
+                        )}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <Box sx={{
+                    position: "absolute", top: "45%", left: "50%",
+                    transform: "translate(-50%, -50%)", textAlign: "center", pointerEvents: "none",
+                  }}>
+                    <Typography variant="h5" fontWeight="bold">{dashboard?.stats.totalMembers}</Typography>
+                    <Typography variant="caption" color="text.secondary">Total</Typography>
+                  </Box>
+                </Box>
+              ) : (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>No member data.</Typography>
+              )}
+            </Box>
+
+            {/* Events per Month */}
+            <Box sx={{ flex: 2, minWidth: 0 }}>
+              <Typography variant="subtitle2" color="text.secondary" gutterBottom>Event Activity (Recent)</Typography>
+              {eventsByMonth.length > 0 ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={eventsByMonth} barCategoryGap="30%">
+                    <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={28} />
+                    <RechartsTooltip
+                      contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: theme.palette.divider }}
+                    />
+                    <Legend
+                      formatter={(value) => (
+                        <span style={{ fontSize: 12, color: theme.palette.text.secondary }}>{value}</span>
+                      )}
+                    />
+                    <Bar dataKey="Events" fill={theme.palette.primary.main} radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="Avg Attendance" fill={theme.palette.secondary.main} radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>No event data to chart.</Typography>
+              )}
+            </Box>
+
+          </Stack>
+        </CardContent>
+      </Card>
+
       {/* Leaderboard Section */}
       <Card variant="outlined" sx={{ mb: 3 }}>
         <CardContent>
@@ -299,34 +434,89 @@ export const GuildDashboard = () => {
             Top Contributors
           </Typography>
           <Divider sx={{ mb: 2 }} />
-          {leaderboard && leaderboard.length > 0 ? (
-            <Stack spacing={1}>
-              {leaderboard.slice(0, 10).map((entry) => {
-                const mbr = memberMap.get(entry.discordId);
-                return (
-                  <Stack key={entry.discordId} direction="row" justifyContent="space-between" alignItems="center">
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Typography variant="body2" color="text.secondary" sx={{ minWidth: 24 }}>#{entry.rank}</Typography>
-                      <Avatar
-                        src={mbr?.avatarHash ? `https://cdn.discordapp.com/avatars/${mbr.discordId}/${mbr.avatarHash}.png?size=32` : undefined}
-                        sx={{ width: 24, height: 24, fontSize: 10 }}
-                      >
-                        {mbr ? mbr.username[0]?.toUpperCase() : "?"}
-                      </Avatar>
-                      <Typography variant="body2">{mbr?.username ?? entry.discordId.slice(0, 10) + "…"}</Typography>
-                    </Stack>
-                    <Typography variant="body2" color="text.secondary">
-                      {entry.eventsHosted} hosted · {entry.eventsAttended} attended
-                    </Typography>
-                  </Stack>
-                );
-              })}
-            </Stack>
+          {leaderboardChartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={Math.max(leaderboardChartData.length * 36 + 40, 120)}>
+              <BarChart layout="vertical" data={leaderboardChartData} barCategoryGap="20%">
+                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 12 }} />
+                <RechartsTooltip
+                  contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: theme.palette.divider }}
+                />
+                <Legend
+                  formatter={(value) => (
+                    <span style={{ fontSize: 12, color: theme.palette.text.secondary }}>{value}</span>
+                  )}
+                />
+                <Bar dataKey="Hosted" stackId="a" fill={theme.palette.primary.main} radius={[0, 0, 0, 0]} />
+                <Bar dataKey="Attended" stackId="a" fill={theme.palette.success.main} radius={[0, 3, 3, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           ) : (
             <Typography color="text.secondary">No leaderboard data available.</Typography>
           )}
         </CardContent>
       </Card>
+
+      {/* Lowest Contributors Section */}
+      {(() => {
+        const activeMembers = (members ?? []).filter((m) => m.status === "active");
+        const lowest = [...activeMembers]
+          .sort((a, b) => {
+            const scoreA = a.eventsHosted * 2 + a.eventsAttended;
+            const scoreB = b.eventsHosted * 2 + b.eventsAttended;
+            if (scoreA !== scoreB) return scoreA - scoreB;
+            // Tiebreak: longest tenured first (oldest discordJoinedAt)
+            return new Date(a.discordJoinedAt).getTime() - new Date(b.discordJoinedAt).getTime();
+          })
+          .slice(0, 10);
+        if (lowest.length === 0) return null;
+        return (
+          <Card variant="outlined" sx={{ mb: 3 }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Lowest Contributors
+              </Typography>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                Active members sorted by least activity. Use this to identify candidates for retirement or removal.
+              </Typography>
+              <Divider sx={{ mb: 2 }} />
+              <Stack spacing={1}>
+                <Stack direction="row" sx={{ px: 1 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ flex: 3 }}>Member</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "center" }}>Hosted</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "center" }}>Attended</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ flex: 2, textAlign: "right" }}>Last Active</Typography>
+                </Stack>
+                <Divider />
+                {lowest.map((m) => {
+                  const lastActive = [m.lastHostedDate, m.lastAttendedDate]
+                    .filter(Boolean)
+                    .map((d) => new Date(d!))
+                    .sort((a, b) => b.getTime() - a.getTime())[0];
+                  return (
+                    <Stack key={m.discordId} direction="row" alignItems="center" sx={{ px: 1 }}>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 3 }}>
+                        <Avatar
+                          src={m.avatarHash ? `https://cdn.discordapp.com/avatars/${m.discordId}/${m.avatarHash}.png?size=32` : undefined}
+                          sx={{ width: 24, height: 24, fontSize: 10 }}
+                        >
+                          {!m.avatarHash && (m.username?.[0]?.toUpperCase() ?? "?")}
+                        </Avatar>
+                        <Typography variant="body2">{m.username || m.discordId}</Typography>
+                      </Stack>
+                      <Typography variant="body2" sx={{ flex: 1, textAlign: "center" }}>{m.eventsHosted}</Typography>
+                      <Typography variant="body2" sx={{ flex: 1, textAlign: "center" }}>{m.eventsAttended}</Typography>
+                      <Typography variant="body2" sx={{ flex: 2, textAlign: "right" }} color={lastActive ? "text.primary" : "text.disabled"}>
+                        {lastActive ? lastActive.toLocaleDateString(undefined, { timeZone: "UTC" }) : "Never"}
+                      </Typography>
+                    </Stack>
+                  );
+                })}
+              </Stack>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Members Section */}
       <Card variant="outlined" sx={{ mb: 3 }}>
@@ -431,6 +621,7 @@ export const GuildDashboard = () => {
       </Card>
 
       {/* Member Role Configuration — summary card (full config via Configure button) */}
+      {isOwner && (
       <Card variant="outlined" sx={{ mb: 3 }}>
         <CardContent>
           <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
@@ -467,10 +658,28 @@ export const GuildDashboard = () => {
                   : <Typography variant="body2">—</Typography>}
               </Box>
             </Stack>
+            <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+              <Typography color="text.secondary" variant="body2">Moderator Roles</Typography>
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, justifyContent: "flex-end", maxWidth: "60%" }}>
+                {(guild.notificationConfig?.statusRoles?.moderatorRoleIds ?? []).length > 0
+                  ? (guild.notificationConfig.statusRoles.moderatorRoleIds).map((id) => (
+                      <Chip
+                        key={id}
+                        label={selectableRoles.find((r) => r.discordRoleId === id)?.name || id}
+                        size="small"
+                        color="secondary"
+                        variant="outlined"
+                      />
+                    ))
+                  : <Typography variant="body2">—</Typography>}
+              </Box>
+            </Stack>
           </Stack>
         </CardContent>
       </Card>
+      )}
 
+      {isOwner && (
       <Card variant="outlined">
         <CardContent>
           <Typography variant="h6" gutterBottom>
@@ -506,6 +715,7 @@ export const GuildDashboard = () => {
           </Stack>
         </CardContent>
       </Card>
+      )}
 
       {/* Guild Configuration Modal */}
       <Dialog open={configOpen} onClose={() => setConfigOpen(false)} maxWidth="sm" fullWidth>
@@ -589,6 +799,35 @@ export const GuildDashboard = () => {
                       }
                       color={cfgRankedRoleIds.includes(r.discordRoleId) ? "primary" : "default"}
                       variant={cfgRankedRoleIds.includes(r.discordRoleId) ? "filled" : "outlined"}
+                    />
+                  ))}
+                </Box>
+              )}
+            </Box>
+
+            {/* Moderator Roles */}
+            <Box>
+              <Typography variant="subtitle2" gutterBottom>Moderator Roles</Typography>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                Members holding any of these roles can create, edit, and delete event logs. Toggle all that apply.
+              </Typography>
+              {selectableRoles.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">No roles available.</Typography>
+              ) : (
+                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+                  {selectableRoles.map((r) => (
+                    <Chip
+                      key={r.discordRoleId}
+                      label={r.name || r.discordRoleId}
+                      onClick={() =>
+                        setCfgModeratorRoleIds((prev) =>
+                          prev.includes(r.discordRoleId)
+                            ? prev.filter((id) => id !== r.discordRoleId)
+                            : [...prev, r.discordRoleId]
+                        )
+                      }
+                      color={cfgModeratorRoleIds.includes(r.discordRoleId) ? "secondary" : "default"}
+                      variant={cfgModeratorRoleIds.includes(r.discordRoleId) ? "filled" : "outlined"}
                     />
                   ))}
                 </Box>

@@ -62,7 +62,7 @@ export const AppLayout = () => {
               {[
                 { to: "/app", label: "Home" },
                 { to: "/app/guilds", label: "Guilds" },
-                { to: "/account", label: "Account" },
+                { to: "/app/account", label: "Account" },
               ].map(({ to, label }) => (
                 <Button
                   key={to}
@@ -131,7 +131,7 @@ export const AppLayout = () => {
             {[
               { to: "/app", label: "Home" },
               { to: "/app/guilds", label: "Guilds" },
-              { to: "/account", label: "Account" },
+              { to: "/app/account", label: "Account" },
             ].map(({ to, label }) => (
               <ListItem key={to} disablePadding>
                 <ListItemButton component={Link} to={to}>

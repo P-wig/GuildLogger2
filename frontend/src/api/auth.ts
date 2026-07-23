@@ -1,7 +1,6 @@
 import { api } from "./http";
 
 export type User = {
-  _id: string;
   discordId: string;
   createdAt: string;
   updatedAt: string;
