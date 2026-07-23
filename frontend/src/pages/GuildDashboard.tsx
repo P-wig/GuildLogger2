@@ -22,10 +22,17 @@ import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
+import Tab from "@mui/material/Tab";
+import Tabs from "@mui/material/Tabs";
+import TextField from "@mui/material/TextField";
+import InputAdornment from "@mui/material/InputAdornment";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import InfoIcon from "@mui/icons-material/Info";
+import SearchIcon from "@mui/icons-material/Search";
 import SettingsIcon from "@mui/icons-material/Settings";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip,
@@ -56,6 +63,10 @@ export const GuildDashboard = () => {
   const [cfgModeratorRoleIds, setCfgModeratorRoleIds] = useState<string[]>([]);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [disconnectConfirm, setDisconnectConfirm] = useState("");
+  const [memberSearch, setMemberSearch] = useState("");
+  const [membersExpanded, setMembersExpanded] = useState(false);
+  const [rankTab, setRankTab] = useState("");
   const navigate = useNavigate();
 
   // Restore sync cooldown from localStorage on mount
@@ -120,6 +131,37 @@ export const GuildDashboard = () => {
       })).reverse(),
     [dashboard?.leaderboard, memberMap]
   );
+
+  // Members sorted by rank (highest role position first), then alphabetically
+  const sortedMembers = useMemo(() => {
+    const roles = dashboard?.guild.roles ?? [];
+    const rolePositionMap = new Map(roles.map((r) => [r.discordRoleId, r.position]));
+    return [...(dashboard?.members ?? [])].sort((a, b) => {
+      const posA = a.rankedRoleId ? (rolePositionMap.get(a.rankedRoleId) ?? -1) : -1;
+      const posB = b.rankedRoleId ? (rolePositionMap.get(b.rankedRoleId) ?? -1) : -1;
+      if (posA !== posB) return posB - posA;
+      return (a.username || a.discordId).localeCompare(b.username || b.discordId);
+    });
+  }, [dashboard?.members, dashboard?.guild.roles]);
+
+  // Rank tabs derived from members — ordered highest role position first
+  const rankTabs = useMemo(() => {
+    const roles = dashboard?.guild.roles ?? [];
+    const rolePositionMap = new Map(roles.map((r) => [r.discordRoleId, r.position]));
+    const roleNameMap = new Map(roles.map((r) => [r.discordRoleId, r.name]));
+    const mems = dashboard?.members ?? [];
+    const countByRole: Record<string, number> = {};
+    let unrankedCount = 0;
+    mems.forEach((m) => {
+      if (m.rankedRoleId) countByRole[m.rankedRoleId] = (countByRole[m.rankedRoleId] ?? 0) + 1;
+      else unrankedCount++;
+    });
+    const tabs = Object.keys(countByRole)
+      .sort((a, b) => (rolePositionMap.get(b) ?? 0) - (rolePositionMap.get(a) ?? 0))
+      .map((id) => ({ id, name: roleNameMap.get(id) || id, count: countByRole[id] }));
+    if (unrankedCount > 0) tabs.push({ id: "__unranked__", name: "Unranked", count: unrankedCount });
+    return tabs;
+  }, [dashboard?.members, dashboard?.guild.roles]);
 
   useEffect(() => {
     if (!guildId) return;
@@ -274,7 +316,7 @@ export const GuildDashboard = () => {
               variant="outlined"
               size="small"
               color="error"
-              onClick={() => setDisconnectOpen(true)}
+              onClick={() => { setDisconnectConfirm(""); setDisconnectOpen(true); }}
               sx={{ mr: 1 }}
             >
               Disconnect
@@ -521,67 +563,131 @@ export const GuildDashboard = () => {
       {/* Members Section */}
       <Card variant="outlined" sx={{ mb: 3 }}>
         <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Members ({members?.length ?? 0})
-          </Typography>
-          <Divider sx={{ mb: 2 }} />
-          {members && members.length > 0 ? (
-            <Stack spacing={1}>
-              <Stack direction="row" justifyContent="space-between" sx={{ px: 1 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ flex: 3 }}>Member</Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ flex: 2, textAlign: "center" }}>Rank</Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "center" }}>Status</Typography>
-                <Box sx={{ width: 36 }} />
-              </Stack>
-              <Divider />
-              {members.map((m) => {
-                const rankName = m.rankedRoleId
-                  ? (guild.roles?.find((r) => r.discordRoleId === m.rankedRoleId)?.name || m.rankedRoleId)
-                  : null;
-                return (
-                <Stack key={m.discordId} direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 1 }}>
-                  <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 3 }}>
-                    <Avatar
-                      src={m.avatarHash ? `https://cdn.discordapp.com/avatars/${m.discordId}/${m.avatarHash}.png?size=32` : undefined}
-                      sx={{ width: 28, height: 28, fontSize: 12 }}
-                    >
-                      {!m.avatarHash && (m.username?.[0]?.toUpperCase() ?? "?")}
-                    </Avatar>
-                    <Box>
-                      <Typography variant="body2">{m.username || m.discordId}</Typography>
-                      {m.username && (
-                        <Typography variant="caption" color="text.secondary" sx={{ fontFamily: "monospace" }}>
-                          {m.discordId}
-                        </Typography>
-                      )}
-                    </Box>
-                  </Stack>
-                  <Box sx={{ flex: 2, display: "flex", justifyContent: "center" }}>
-                    {rankName ? (
-                      <Chip label={rankName} size="small" variant="outlined" />
-                    ) : (
-                      <Typography variant="body2" color="text.disabled">—</Typography>
-                    )}
-                  </Box>
-                  <Box sx={{ flex: 1, display: "flex", justifyContent: "center" }}>
-                    <Chip
-                      label={m.status === "active" ? "Active" : "Retired"}
-                      color={m.status === "active" ? "success" : "warning"}
-                      size="small"
-                    />
-                  </Box>
-                  <Tooltip title="View stats">
-                    <IconButton size="small" onClick={() => setStatsModalMember(m)}>
-                      <InfoIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </Stack>
-                );
-              })}
-            </Stack>
-          ) : (
-            <Typography color="text.secondary">No members to display.</Typography>
+          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+            <Typography variant="h6">Members ({members?.length ?? 0})</Typography>
+          </Stack>
+          <TextField
+            size="small"
+            fullWidth
+            placeholder="Search by name or ID…"
+            value={memberSearch}
+            onChange={(e) => { setMemberSearch(e.target.value); setMembersExpanded(false); }}
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" />
+                  </InputAdornment>
+                ),
+              },
+            }}
+            sx={{ mb: 1.5 }}
+          />
+          {rankTabs.length > 0 && (
+            <Tabs
+              value={rankTab}
+              onChange={(_, v) => { setRankTab(v); setMembersExpanded(false); }}
+              variant="scrollable"
+              scrollButtons="auto"
+              sx={{ mb: 1.5, minHeight: 36, "& .MuiTab-root": { minHeight: 36, py: 0.5, fontSize: 12 } }}
+            >
+              <Tab label={`All (${sortedMembers.length})`} value="" />
+              {rankTabs.map((rt) => (
+                <Tab key={rt.id} label={`${rt.name} (${rt.count})`} value={rt.id} />
+              ))}
+            </Tabs>
           )}
+          <Divider sx={{ mb: 2 }} />
+          {(() => {
+            const MEMBERS_PAGE = 10;
+            const q = memberSearch.toLowerCase();
+            const filtered = sortedMembers
+              .filter((m) =>
+                rankTab === "__unranked__" ? !m.rankedRoleId
+                : rankTab ? m.rankedRoleId === rankTab
+                : true
+              )
+              .filter((m) =>
+                q ? (m.username?.toLowerCase().includes(q) || m.discordId.includes(memberSearch)) : true
+              );
+            // Truncate only on the All tab with no active search
+            const showToggle = !memberSearch && !rankTab && filtered.length > MEMBERS_PAGE;
+            const visible = showToggle && !membersExpanded ? filtered.slice(0, MEMBERS_PAGE) : filtered;
+            if (filtered.length === 0) {
+              return (
+                <Typography color="text.secondary">
+                  {memberSearch || rankTab ? "No members match your filter." : "No members to display."}
+                </Typography>
+              );
+            }
+            return (
+              <>
+                <Stack spacing={1}>
+                  <Stack direction="row" justifyContent="space-between" sx={{ px: 1 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ flex: 3 }}>Member</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ flex: 2, textAlign: "center" }}>Rank</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "center" }}>Status</Typography>
+                    <Box sx={{ width: 36 }} />
+                  </Stack>
+                  <Divider />
+                  {visible.map((m) => {
+                    const rankName = m.rankedRoleId
+                      ? (guild.roles?.find((r) => r.discordRoleId === m.rankedRoleId)?.name || m.rankedRoleId)
+                      : null;
+                    return (
+                      <Stack key={m.discordId} direction="row" justifyContent="space-between" alignItems="center" sx={{ px: 1 }}>
+                        <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 3 }}>
+                          <Avatar
+                            src={m.avatarHash ? `https://cdn.discordapp.com/avatars/${m.discordId}/${m.avatarHash}.png?size=32` : undefined}
+                            sx={{ width: 28, height: 28, fontSize: 12 }}
+                          >
+                            {!m.avatarHash && (m.username?.[0]?.toUpperCase() ?? "?")}
+                          </Avatar>
+                          <Box>
+                            <Typography variant="body2">{m.username || m.discordId}</Typography>
+                            {m.username && (
+                              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: "monospace" }}>
+                                {m.discordId}
+                              </Typography>
+                            )}
+                          </Box>
+                        </Stack>
+                        <Box sx={{ flex: 2, display: "flex", justifyContent: "center" }}>
+                          {rankName ? (
+                            <Chip label={rankName} size="small" variant="outlined" />
+                          ) : (
+                            <Typography variant="body2" color="text.disabled">—</Typography>
+                          )}
+                        </Box>
+                        <Box sx={{ flex: 1, display: "flex", justifyContent: "center" }}>
+                          <Chip
+                            label={m.status === "active" ? "Active" : "Retired"}
+                            color={m.status === "active" ? "success" : "warning"}
+                            size="small"
+                          />
+                        </Box>
+                        <Tooltip title="View stats">
+                          <IconButton size="small" onClick={() => setStatsModalMember(m)}>
+                            <InfoIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
+                    );
+                  })}
+                </Stack>
+                {showToggle && (
+                  <Button
+                    size="small"
+                    onClick={() => setMembersExpanded((v) => !v)}
+                    endIcon={membersExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                    sx={{ mt: 1.5, width: "100%" }}
+                  >
+                    {membersExpanded ? "Collapse" : `Show all ${filtered.length} members`}
+                  </Button>
+                )}
+              </>
+            );
+          })()}
         </CardContent>
       </Card>
 
@@ -906,16 +1012,29 @@ export const GuildDashboard = () => {
       </Dialog>
 
       {/* Disconnect Confirmation Dialog */}
-      <Dialog open={disconnectOpen} onClose={() => !disconnecting && setDisconnectOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog open={disconnectOpen} onClose={() => !disconnecting && (setDisconnectOpen(false), setDisconnectConfirm(""))} maxWidth="xs" fullWidth>
         <DialogTitle>Disconnect Guild?</DialogTitle>
         <DialogContent>
-          <Typography>
+          <Typography sx={{ mb: 2 }}>
             This will permanently remove <strong>{guild.name}</strong> and all its synced members from GuildLogger.
             Event history is preserved. This cannot be undone.
           </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            Type the guild ID <strong style={{ fontFamily: "monospace" }}>{guild.guildId}</strong> to confirm.
+          </Typography>
+          <TextField
+            size="small"
+            fullWidth
+            placeholder={guild.guildId}
+            value={disconnectConfirm}
+            onChange={(e) => setDisconnectConfirm(e.target.value)}
+            disabled={disconnecting}
+            autoComplete="off"
+            slotProps={{ htmlInput: { spellCheck: false } }}
+          />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDisconnectOpen(false)} disabled={disconnecting}>
+          <Button onClick={() => { setDisconnectOpen(false); setDisconnectConfirm(""); }} disabled={disconnecting}>
             Cancel
           </Button>
           <LoadingButton
@@ -923,6 +1042,7 @@ export const GuildDashboard = () => {
             color="error"
             loading={disconnecting}
             onClick={handleDisconnect}
+            disabled={disconnectConfirm !== guild.guildId}
           >
             Disconnect
           </LoadingButton>
