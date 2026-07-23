@@ -4,6 +4,7 @@ import { useParams, Link as RouterLink } from "react-router";
 import Alert from "@mui/material/Alert";
 import Autocomplete from "@mui/material/Autocomplete";
 import Avatar from "@mui/material/Avatar";
+import Badge from "@mui/material/Badge";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import LoadingButton from "@mui/lab/LoadingButton";
@@ -11,12 +12,14 @@ import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import CircularProgress from "@mui/material/CircularProgress";
 import Chip from "@mui/material/Chip";
+import Collapse from "@mui/material/Collapse";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
+import InputAdornment from "@mui/material/InputAdornment";
 import ListItem from "@mui/material/ListItem";
 import ListItemAvatar from "@mui/material/ListItemAvatar";
 import ListItemText from "@mui/material/ListItemText";
@@ -24,8 +27,10 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import CloseIcon from "@mui/icons-material/Close";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
+import FilterListIcon from "@mui/icons-material/FilterList";
 import { guildsApi, type EventLog, type GuildDashboardMemberRow, type LinkedGuild } from "../api/guilds";
 import { useAuth } from "../auth";
 
@@ -92,6 +97,14 @@ export const GuildEvents = () => {
   // Delete confirmation dialog state
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Filter state
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterAfter, setFilterAfter] = useState("");
+  const [filterBefore, setFilterBefore] = useState("");
+  const [filterHost, setFilterHost] = useState<GuildDashboardMemberRow | null>(null);
+  const [filterParticipant, setFilterParticipant] = useState<GuildDashboardMemberRow | null>(null);
+  const [filterLogId, setFilterLogId] = useState("");
 
   // Per-row summary expansion
   const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set());
@@ -192,6 +205,36 @@ export const GuildEvents = () => {
 
   const canSave = logSummary.trim().length > 0 && logDate.length > 0 && logHost !== null && logSelectedMembers.length > 0;
 
+  // Active filter count
+  const activeFilterCount = [filterAfter, filterBefore, filterHost, filterParticipant, filterLogId].filter(Boolean).length;
+
+  const clearFilters = () => {
+    setFilterAfter("");
+    setFilterBefore("");
+    setFilterHost(null);
+    setFilterParticipant(null);
+    setFilterLogId("");
+  };
+
+  // Filtered event logs — all filters are AND-combined
+  const filteredLogs = useMemo(() => {
+    return logs.filter((log) => {
+      if (filterAfter) {
+        if (new Date(log.eventDate) < new Date(filterAfter + "T00:00:00Z")) return false;
+      }
+      if (filterBefore) {
+        if (new Date(log.eventDate) > new Date(filterBefore + "T23:59:59Z")) return false;
+      }
+      if (filterHost && log.hostDiscordId !== filterHost.discordId) return false;
+      if (filterParticipant && !(log.participantIds ?? []).includes(filterParticipant.discordId)) return false;
+      if (filterLogId) {
+        const q = filterLogId.toLowerCase();
+        if (!log.id.toLowerCase().includes(q) && !(log.eventId ?? "").toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [logs, filterAfter, filterBefore, filterHost, filterParticipant, filterLogId]);
+
   // canWrite: true for guild owner or members holding a configured moderator role
   const canWrite = useMemo(() => {
     if (!guild || !user) return false;
@@ -206,18 +249,106 @@ export const GuildEvents = () => {
   return (
     <Box sx={{ maxWidth: 900, mx: "auto" }}>
       {/* Header */}
-      <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 3 }}>
+      <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 2 }}>
         <Button component={RouterLink} to={`/app/guilds/${guildId}`} size="small">
           ← Dashboard
         </Button>
         <Typography variant="h5">Event Logs</Typography>
         <Box sx={{ flexGrow: 1 }} />
+        <Badge badgeContent={activeFilterCount} color="primary" overlap="circular">
+          <Button
+            size="small"
+            variant={filtersOpen ? "contained" : "outlined"}
+            startIcon={<FilterListIcon />}
+            onClick={() => setFiltersOpen((v) => !v)}
+          >
+            Filters
+          </Button>
+        </Badge>
         {canWrite && (
           <Button variant="contained" size="small" onClick={handleOpenCreate}>
             + Log Past Event
           </Button>
         )}
       </Stack>
+
+      {/* Filter Panel */}
+      <Collapse in={filtersOpen}>
+        <Card variant="outlined" sx={{ mb: 2 }}>
+          <CardContent sx={{ pb: "12px !important" }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+              <Typography variant="subtitle2">Filter Event Logs</Typography>
+              {activeFilterCount > 0 && (
+                <Button size="small" startIcon={<CloseIcon fontSize="small" />} onClick={clearFilters}>
+                  Clear all ({activeFilterCount})
+                </Button>
+              )}
+            </Stack>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr", md: "1fr 1fr 1fr" }, gap: 1.5 }}>
+              <TextField
+                label="After date"
+                type="date"
+                size="small"
+                value={filterAfter}
+                onChange={(e) => setFilterAfter(e.target.value)}
+                slotProps={{
+                  inputLabel: { shrink: true },
+                  input: filterAfter
+                    ? { endAdornment: <InputAdornment position="end"><IconButton size="small" edge="end" onClick={() => setFilterAfter("")}><CloseIcon fontSize="small" /></IconButton></InputAdornment> }
+                    : undefined,
+                }}
+              />
+              <TextField
+                label="Before date"
+                type="date"
+                size="small"
+                value={filterBefore}
+                onChange={(e) => setFilterBefore(e.target.value)}
+                slotProps={{
+                  inputLabel: { shrink: true },
+                  input: filterBefore
+                    ? { endAdornment: <InputAdornment position="end"><IconButton size="small" edge="end" onClick={() => setFilterBefore("")}><CloseIcon fontSize="small" /></IconButton></InputAdornment> }
+                    : undefined,
+                }}
+              />
+              <TextField
+                label="Log ID"
+                size="small"
+                value={filterLogId}
+                onChange={(e) => setFilterLogId(e.target.value)}
+                placeholder="Partial or full ID…"
+                slotProps={{
+                  input: filterLogId
+                    ? { endAdornment: <InputAdornment position="end"><IconButton size="small" edge="end" onClick={() => setFilterLogId("")}><CloseIcon fontSize="small" /></IconButton></InputAdornment> }
+                    : undefined,
+                }}
+              />
+              <Autocomplete
+                options={members}
+                value={filterHost}
+                onChange={(_, v) => setFilterHost(v)}
+                getOptionLabel={(o) => o.username || o.discordId}
+                isOptionEqualToValue={(a, b) => a.discordId === b.discordId}
+                renderOption={MemberOption}
+                renderInput={(params) => (
+                  <TextField {...params} label="Host" size="small" placeholder="Any host…" />
+                )}
+              />
+              <Autocomplete
+                options={members}
+                value={filterParticipant}
+                onChange={(_, v) => setFilterParticipant(v)}
+                getOptionLabel={(o) => o.username || o.discordId}
+                isOptionEqualToValue={(a, b) => a.discordId === b.discordId}
+                renderOption={MemberOption}
+                renderInput={(params) => (
+                  <TextField {...params} label="Participant" size="small" placeholder="Any participant…" />
+                )}
+              />
+            </Box>
+          </CardContent>
+        </Card>
+      </Collapse>
 
       {/* Content */}
       {loading ? (
@@ -230,12 +361,21 @@ export const GuildEvents = () => {
         <Card variant="outlined">
           <CardContent>
             <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-              <Typography variant="h6">Past Events ({logs.length})</Typography>
+              <Typography variant="h6">
+                Past Events ({activeFilterCount > 0 ? `${filteredLogs.length} of ${logs.length}` : logs.length})
+                {activeFilterCount > 0 && (
+                  <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+                    — {activeFilterCount} filter{activeFilterCount > 1 ? "s" : ""} active
+                  </Typography>
+                )}
+              </Typography>
             </Stack>
             <Divider sx={{ mb: 2 }} />
-            {logs.length === 0 ? (
+            {filteredLogs.length === 0 ? (
               <Typography color="text.secondary">
-                No event logs yet. Use "Log Past Event" to record completed events.
+                {logs.length === 0
+                  ? "No event logs yet. Use \"Log Past Event\" to record completed events."
+                  : "No logs match the active filters."}
               </Typography>
             ) : (
               <Stack spacing={0}>
@@ -248,7 +388,7 @@ export const GuildEvents = () => {
                   <Box sx={{ width: 72 }} />
                 </Stack>
                 <Divider />
-                {logs.map((log) => {
+                {filteredLogs.map((log) => {
                   const host = memberMap.get(log.hostDiscordId);
                   const resolvedParticipants = (log.participantIds ?? []).map((id) => ({
                     id,
