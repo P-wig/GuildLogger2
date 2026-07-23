@@ -26,7 +26,8 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
-import { guildsApi, type EventLog, type GuildDashboardMemberRow } from "../api/guilds";
+import { guildsApi, type EventLog, type GuildDashboardMemberRow, type LinkedGuild } from "../api/guilds";
+import { useAuth } from "../auth";
 
 const DISCORD_CDN = "https://cdn.discordapp.com";
 
@@ -62,9 +63,11 @@ type LogDialogMode = "create" | "edit";
 
 export const GuildEvents = () => {
   const { guildId } = useParams<{ guildId: string }>();
+  const { user } = useAuth();
 
   const [logs, setLogs] = useState<EventLog[]>([]);
   const [members, setMembers] = useState<GuildDashboardMemberRow[]>([]);
+  const [guild, setGuild] = useState<LinkedGuild | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,6 +113,7 @@ export const GuildEvents = () => {
       .then(([logsRes, dashRes]) => {
         setLogs(logsRes.data.logs ?? []);
         setMembers(dashRes.data.dashboard.members ?? []);
+        setGuild(dashRes.data.dashboard.guild);
       })
       .catch(() => setError("Failed to load event data."))
       .finally(() => setLoading(false));
@@ -188,6 +192,17 @@ export const GuildEvents = () => {
 
   const canSave = logSummary.trim().length > 0 && logDate.length > 0 && logHost !== null && logSelectedMembers.length > 0;
 
+  // canWrite: true for guild owner or members holding a configured moderator role
+  const canWrite = useMemo(() => {
+    if (!guild || !user) return false;
+    if (guild.ownerDiscordId === user.discordId) return true;
+    const modRoleIds = new Set(guild.notificationConfig?.statusRoles?.moderatorRoleIds ?? []);
+    if (modRoleIds.size === 0) return false;
+    const me = members.find((m) => m.discordId === user.discordId);
+    if (!me) return false;
+    return me.roleIds.some((id) => modRoleIds.has(id));
+  }, [guild, user, members]);
+
   return (
     <Box sx={{ maxWidth: 900, mx: "auto" }}>
       {/* Header */}
@@ -197,9 +212,11 @@ export const GuildEvents = () => {
         </Button>
         <Typography variant="h5">Event Logs</Typography>
         <Box sx={{ flexGrow: 1 }} />
-        <Button variant="contained" size="small" onClick={handleOpenCreate}>
-          + Log Past Event
-        </Button>
+        {canWrite && (
+          <Button variant="contained" size="small" onClick={handleOpenCreate}>
+            + Log Past Event
+          </Button>
+        )}
       </Stack>
 
       {/* Content */}
@@ -309,16 +326,20 @@ export const GuildEvents = () => {
                         )}
                       </Box>
                       <Stack direction="row" sx={{ width: 72, justifyContent: "flex-end" }}>
-                        <Tooltip title="Edit">
-                          <IconButton size="small" onClick={() => handleOpenEdit(log)}>
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Delete">
-                          <IconButton size="small" color="error" onClick={() => setDeleteTargetId(log.id)}>
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
+                        {canWrite && (
+                          <>
+                            <Tooltip title="Edit">
+                              <IconButton size="small" onClick={() => handleOpenEdit(log)}>
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete">
+                              <IconButton size="small" color="error" onClick={() => setDeleteTargetId(log.id)}>
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </>
+                        )}
                       </Stack>
                     </Stack>
                   );

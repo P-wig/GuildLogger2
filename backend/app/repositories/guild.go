@@ -28,10 +28,11 @@ type GuildRole struct {
 	IsDefault      bool          `bson:"isDefault"      json:"isDefault"`
 }
 
-// GuildStatusRoleConfig defines which role IDs represent active/inactive members.
+// GuildStatusRoleConfig defines which role IDs represent active/inactive/moderator members.
 type GuildStatusRoleConfig struct {
-	ActiveRoleID   string `bson:"activeRoleId"   json:"activeRoleId"`
-	InactiveRoleID string `bson:"inactiveRoleId" json:"inactiveRoleId"`
+	ActiveRoleID     string   `bson:"activeRoleId"     json:"activeRoleId"`
+	InactiveRoleID   string   `bson:"inactiveRoleId"   json:"inactiveRoleId"`
+	ModeratorRoleIDs []string `bson:"moderatorRoleIds" json:"moderatorRoleIds"`
 }
 
 // Milestones are notification-only.
@@ -68,6 +69,7 @@ type GuildRepository interface {
 	Create(ctx context.Context, guild *Guild) error
 	FindByGuildID(ctx context.Context, guildID string) (*Guild, error)
 	FindByOwnerDiscordID(ctx context.Context, ownerDiscordID string) ([]Guild, error)
+	FindByGuildIDs(ctx context.Context, guildIDs []string) ([]Guild, error)
 	Update(ctx context.Context, guildID string, guild *Guild) error
 	Delete(ctx context.Context, guildID string) error
 

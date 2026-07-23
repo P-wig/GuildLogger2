@@ -7,12 +7,12 @@ import (
 
 // User represents a user document in MongoDB, authenticated via Discord OAuth.
 type User struct {
-	ID           string    `bson:"_id,omitempty"`
-	DiscordID    string    `bson:"discordId"`      // Primary identity
-	AccessToken  string    `bson:"accessToken"`    // For making Discord API calls
-	RefreshToken string    `bson:"refreshToken"`   // Token refresh
-	CreatedAt    time.Time `bson:"createdAt"`      // When they joined your app
-	UpdatedAt    time.Time `bson:"updatedAt"`      // Last activity
+	ID           string    `bson:"_id,omitempty"   json:"-"`
+	DiscordID    string    `bson:"discordId"       json:"discordId"` // Primary identity
+	AccessToken  string    `bson:"accessToken"     json:"-"`         // For making Discord API calls
+	RefreshToken string    `bson:"refreshToken"    json:"-"`         // Token refresh
+	CreatedAt    time.Time `bson:"createdAt"       json:"createdAt"` // When they joined your app
+	UpdatedAt    time.Time `bson:"updatedAt"       json:"updatedAt"` // Last activity
 }
 
 // UserRepository defines the contract for user data access operations.

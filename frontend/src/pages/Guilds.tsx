@@ -174,6 +174,11 @@ export const Guilds = () => {
                 >
                   {guild.botInstalled ? "Bot installed" : "Bot not installed"}
                 </Typography>
+                {!guild.isOwner && (
+                  <Typography variant="body2" color="text.secondary">
+                    Member access
+                  </Typography>
+                )}
                   <Box sx={{ mt: 1, display: "flex", gap: 1 }}>
                     <Button
                       size="small"
@@ -183,7 +188,7 @@ export const Guilds = () => {
                     >
                       View Dashboard
                     </Button>
-                    {!guild.botInstalled && (
+                    {guild.isOwner && !guild.botInstalled && (
                       <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
                         <LoadingButton
                           size="small"

@@ -15,11 +15,13 @@ export type LinkedGuild = {
   name: string;
   ownerDiscordId: string;
   botInstalled: boolean;
+  isOwner: boolean;
   roles: GuildRole[];
   notificationConfig: {
     statusRoles: {
       activeRoleId: string;
       inactiveRoleId: string;
+      moderatorRoleIds: string[];
     };
     milestoneNotifications: {
       enabled: boolean;
@@ -151,7 +153,7 @@ export const guildsApi = {
     api.post<{ ok: boolean; synced: number }>(`/guilds/${guildId}/members/sync`),
   setMemberRole: (guildId: string, roleId: string) =>
     api.put<{ ok: boolean }>(`/guilds/${guildId}/config/member-role`, { roleId }),
-  updateGuildConfig: (guildId: string, config: { activeRoleId: string; inactiveRoleId?: string; rankedRoleIds?: string[] }) =>
+  updateGuildConfig: (guildId: string, config: { activeRoleId: string; inactiveRoleId?: string; rankedRoleIds?: string[]; moderatorRoleIds?: string[] }) =>
     api.put<{ ok: boolean }>(`/guilds/${guildId}/config`, config),
   deleteGuild: (guildId: string) =>
     api.delete<{ ok: boolean }>(`/guilds/${guildId}`),

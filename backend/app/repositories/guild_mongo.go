@@ -83,6 +83,23 @@ func (r *MongoGuildRepository) FindByOwnerDiscordID(ctx context.Context, ownerDi
 	return guilds, nil
 }
 
+func (r *MongoGuildRepository) FindByGuildIDs(ctx context.Context, guildIDs []string) ([]Guild, error) {
+	if len(guildIDs) == 0 {
+		return []Guild{}, nil
+	}
+	cursor, err := db.GuildsCollection(r.database).Find(ctx, bson.M{"guildId": bson.M{"$in": guildIDs}})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var guilds []Guild
+	if err := cursor.All(ctx, &guilds); err != nil {
+		return nil, err
+	}
+	return guilds, nil
+}
+
 func (r *MongoGuildRepository) Update(ctx context.Context, guildID string, guild *Guild) error {
 	guild.UpdatedAt = time.Now()
 	result := db.GuildsCollection(r.database).FindOneAndReplace(
