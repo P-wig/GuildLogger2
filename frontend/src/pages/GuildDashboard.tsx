@@ -121,16 +121,109 @@ export const GuildDashboard = () => {
     }));
   }, [dashboard?.events]);
 
-  // Chart data: top contributors (reversed so #1 appears at top of horizontal bar)
-  const leaderboardChartData = useMemo(
-    () =>
-      (dashboard?.leaderboard ?? []).slice(0, 10).map((entry) => ({
-        name: memberMap.get(entry.discordId)?.username ?? "…" + entry.discordId.slice(-4),
-        Hosted: entry.eventsHosted,
-        Attended: entry.eventsAttended,
-      })).reverse(),
-    [dashboard?.leaderboard, memberMap]
-  );
+  // Monthly top contributors grouped by rank (computed from recent dashboard events)
+  const monthlyTopByRank = useMemo(() => {
+    const now = new Date();
+    const monthEvents = (dashboard?.events ?? []).filter((e) => {
+      const d = new Date(e.eventDate);
+      return d.getUTCFullYear() === now.getUTCFullYear() && d.getUTCMonth() === now.getUTCMonth();
+    });
+    if (monthEvents.length === 0) return [];
+
+    const statsMap: Record<string, { hosted: number; attended: number }> = {};
+    monthEvents.forEach((e) => {
+      statsMap[e.hostDiscordId] = statsMap[e.hostDiscordId] ?? { hosted: 0, attended: 0 };
+      statsMap[e.hostDiscordId].hosted++;
+      (e.participantIds ?? []).forEach((pid) => {
+        statsMap[pid] = statsMap[pid] ?? { hosted: 0, attended: 0 };
+        statsMap[pid].attended++;
+      });
+    });
+
+    const roles = dashboard?.guild.roles ?? [];
+    const rolePositionMap = new Map(roles.map((r) => [r.discordRoleId, r.position]));
+    const roleNameMap = new Map(roles.map((r) => [r.discordRoleId, r.name]));
+
+    const grouped: Record<string, Array<{ discordId: string; hosted: number; attended: number; score: number }>> = {};
+    Object.entries(statsMap).forEach(([discordId, s]) => {
+      const roleId = memberMap.get(discordId)?.rankedRoleId || "__unranked__";
+      grouped[roleId] = grouped[roleId] ?? [];
+      grouped[roleId].push({ discordId, hosted: s.hosted, attended: s.attended, score: s.hosted * 2 + s.attended });
+    });
+    Object.values(grouped).forEach((arr) => arr.sort((a, b) => b.score - a.score));
+
+    return Object.keys(grouped)
+      .sort((a, b) => {
+        if (a === "__unranked__") return 1;
+        if (b === "__unranked__") return -1;
+        return (rolePositionMap.get(b) ?? 0) - (rolePositionMap.get(a) ?? 0);
+      })
+      .map((roleId) => ({
+        roleId,
+        roleName: roleId === "__unranked__" ? "Unranked" : (roleNameMap.get(roleId) || roleId),
+        entries: grouped[roleId],
+      }));
+  }, [dashboard?.events, dashboard?.guild.roles, memberMap]);
+
+  // All-time lowest contributors (active members, score asc)
+  const allTimeLow = useMemo(() => {
+    const activeMembers = (dashboard?.members ?? []).filter((m) => m.status === "active");
+    return [...activeMembers]
+      .sort((a, b) => {
+        const scoreA = a.eventsHosted * 2 + a.eventsAttended;
+        const scoreB = b.eventsHosted * 2 + b.eventsAttended;
+        if (scoreA !== scoreB) return scoreA - scoreB;
+        return new Date(a.discordJoinedAt).getTime() - new Date(b.discordJoinedAt).getTime();
+      })
+      .slice(0, 10);
+  }, [dashboard?.members]);
+
+  // Monthly lowest contributors grouped by rank (all active members, score asc, zeroes included)
+  const monthlyLowByRank = useMemo(() => {
+    const allActive = dashboard?.members?.filter((m) => m.status === "active") ?? [];
+    if (allActive.length === 0) return [];
+    const now = new Date();
+    const monthEvents = (dashboard?.events ?? []).filter((e) => {
+      const d = new Date(e.eventDate);
+      return d.getUTCFullYear() === now.getUTCFullYear() && d.getUTCMonth() === now.getUTCMonth();
+    });
+    const statsMap: Record<string, { hosted: number; attended: number }> = {};
+    allActive.forEach((m) => { statsMap[m.discordId] = { hosted: 0, attended: 0 }; });
+    monthEvents.forEach((e) => {
+      if (statsMap[e.hostDiscordId] !== undefined) statsMap[e.hostDiscordId].hosted++;
+      (e.participantIds ?? []).forEach((pid) => {
+        if (statsMap[pid] !== undefined) statsMap[pid].attended++;
+      });
+    });
+    const roles = dashboard?.guild.roles ?? [];
+    const rolePositionMap = new Map(roles.map((r) => [r.discordRoleId, r.position]));
+    const roleNameMap = new Map(roles.map((r) => [r.discordRoleId, r.name]));
+    const grouped: Record<string, Array<{ discordId: string; hosted: number; attended: number; score: number }>> = {};
+    Object.entries(statsMap).forEach(([discordId, s]) => {
+      const roleId = memberMap.get(discordId)?.rankedRoleId || "__unranked__";
+      grouped[roleId] = grouped[roleId] ?? [];
+      grouped[roleId].push({ discordId, hosted: s.hosted, attended: s.attended, score: s.hosted * 2 + s.attended });
+    });
+    Object.values(grouped).forEach((arr) =>
+      arr.sort((a, b) => {
+        if (a.score !== b.score) return a.score - b.score;
+        const mA = memberMap.get(a.discordId);
+        const mB = memberMap.get(b.discordId);
+        return new Date(mA?.discordJoinedAt ?? 0).getTime() - new Date(mB?.discordJoinedAt ?? 0).getTime();
+      })
+    );
+    return Object.keys(grouped)
+      .sort((a, b) => {
+        if (a === "__unranked__") return 1;
+        if (b === "__unranked__") return -1;
+        return (rolePositionMap.get(b) ?? 0) - (rolePositionMap.get(a) ?? 0);
+      })
+      .map((roleId) => ({
+        roleId,
+        roleName: roleId === "__unranked__" ? "Unranked" : (roleNameMap.get(roleId) || roleId),
+        entries: grouped[roleId],
+      }));
+  }, [dashboard?.events, dashboard?.members, dashboard?.guild.roles, memberMap]);
 
   // Members sorted by rank (highest role position first), then alphabetically
   const sortedMembers = useMemo(() => {
@@ -469,96 +562,257 @@ export const GuildDashboard = () => {
         </CardContent>
       </Card>
 
-      {/* Leaderboard Section */}
-      <Card variant="outlined" sx={{ mb: 3 }}>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Top Contributors
-          </Typography>
-          <Divider sx={{ mb: 2 }} />
-          {leaderboardChartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={Math.max(leaderboardChartData.length * 36 + 40, 120)}>
-              <BarChart layout="vertical" data={leaderboardChartData} barCategoryGap="20%">
-                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 12 }} />
-                <RechartsTooltip
-                  contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: theme.palette.divider }}
-                />
-                <Legend
-                  formatter={(value) => (
-                    <span style={{ fontSize: 12, color: theme.palette.text.secondary }}>{value}</span>
-                  )}
-                />
-                <Bar dataKey="Hosted" stackId="a" fill={theme.palette.primary.main} radius={[0, 0, 0, 0]} />
-                <Bar dataKey="Attended" stackId="a" fill={theme.palette.success.main} radius={[0, 3, 3, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <Typography color="text.secondary">No leaderboard data available.</Typography>
-          )}
-        </CardContent>
-      </Card>
+      {/* Leaderboard Section — two cards side by side */}
+      <Stack direction={{ xs: "column", lg: "row" }} spacing={2} sx={{ mb: 3 }} alignItems="flex-start">
 
-      {/* Lowest Contributors Section */}
-      {(() => {
-        const activeMembers = (members ?? []).filter((m) => m.status === "active");
-        const lowest = [...activeMembers]
-          .sort((a, b) => {
-            const scoreA = a.eventsHosted * 2 + a.eventsAttended;
-            const scoreB = b.eventsHosted * 2 + b.eventsAttended;
-            if (scoreA !== scoreB) return scoreA - scoreB;
-            // Tiebreak: longest tenured first (oldest discordJoinedAt)
-            return new Date(a.discordJoinedAt).getTime() - new Date(b.discordJoinedAt).getTime();
-          })
-          .slice(0, 10);
-        if (lowest.length === 0) return null;
-        return (
-          <Card variant="outlined" sx={{ mb: 3 }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Lowest Contributors
-              </Typography>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                Active members sorted by least activity. Use this to identify candidates for retirement or removal.
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              <Stack spacing={1}>
-                <Stack direction="row" sx={{ px: 1 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ flex: 3 }}>Member</Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "center" }}>Hosted</Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ flex: 1, textAlign: "center" }}>Attended</Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ flex: 2, textAlign: "right" }}>Last Active</Typography>
+        {/* All-Time Top Contributors */}
+        <Card variant="outlined" sx={{ flex: 1, minWidth: 0, width: "100%" }}>
+          <CardContent>
+            <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 0.5 }}>
+              <Typography variant="h6">All-Time Top Contributors</Typography>
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <Tooltip title="Points per hosted event">
+                  <Typography variant="caption" color="primary" sx={{ fontWeight: 600, cursor: "default" }}>H&nbsp;=&nbsp;2pts</Typography>
+                </Tooltip>
+                <Tooltip title="Points per attended event">
+                  <Typography variant="caption" color="success.main" sx={{ fontWeight: 600, cursor: "default" }}>A&nbsp;=&nbsp;1pt</Typography>
+                </Tooltip>
+              </Stack>
+            </Stack>
+            <Divider sx={{ mb: 1.5 }} />
+            {(dashboard?.leaderboard ?? []).length > 0 ? (
+              <Stack spacing={0}>
+                <Stack direction="row" sx={{ px: 1, pb: 0.5 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ width: 28 }}>#</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>Member</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ width: 52, textAlign: "right" }}>Hosted</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ width: 60, textAlign: "right" }}>Attended</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ width: 44, textAlign: "right" }}>Score</Typography>
                 </Stack>
                 <Divider />
-                {lowest.map((m) => {
+                {(dashboard?.leaderboard ?? []).slice(0, 10).map((entry) => {
+                  const mbr = memberMap.get(entry.discordId);
+                  return (
+                    <Stack
+                      key={entry.discordId}
+                      direction="row"
+                      alignItems="center"
+                      sx={{ px: 1, py: 0.75, borderBottom: "1px solid", borderColor: "divider" }}
+                    >
+                      <Typography variant="body2" color="text.secondary" sx={{ width: 28, fontWeight: entry.rank <= 3 ? 700 : 400 }}>
+                        {entry.rank === 1 ? "🥇" : entry.rank === 2 ? "🥈" : entry.rank === 3 ? "🥉" : `#${entry.rank}`}
+                      </Typography>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 1, minWidth: 0 }}>
+                        <Avatar
+                          src={mbr?.avatarHash ? `https://cdn.discordapp.com/avatars/${entry.discordId}/${mbr.avatarHash}.png?size=32` : undefined}
+                          sx={{ width: 22, height: 22, fontSize: 9 }}
+                        >
+                          {mbr?.username?.[0]?.toUpperCase() ?? "?"}
+                        </Avatar>
+                        <Typography variant="body2" noWrap>
+                          {mbr?.username ?? entry.discordId.slice(0, 10) + "…"}
+                        </Typography>
+                      </Stack>
+                      <Typography variant="body2" sx={{ width: 52, textAlign: "right" }}>{entry.eventsHosted}</Typography>
+                      <Typography variant="body2" sx={{ width: 60, textAlign: "right" }}>{entry.eventsAttended}</Typography>
+                      <Typography variant="body2" fontWeight={600} color="primary" sx={{ width: 44, textAlign: "right" }}>{entry.score}</Typography>
+                    </Stack>
+                  );
+                })}
+              </Stack>
+            ) : (
+              <Typography color="text.secondary">No contributor data available.</Typography>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* This Month by Rank */}
+        <Card variant="outlined" sx={{ flex: 1, minWidth: 0, width: "100%" }}>
+          <CardContent>
+            <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 0, pb: 0 }}>
+              <Typography variant="h6">Top Contributors This Month</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+              </Typography>
+            </Stack>
+            <Divider sx={{ mt: 1, mb: 1.5 }} />
+            {monthlyTopByRank.length === 0 ? (
+              <Typography color="text.secondary">No events recorded this month.</Typography>
+            ) : (
+              <Stack spacing={2}>
+                {monthlyTopByRank.map((group) => (
+                  <Box key={group.roleId}>
+                    <Chip label={group.roleName} size="small" variant="outlined" sx={{ mb: 1, fontWeight: 600 }} />
+                    <Stack spacing={0}>
+                      {group.entries.slice(0, 5).map((entry, idx) => {
+                        const mbr = memberMap.get(entry.discordId);
+                        return (
+                          <Stack
+                            key={entry.discordId}
+                            direction="row"
+                            alignItems="center"
+                            sx={{ px: 1, py: 0.5, borderBottom: "1px solid", borderColor: "divider" }}
+                          >
+                            <Typography variant="caption" color="text.secondary" sx={{ width: 20 }}>
+                              {idx === 0 ? "🥇" : `${idx + 1}.`}
+                            </Typography>
+                            <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 1, minWidth: 0 }}>
+                              <Avatar
+                                src={mbr?.avatarHash ? `https://cdn.discordapp.com/avatars/${entry.discordId}/${mbr.avatarHash}.png?size=32` : undefined}
+                                sx={{ width: 20, height: 20, fontSize: 8 }}
+                              >
+                                {mbr?.username?.[0]?.toUpperCase() ?? "?"}
+                              </Avatar>
+                              <Typography variant="body2" noWrap>
+                                {mbr?.username ?? entry.discordId.slice(0, 10) + "…"}
+                              </Typography>
+                            </Stack>
+                            <Tooltip title="Hosted">
+                              <Typography variant="caption" color="primary" sx={{ width: 36, textAlign: "right" }}>
+                                {entry.hosted > 0 ? `${entry.hosted}H` : ""}
+                              </Typography>
+                            </Tooltip>
+                            <Tooltip title="Attended">
+                              <Typography variant="caption" color="success.main" sx={{ width: 36, textAlign: "right" }}>
+                                {entry.attended > 0 ? `${entry.attended}A` : ""}
+                              </Typography>
+                            </Tooltip>
+                          </Stack>
+                        );
+                      })}
+                    </Stack>
+                  </Box>
+                ))}
+              </Stack>
+            )}
+          </CardContent>
+        </Card>
+
+      </Stack>
+
+      {/* Lowest Contributors Section — two cards side by side */}
+      <Stack direction={{ xs: "column", lg: "row" }} spacing={2} sx={{ mb: 3 }} alignItems="flex-start">
+
+        {/* All-Time Lowest Contributors */}
+        <Card variant="outlined" sx={{ flex: 1, minWidth: 0, width: "100%" }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>All-Time Lowest Contributors</Typography>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              Active members with the least recorded activity.
+            </Typography>
+            <Divider sx={{ mb: 1.5 }} />
+            {allTimeLow.length === 0 ? (
+              <Typography color="text.secondary">No active members found.</Typography>
+            ) : (
+              <Stack spacing={0}>
+                <Stack direction="row" sx={{ px: 1, pb: 0.5 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ width: 28 }}>#</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>Member</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ width: 52, textAlign: "right" }}>Hosted</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ width: 60, textAlign: "right" }}>Attended</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ width: 72, textAlign: "right" }}>Last Active</Typography>
+                </Stack>
+                <Divider />
+                {allTimeLow.map((m, idx) => {
                   const lastActive = [m.lastHostedDate, m.lastAttendedDate]
                     .filter(Boolean)
                     .map((d) => new Date(d!))
                     .sort((a, b) => b.getTime() - a.getTime())[0];
                   return (
-                    <Stack key={m.discordId} direction="row" alignItems="center" sx={{ px: 1 }}>
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 3 }}>
+                    <Stack
+                      key={m.discordId}
+                      direction="row"
+                      alignItems="center"
+                      sx={{ px: 1, py: 0.75, borderBottom: "1px solid", borderColor: "divider" }}
+                    >
+                      <Typography variant="body2" color="text.secondary" sx={{ width: 28 }}>
+                        {idx + 1}.
+                      </Typography>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 1, minWidth: 0 }}>
                         <Avatar
                           src={m.avatarHash ? `https://cdn.discordapp.com/avatars/${m.discordId}/${m.avatarHash}.png?size=32` : undefined}
-                          sx={{ width: 24, height: 24, fontSize: 10 }}
+                          sx={{ width: 22, height: 22, fontSize: 9 }}
                         >
                           {!m.avatarHash && (m.username?.[0]?.toUpperCase() ?? "?")}
                         </Avatar>
-                        <Typography variant="body2">{m.username || m.discordId}</Typography>
+                        <Typography variant="body2" noWrap>{m.username || m.discordId}</Typography>
                       </Stack>
-                      <Typography variant="body2" sx={{ flex: 1, textAlign: "center" }}>{m.eventsHosted}</Typography>
-                      <Typography variant="body2" sx={{ flex: 1, textAlign: "center" }}>{m.eventsAttended}</Typography>
-                      <Typography variant="body2" sx={{ flex: 2, textAlign: "right" }} color={lastActive ? "text.primary" : "text.disabled"}>
+                      <Typography variant="body2" sx={{ width: 52, textAlign: "right" }}>{m.eventsHosted}</Typography>
+                      <Typography variant="body2" sx={{ width: 60, textAlign: "right" }}>{m.eventsAttended}</Typography>
+                      <Typography variant="body2" sx={{ width: 72, textAlign: "right" }} color={lastActive ? "text.primary" : "text.disabled"}>
                         {lastActive ? lastActive.toLocaleDateString(undefined, { timeZone: "UTC" }) : "Never"}
                       </Typography>
                     </Stack>
                   );
                 })}
               </Stack>
-            </CardContent>
-          </Card>
-        );
-      })()}
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Lowest Contributors This Month by Rank */}
+        <Card variant="outlined" sx={{ flex: 1, minWidth: 0, width: "100%" }}>
+          <CardContent>
+            <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 0, pb: 0 }}>
+              <Typography variant="h6">Lowest Contributors This Month</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+              </Typography>
+            </Stack>
+            <Divider sx={{ mt: 1, mb: 1.5 }} />
+            {monthlyLowByRank.length === 0 ? (
+              <Typography color="text.secondary">No active members found.</Typography>
+            ) : (
+              <Stack spacing={2}>
+                {monthlyLowByRank.map((group) => (
+                  <Box key={group.roleId}>
+                    <Chip label={group.roleName} size="small" variant="outlined" sx={{ mb: 1, fontWeight: 600 }} />
+                    <Stack spacing={0}>
+                      {group.entries.slice(0, 5).map((entry, idx) => {
+                        const mbr = memberMap.get(entry.discordId);
+                        return (
+                          <Stack
+                            key={entry.discordId}
+                            direction="row"
+                            alignItems="center"
+                            sx={{ px: 1, py: 0.5, borderBottom: "1px solid", borderColor: "divider" }}
+                          >
+                            <Typography variant="caption" color="text.secondary" sx={{ width: 20 }}>
+                              {idx + 1}.
+                            </Typography>
+                            <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 1, minWidth: 0 }}>
+                              <Avatar
+                                src={mbr?.avatarHash ? `https://cdn.discordapp.com/avatars/${entry.discordId}/${mbr.avatarHash}.png?size=32` : undefined}
+                                sx={{ width: 20, height: 20, fontSize: 8 }}
+                              >
+                                {mbr?.username?.[0]?.toUpperCase() ?? "?"}
+                              </Avatar>
+                              <Typography variant="body2" noWrap>
+                                {mbr?.username ?? entry.discordId.slice(0, 10) + "…"}
+                              </Typography>
+                            </Stack>
+                            <Tooltip title="Hosted">
+                              <Typography variant="caption" color={entry.hosted > 0 ? "primary" : "text.disabled"} sx={{ width: 36, textAlign: "right" }}>
+                                {entry.hosted}H
+                              </Typography>
+                            </Tooltip>
+                            <Tooltip title="Attended">
+                              <Typography variant="caption" color={entry.attended > 0 ? "success.main" : "text.disabled"} sx={{ width: 36, textAlign: "right" }}>
+                                {entry.attended}A
+                              </Typography>
+                            </Tooltip>
+                          </Stack>
+                        );
+                      })}
+                    </Stack>
+                  </Box>
+                ))}
+              </Stack>
+            )}
+          </CardContent>
+        </Card>
+
+      </Stack>
 
       {/* Members Section */}
       <Card variant="outlined" sx={{ mb: 3 }}>
