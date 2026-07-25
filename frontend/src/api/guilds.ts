@@ -117,6 +117,7 @@ export type EventLog = {
   participantIds: string[];
   summary: string;
   submittedAt: string;
+  submittedByDiscordId?: string;
 };
 
 export type SyncStatus = {
