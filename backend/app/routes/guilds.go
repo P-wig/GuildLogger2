@@ -1073,12 +1073,13 @@ func createGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 		}
 
 		report := &repositories.EventReport{
-			EventID:        "",
-			GuildID:        guildID,
-			HostDiscordID:  hostID,
-			EventDate:      in.EventDate,
-			ParticipantIDs: in.ParticipantIDs,
-			Summary:        in.Summary,
+			EventID:              "",
+			GuildID:              guildID,
+			HostDiscordID:        hostID,
+			EventDate:            in.EventDate,
+			ParticipantIDs:       in.ParticipantIDs,
+			Summary:              in.Summary,
+			SubmittedByDiscordID: claims.DiscordID,
 		}
 		if err := reportRepo.Create(ctx, report); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to create event log"})

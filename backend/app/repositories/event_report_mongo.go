@@ -16,14 +16,15 @@ import (
 // eventReportDoc is the storage representation of EventReport.
 // Summary is stored as zlib-compressed bytes.
 type eventReportDoc struct {
-	ID                string    `bson:"_id,omitempty"`
-	EventID           string    `bson:"eventId,omitempty"`
-	GuildID           string    `bson:"guildId"`
-	HostDiscordID     string    `bson:"hostDiscordId"`
-	EventDate         time.Time `bson:"eventDate"`
-	ParticipantIDs    []string  `bson:"participantIds"`
-	SummaryCompressed []byte    `bson:"summary"`
-	SubmittedAt       time.Time `bson:"submittedAt"`
+	ID                   string    `bson:"_id,omitempty"`
+	EventID              string    `bson:"eventId,omitempty"`
+	GuildID              string    `bson:"guildId"`
+	HostDiscordID        string    `bson:"hostDiscordId"`
+	EventDate            time.Time `bson:"eventDate"`
+	ParticipantIDs       []string  `bson:"participantIds"`
+	SummaryCompressed    []byte    `bson:"summary"`
+	SubmittedAt          time.Time `bson:"submittedAt"`
+	SubmittedByDiscordID string    `bson:"submittedByDiscordId"`
 }
 
 func toEventReportDoc(report *EventReport) (*eventReportDoc, error) {
@@ -32,14 +33,15 @@ func toEventReportDoc(report *EventReport) (*eventReportDoc, error) {
 		return nil, err
 	}
 	return &eventReportDoc{
-		ID:                report.ID,
-		EventID:           report.EventID,
-		GuildID:           report.GuildID,
-		HostDiscordID:     report.HostDiscordID,
-		EventDate:         report.EventDate,
-		ParticipantIDs:    report.ParticipantIDs,
-		SummaryCompressed: compressed,
-		SubmittedAt:       report.SubmittedAt,
+		ID:                   report.ID,
+		EventID:              report.EventID,
+		GuildID:              report.GuildID,
+		HostDiscordID:        report.HostDiscordID,
+		EventDate:            report.EventDate,
+		ParticipantIDs:       report.ParticipantIDs,
+		SummaryCompressed:    compressed,
+		SubmittedAt:          report.SubmittedAt,
+		SubmittedByDiscordID: report.SubmittedByDiscordID,
 	}, nil
 }
 
@@ -49,14 +51,15 @@ func fromEventReportDoc(doc *eventReportDoc) (*EventReport, error) {
 		return nil, err
 	}
 	return &EventReport{
-		ID:             doc.ID,
-		EventID:        doc.EventID,
-		GuildID:        doc.GuildID,
-		HostDiscordID:  doc.HostDiscordID,
-		EventDate:      doc.EventDate,
-		ParticipantIDs: doc.ParticipantIDs,
-		Summary:        summary,
-		SubmittedAt:    doc.SubmittedAt,
+		ID:                   doc.ID,
+		EventID:              doc.EventID,
+		GuildID:              doc.GuildID,
+		HostDiscordID:        doc.HostDiscordID,
+		EventDate:            doc.EventDate,
+		ParticipantIDs:       doc.ParticipantIDs,
+		Summary:              summary,
+		SubmittedAt:          doc.SubmittedAt,
+		SubmittedByDiscordID: doc.SubmittedByDiscordID,
 	}, nil
 }
 

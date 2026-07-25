@@ -427,7 +427,12 @@ export const GuildEvents = () => {
                           </Typography>
                         )}
                         <Typography variant="caption" color="text.secondary">
-                          Logged {new Date(log.submittedAt).toLocaleDateString()}
+                          Logged by{" "}
+                          <Typography variant="caption" color="text.primary" component="span">
+                            {memberMap.get(log.submittedByDiscordId ?? "")?.username
+                              ?? (log.submittedByDiscordId ? log.submittedByDiscordId.slice(0, 10) + "…" : "unknown")}
+                          </Typography>{" "}
+                          on {new Date(log.submittedAt).toLocaleDateString()}
                         </Typography>
                       </Box>
                       <Box sx={{ flex: 2, pt: 0.25 }}>

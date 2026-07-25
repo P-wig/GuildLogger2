@@ -25,14 +25,15 @@ const (
 // EventReport is a permanent record submitted by the host when closing an event.
 // Stored in its own collection and outlives the source event document.
 type EventReport struct {
-	ID             string    `bson:"_id,omitempty" json:"id"`
-	EventID        string    `bson:"eventId,omitempty" json:"eventId,omitempty"`
-	GuildID        string    `bson:"guildId" json:"guildId"`
-	HostDiscordID  string    `bson:"hostDiscordId" json:"hostDiscordId"`
-	EventDate      time.Time `bson:"eventDate" json:"eventDate"`
-	ParticipantIDs []string  `bson:"participantIds" json:"participantIds"`
-	Summary        string    `bson:"summary" json:"summary"`
-	SubmittedAt    time.Time `bson:"submittedAt" json:"submittedAt"`
+	ID                   string    `bson:"_id,omitempty" json:"id"`
+	EventID              string    `bson:"eventId,omitempty" json:"eventId,omitempty"`
+	GuildID              string    `bson:"guildId" json:"guildId"`
+	HostDiscordID        string    `bson:"hostDiscordId" json:"hostDiscordId"`
+	EventDate            time.Time `bson:"eventDate" json:"eventDate"`
+	ParticipantIDs       []string  `bson:"participantIds" json:"participantIds"`
+	Summary              string    `bson:"summary" json:"summary"`
+	SubmittedAt          time.Time `bson:"submittedAt" json:"submittedAt"`
+	SubmittedByDiscordID string    `bson:"submittedByDiscordId" json:"submittedByDiscordId"`
 }
 
 // Event is the aggregate root for a scheduled guild event.
