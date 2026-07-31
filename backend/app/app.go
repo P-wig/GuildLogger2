@@ -142,6 +142,27 @@ func CreateApp() (*echo.Echo, func() error, error) {
 
 	botClient := discord.NewBotClient(cfg.DiscordBotToken, cfg.DiscordAPIBaseURL)
 
+	// Register bot slash commands with Discord on every startup.
+	// PUT /applications/{id}/commands is a bulk overwrite — idempotent and safe to repeat.
+	// A missing bot token (for example in environments without a bot configured) is
+	// silently skipped. Any other failure is logged as a warning; it does not prevent
+	// the server from starting.
+	{
+		cmdCtx, cmdCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		if err := botClient.RegisterGlobalCommands(cmdCtx, cfg.DiscordClientID); err != nil {
+			e.Logger.Warnf("failed to register Discord slash commands: %v", err)
+		} else if cfg.DiscordBotToken != "" {
+			e.Logger.Infof("Discord slash commands registered (%d commands)", len(discord.BotCommands))
+		}
+		cmdCancel()
+	}
+
+	// Register Discord interaction webhook.
+	// POST /api/interactions handles slash command responses, modal submits, and button clicks.
+	// Authenticated via Ed25519 signature (not JWT) — must be registered before the JWT group.
+	interactionHandler := discord.NewInteractionHandler(guildRepo, eventsRepo, botClient, cfg.DiscordPublicKey)
+	routes.RegisterInteractions(e, interactionHandler)
+
 	// jwtMiddleware guards any route group that requires an authenticated session.
 	// Routes registered on `protected` will reject requests without a valid JWT.
 	jwtMiddleware := appmiddleware.JWTMiddleware(cfg)

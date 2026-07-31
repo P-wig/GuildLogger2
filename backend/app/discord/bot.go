@@ -223,3 +223,117 @@ func (c *BotClient) SendChannelMessage(ctx context.Context, channelID, content s
 
 	return nil
 }
+
+// PostEmbedMessage posts a message with rich embeds and interactive components to a channel.
+// Returns the Discord message ID of the posted message, used to update the embed later.
+func (c *BotClient) PostEmbedMessage(ctx context.Context, channelID string, embeds []Embed, components []ActionRow) (string, error) {
+	type payload struct {
+		Embeds     []Embed     `json:"embeds"`
+		Components []ActionRow `json:"components,omitempty"`
+	}
+	body, err := json.Marshal(payload{Embeds: embeds, Components: components})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.apiBaseURL+"/channels/"+channelID+"/messages",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bot "+c.botToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("discord post embed message failed: status %d body %s", resp.StatusCode, string(raw))
+	}
+
+	var msg struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &msg); err != nil {
+		return "", fmt.Errorf("parse message response: %w", err)
+	}
+	return msg.ID, nil
+}
+
+// EditInteractionResponse edits the deferred response for a slash-command interaction.
+// Call this after returning InteractionResponseDeferredChannelMessage (type 5) to replace
+// the "thinking..." state with the actual result.
+// Uses the interaction webhook URL — no bot token auth needed, token is in the URL.
+func (c *BotClient) EditInteractionResponse(ctx context.Context, applicationID, token, content string) error {
+	body, err := json.Marshal(map[string]string{"content": content})
+	if err != nil {
+		return err
+	}
+	url := c.apiBaseURL + "/webhooks/" + applicationID + "/" + token + "/messages/@original"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	// Interaction webhook edits do not require an Authorization header.
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("discord edit interaction response failed: status %d body %s", resp.StatusCode, string(raw))
+	}
+	return nil
+}
+
+// EditMessage updates an existing channel message's embeds and components in place.
+// Used to refresh the RSVP attendee list after a Join or Leave button interaction.
+func (c *BotClient) EditMessage(ctx context.Context, channelID, messageID string, embeds []Embed, components []ActionRow) error {
+	type payload struct {
+		Embeds     []Embed     `json:"embeds"`
+		Components []ActionRow `json:"components,omitempty"`
+	}
+	body, err := json.Marshal(payload{Embeds: embeds, Components: components})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch,
+		c.apiBaseURL+"/channels/"+channelID+"/messages/"+messageID,
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bot "+c.botToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("discord edit message failed: status %d body %s", resp.StatusCode, string(raw))
+	}
+	return nil
+}

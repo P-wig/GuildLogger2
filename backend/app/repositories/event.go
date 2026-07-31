@@ -39,23 +39,24 @@ type EventReport struct {
 // Event is the aggregate root for a scheduled guild event.
 // Events may be deleted after closing; reports are the permanent record.
 type Event struct {
-	ID              string      `bson:"_id,omitempty"`
-	GuildID         string      `bson:"guildId"`
-	HostDiscordID   string      `bson:"hostDiscordId"`
-	Title           string      `bson:"title"`
-	Description     string      `bson:"description"`     // pre-event description, max 3000 chars
-	AttendingIDs    []string    `bson:"attendingIds"`    // Discord IDs registered to attend
-	ScheduledAt     time.Time   `bson:"scheduledAt"`     // epoch set by the host
-	Status          EventStatus `bson:"status"`          // open|active|closed
-	ChannelID       string      `bson:"channelId"`       // Discord channel the bot opens/closes
-	ReminderEnabled bool        `bson:"reminderEnabled"` // send 1hr pre-event reminder to registrants
-	Capacity        int         `bson:"capacity"`        // max registrations; 0 = unlimited
-	CutoffAt        *time.Time  `bson:"cutoffAt,omitempty"`
-	ReminderSentAt  *time.Time  `bson:"reminderSentAt,omitempty"`
-	StartedAt       *time.Time  `bson:"startedAt,omitempty"`
-	ClosedAt        *time.Time  `bson:"closedAt,omitempty"`
-	CreatedAt       time.Time   `bson:"createdAt"`
-	UpdatedAt       time.Time   `bson:"updatedAt"`
+	ID                    string      `bson:"_id,omitempty"`
+	GuildID               string      `bson:"guildId"`
+	HostDiscordID         string      `bson:"hostDiscordId"`
+	Title                 string      `bson:"title"`
+	Description           string      `bson:"description"`                     // pre-event description, max 3000 chars
+	AttendingIDs          []string    `bson:"attendingIds"`                    // Discord IDs registered to attend
+	ScheduledAt           time.Time   `bson:"scheduledAt"`                     // epoch set by the host
+	Status                EventStatus `bson:"status"`                          // open|active|closed
+	ChannelID             string      `bson:"channelId"`                       // Discord channel the bot opens/closes
+	AnnouncementMessageID string      `bson:"announcementMessageId,omitempty"` // Discord message ID for the RSVP embed
+	ReminderEnabled       bool        `bson:"reminderEnabled"`                 // send 1hr pre-event reminder to registrants
+	Capacity              int         `bson:"capacity"`                        // max registrations; 0 = unlimited
+	CutoffAt              *time.Time  `bson:"cutoffAt,omitempty"`
+	ReminderSentAt        *time.Time  `bson:"reminderSentAt,omitempty"`
+	StartedAt             *time.Time  `bson:"startedAt,omitempty"`
+	ClosedAt              *time.Time  `bson:"closedAt,omitempty"`
+	CreatedAt             time.Time   `bson:"createdAt"`
+	UpdatedAt             time.Time   `bson:"updatedAt"`
 }
 
 // EventRepository defines the contract for event data access operations.

@@ -296,3 +296,23 @@ func (r *MongoGuildRepository) UpdateConfigAndRoles(ctx context.Context, guildID
 	}
 	return nil
 }
+
+// UpdateEventConfig saves the guild's event channel and event type list.
+func (r *MongoGuildRepository) UpdateEventConfig(ctx context.Context, guildID string, cfg GuildEventConfig) error {
+	now := time.Now()
+	result, err := db.GuildsCollection(r.database).UpdateOne(
+		ctx,
+		bson.M{"guildId": guildID},
+		bson.M{"$set": bson.M{
+			"eventConfig": cfg,
+			"updatedAt":   now,
+		}},
+	)
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount == 0 {
+		return ErrGuildNotFound
+	}
+	return nil
+}

@@ -29,6 +29,7 @@ type eventDoc struct {
 	ScheduledAt           time.Time   `bson:"scheduledAt"`
 	Status                EventStatus `bson:"status"`
 	ChannelID             string      `bson:"channelId"`
+	AnnouncementMessageID string      `bson:"announcementMessageId,omitempty"`
 	ReminderEnabled       bool        `bson:"reminderEnabled"`
 	Capacity              int         `bson:"capacity"`
 	CutoffAt              *time.Time  `bson:"cutoffAt,omitempty"`
@@ -80,6 +81,7 @@ func toEventDoc(event *Event) (*eventDoc, error) {
 		ScheduledAt:           event.ScheduledAt,
 		Status:                event.Status,
 		ChannelID:             event.ChannelID,
+		AnnouncementMessageID: event.AnnouncementMessageID,
 		ReminderEnabled:       event.ReminderEnabled,
 		Capacity:              event.Capacity,
 		CutoffAt:              event.CutoffAt,
@@ -97,23 +99,24 @@ func fromEventDoc(doc *eventDoc) (*Event, error) {
 		return nil, err
 	}
 	return &Event{
-		ID:              doc.ID,
-		GuildID:         doc.GuildID,
-		HostDiscordID:   doc.HostDiscordID,
-		Title:           doc.Title,
-		Description:     description,
-		AttendingIDs:    doc.AttendingIDs,
-		ScheduledAt:     doc.ScheduledAt,
-		Status:          doc.Status,
-		ChannelID:       doc.ChannelID,
-		ReminderEnabled: doc.ReminderEnabled,
-		Capacity:        doc.Capacity,
-		CutoffAt:        doc.CutoffAt,
-		ReminderSentAt:  doc.ReminderSentAt,
-		StartedAt:       doc.StartedAt,
-		ClosedAt:        doc.ClosedAt,
-		CreatedAt:       doc.CreatedAt,
-		UpdatedAt:       doc.UpdatedAt,
+		ID:                    doc.ID,
+		GuildID:               doc.GuildID,
+		HostDiscordID:         doc.HostDiscordID,
+		Title:                 doc.Title,
+		Description:           description,
+		AttendingIDs:          doc.AttendingIDs,
+		ScheduledAt:           doc.ScheduledAt,
+		Status:                doc.Status,
+		ChannelID:             doc.ChannelID,
+		AnnouncementMessageID: doc.AnnouncementMessageID,
+		ReminderEnabled:       doc.ReminderEnabled,
+		Capacity:              doc.Capacity,
+		CutoffAt:              doc.CutoffAt,
+		ReminderSentAt:        doc.ReminderSentAt,
+		StartedAt:             doc.StartedAt,
+		ClosedAt:              doc.ClosedAt,
+		CreatedAt:             doc.CreatedAt,
+		UpdatedAt:             doc.UpdatedAt,
 	}, nil
 }
 

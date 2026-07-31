@@ -38,8 +38,285 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip,
   Legend, ResponsiveContainer, PieChart, Pie, Cell,
 } from "recharts";
-import { guildsApi, type GuildDashboardData, type GuildDashboardMemberRow, type SyncStatus } from "../api/guilds";
+import { guildsApi, type GuildDashboardData, type GuildDashboardMemberRow, type LinkedGuild, type GuildRole, type SyncStatus } from "../api/guilds";
 import { useAuth } from "../auth";
+
+type ConfigSavedUpdates = {
+  activeRoleId: string;
+  inactiveRoleId: string;
+  moderatorRoleIds: string[];
+  rankedRoleIds: string[];
+  eventsChannelId: string;
+  eventTypes: string[];
+};
+
+const ConfigDialog = ({
+  open,
+  guild,
+  guildId,
+  selectableRoles,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  guild: LinkedGuild | null;
+  guildId: string;
+  selectableRoles: GuildRole[];
+  onClose: () => void;
+  onSaved: (updates: ConfigSavedUpdates) => void;
+}) => {
+  const [cfgActiveRoleId, setCfgActiveRoleId] = useState("");
+  const [cfgInactiveRoleId, setCfgInactiveRoleId] = useState("");
+  const [cfgRankedRoleIds, setCfgRankedRoleIds] = useState<string[]>([]);
+  const [cfgModeratorRoleIds, setCfgModeratorRoleIds] = useState<string[]>([]);
+  const [cfgEventsChannelId, setCfgEventsChannelId] = useState("");
+  const [cfgEventTypes, setCfgEventTypes] = useState<string[]>([]);
+  const [cfgNewEventType, setCfgNewEventType] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Initialise state from guild every time the dialog opens.
+  useEffect(() => {
+    if (!open || !guild) return;
+    setCfgActiveRoleId(guild.notificationConfig?.statusRoles?.activeRoleId ?? "");
+    setCfgInactiveRoleId(guild.notificationConfig?.statusRoles?.inactiveRoleId ?? "");
+    setCfgRankedRoleIds(guild.roles?.filter((r) => r.type === "ranked").map((r) => r.discordRoleId) ?? []);
+    setCfgModeratorRoleIds(guild.notificationConfig?.statusRoles?.moderatorRoleIds ?? []);
+    setCfgEventsChannelId(guild.eventConfig?.eventsChannelId ?? "");
+    setCfgEventTypes(guild.eventConfig?.eventTypes ?? []);
+    setCfgNewEventType("");
+    setError(null);
+  }, [open, guild]);
+
+  const handleSave = async () => {
+    if (!guildId || !cfgActiveRoleId) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await Promise.all([
+        guildsApi.updateGuildConfig(guildId, {
+          activeRoleId: cfgActiveRoleId,
+          inactiveRoleId: cfgInactiveRoleId,
+          rankedRoleIds: cfgRankedRoleIds,
+          moderatorRoleIds: cfgModeratorRoleIds,
+        }),
+        guildsApi.updateEventConfig(guildId, {
+          eventsChannelId: cfgEventsChannelId,
+          eventTypes: cfgEventTypes,
+        }),
+      ]);
+      onSaved({
+        activeRoleId: cfgActiveRoleId,
+        inactiveRoleId: cfgInactiveRoleId,
+        moderatorRoleIds: cfgModeratorRoleIds,
+        rankedRoleIds: cfgRankedRoleIds,
+        eventsChannelId: cfgEventsChannelId,
+        eventTypes: cfgEventTypes,
+      });
+      onClose();
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ error?: string }>;
+      setError(axiosErr.response?.data?.error ?? "Failed to save configuration. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Guild Configuration</DialogTitle>
+      <DialogContent>
+        <Stack spacing={3} sx={{ mt: 1 }}>
+          {selectableRoles.length === 0 && (
+            <Alert severity="info">No roles available. Re-verify the bot to refresh the role list.</Alert>
+          )}
+          {selectableRoles.length > 0 && selectableRoles.every((r) => !r.name) && (
+            <Alert severity="warning">
+              Role names are missing — re-verify the bot from the Guilds page to refresh them.
+            </Alert>
+          )}
+
+          {/* Active Member Role */}
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>Active Member Role *</Typography>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              Members holding this role are counted and synced. Required before syncing.
+            </Typography>
+            <FormControl size="small" fullWidth disabled={selectableRoles.length === 0}>
+              <InputLabel>Active Role</InputLabel>
+              <Select
+                value={cfgActiveRoleId}
+                label="Active Role"
+                onChange={(e) => setCfgActiveRoleId(e.target.value)}
+              >
+                {selectableRoles.map((r) => (
+                  <MenuItem key={r.discordRoleId} value={r.discordRoleId}>
+                    {r.name || r.discordRoleId}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+
+          {/* Inactive Member Role */}
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>Inactive Member Role</Typography>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              Role that marks members below the activity threshold. Optional.
+            </Typography>
+            <FormControl size="small" fullWidth disabled={selectableRoles.length === 0}>
+              <InputLabel>Inactive Role</InputLabel>
+              <Select
+                value={cfgInactiveRoleId}
+                label="Inactive Role"
+                onChange={(e) => setCfgInactiveRoleId(e.target.value)}
+              >
+                <MenuItem value=""><em>None</em></MenuItem>
+                {selectableRoles.map((r) => (
+                  <MenuItem key={r.discordRoleId} value={r.discordRoleId}>
+                    {r.name || r.discordRoleId}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+
+          {/* Ranked Roles */}
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>Ranked Roles</Typography>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              Roles representing member ranks used for leaderboard sorting. Toggle all that apply.
+            </Typography>
+            {selectableRoles.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">No roles available.</Typography>
+            ) : (
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+                {selectableRoles.map((r) => (
+                  <Chip
+                    key={r.discordRoleId}
+                    label={r.name || r.discordRoleId}
+                    onClick={() =>
+                      setCfgRankedRoleIds((prev) =>
+                        prev.includes(r.discordRoleId)
+                          ? prev.filter((id) => id !== r.discordRoleId)
+                          : [...prev, r.discordRoleId]
+                      )
+                    }
+                    color={cfgRankedRoleIds.includes(r.discordRoleId) ? "primary" : "default"}
+                    variant={cfgRankedRoleIds.includes(r.discordRoleId) ? "filled" : "outlined"}
+                  />
+                ))}
+              </Box>
+            )}
+          </Box>
+
+          {/* Moderator Roles */}
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>Moderator Roles</Typography>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              Members holding any of these roles can create, edit, and delete event logs. Toggle all that apply.
+            </Typography>
+            {selectableRoles.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">No roles available.</Typography>
+            ) : (
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+                {selectableRoles.map((r) => (
+                  <Chip
+                    key={r.discordRoleId}
+                    label={r.name || r.discordRoleId}
+                    onClick={() =>
+                      setCfgModeratorRoleIds((prev) =>
+                        prev.includes(r.discordRoleId)
+                          ? prev.filter((id) => id !== r.discordRoleId)
+                          : [...prev, r.discordRoleId]
+                      )
+                    }
+                    color={cfgModeratorRoleIds.includes(r.discordRoleId) ? "secondary" : "default"}
+                    variant={cfgModeratorRoleIds.includes(r.discordRoleId) ? "filled" : "outlined"}
+                  />
+                ))}
+              </Box>
+            )}
+          </Box>
+
+          {/* Events Channel */}
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>Events Channel</Typography>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              Discord channel ID where the bot posts event RSVP announcements. Right-click the channel → Copy Channel ID.
+            </Typography>
+            <TextField
+              size="small"
+              fullWidth
+              value={cfgEventsChannelId}
+              onChange={(e) => setCfgEventsChannelId(e.target.value)}
+              placeholder="e.g. 1234567890123456789"
+            />
+          </Box>
+
+          {/* Event Types */}
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>Event Types</Typography>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              Types available in the /start event slash command. Press Enter or click Add.
+            </Typography>
+            <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+              <TextField
+                size="small"
+                value={cfgNewEventType}
+                onChange={(e) => setCfgNewEventType(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && cfgNewEventType.trim() && !cfgEventTypes.includes(cfgNewEventType.trim())) {
+                    setCfgEventTypes((prev) => [...prev, cfgNewEventType.trim()]);
+                    setCfgNewEventType("");
+                  }
+                }}
+                placeholder="e.g. Raid Night"
+                sx={{ flex: 1 }}
+              />
+              <Button
+                size="small"
+                variant="outlined"
+                disabled={!cfgNewEventType.trim() || cfgEventTypes.includes(cfgNewEventType.trim())}
+                onClick={() => {
+                  setCfgEventTypes((prev) => [...prev, cfgNewEventType.trim()]);
+                  setCfgNewEventType("");
+                }}
+              >
+                Add
+              </Button>
+            </Stack>
+            {cfgEventTypes.length > 0 && (
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+                {cfgEventTypes.map((t) => (
+                  <Chip
+                    key={t}
+                    label={t}
+                    size="small"
+                    onDelete={() => setCfgEventTypes((prev) => prev.filter((x) => x !== t))}
+                  />
+                ))}
+              </Box>
+            )}
+          </Box>
+
+          {error && <Alert severity="error">{error}</Alert>}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <LoadingButton
+          variant="contained"
+          loading={saving}
+          onClick={handleSave}
+          disabled={!cfgActiveRoleId}
+        >
+          Save
+        </LoadingButton>
+      </DialogActions>
+    </Dialog>
+  );
+};
 
 export const GuildDashboard = () => {
   const { guildId } = useParams<{ guildId: string }>();
@@ -55,12 +332,6 @@ export const GuildDashboard = () => {
   const [syncCooldown, setSyncCooldown] = useState(0);
   const [statsModalMember, setStatsModalMember] = useState<GuildDashboardMemberRow | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
-  const [configSaving, setConfigSaving] = useState(false);
-  const [configError, setConfigError] = useState<string | null>(null);
-  const [cfgActiveRoleId, setCfgActiveRoleId] = useState("");
-  const [cfgInactiveRoleId, setCfgInactiveRoleId] = useState("");
-  const [cfgRankedRoleIds, setCfgRankedRoleIds] = useState<string[]>([]);
-  const [cfgModeratorRoleIds, setCfgModeratorRoleIds] = useState<string[]>([]);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [disconnectConfirm, setDisconnectConfirm] = useState("");
@@ -302,57 +573,7 @@ export const GuildDashboard = () => {
     }
   };
 
-  const handleOpenConfig = () => {
-    const g = dashboard?.guild;
-    setCfgActiveRoleId(g?.notificationConfig?.statusRoles?.activeRoleId ?? "");
-    setCfgInactiveRoleId(g?.notificationConfig?.statusRoles?.inactiveRoleId ?? "");
-    setCfgRankedRoleIds(g?.roles?.filter((r) => r.type === "ranked").map((r) => r.discordRoleId) ?? []);
-    setCfgModeratorRoleIds(g?.notificationConfig?.statusRoles?.moderatorRoleIds ?? []);
-    setConfigError(null);
-    setConfigOpen(true);
-  };
-
-  const handleSaveConfig = async () => {
-    if (!guildId || !cfgActiveRoleId) return;
-    setConfigSaving(true);
-    setConfigError(null);
-    try {
-      await guildsApi.updateGuildConfig(guildId, {
-        activeRoleId: cfgActiveRoleId,
-        inactiveRoleId: cfgInactiveRoleId,
-        rankedRoleIds: cfgRankedRoleIds,
-        moderatorRoleIds: cfgModeratorRoleIds,
-      });
-      setDashboard((prev) =>
-        prev
-          ? {
-              ...prev,
-              guild: {
-                ...prev.guild,
-                notificationConfig: {
-                  ...prev.guild.notificationConfig,
-                  statusRoles: {
-                    activeRoleId: cfgActiveRoleId,
-                    inactiveRoleId: cfgInactiveRoleId,
-                    moderatorRoleIds: cfgModeratorRoleIds,
-                  },
-                },
-                roles: prev.guild.roles.map((r) => ({
-                  ...r,
-                  type: cfgRankedRoleIds.includes(r.discordRoleId) ? "ranked" : "default",
-                })),
-              },
-            }
-          : null
-      );
-      setConfigOpen(false);
-    } catch (err) {
-      const axiosErr = err as AxiosError<{ error?: string }>;
-      setConfigError(axiosErr.response?.data?.error ?? "Failed to save configuration. Please try again.");
-    } finally {
-      setConfigSaving(false);
-    }
-  };
+  const handleOpenConfig = () => setConfigOpen(true);
 
   const handleDisconnect = async () => {
     if (!guildId) return;
@@ -1078,137 +1299,41 @@ export const GuildDashboard = () => {
       )}
 
       {/* Guild Configuration Modal */}
-      <Dialog open={configOpen} onClose={() => setConfigOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Guild Configuration</DialogTitle>
-        <DialogContent>
-          <Stack spacing={3} sx={{ mt: 1 }}>
-            {selectableRoles.length === 0 && (
-              <Alert severity="info">No roles available. Re-verify the bot to refresh the role list.</Alert>
-            )}
-            {selectableRoles.length > 0 && selectableRoles.every((r) => !r.name) && (
-              <Alert severity="warning">
-                Role names are missing — re-verify the bot from the Guilds page to refresh them.
-              </Alert>
-            )}
-
-            {/* Active Member Role */}
-            <Box>
-              <Typography variant="subtitle2" gutterBottom>Active Member Role *</Typography>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                Members holding this role are counted and synced. Required before syncing.
-              </Typography>
-              <FormControl size="small" fullWidth disabled={selectableRoles.length === 0}>
-                <InputLabel>Active Role</InputLabel>
-                <Select
-                  value={cfgActiveRoleId}
-                  label="Active Role"
-                  onChange={(e) => setCfgActiveRoleId(e.target.value)}
-                >
-                  {selectableRoles.map((r) => (
-                    <MenuItem key={r.discordRoleId} value={r.discordRoleId}>
-                      {r.name || r.discordRoleId}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Box>
-
-            {/* Inactive Member Role */}
-            <Box>
-              <Typography variant="subtitle2" gutterBottom>Inactive Member Role</Typography>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                Role that marks members below the activity threshold. Optional.
-              </Typography>
-              <FormControl size="small" fullWidth disabled={selectableRoles.length === 0}>
-                <InputLabel>Inactive Role</InputLabel>
-                <Select
-                  value={cfgInactiveRoleId}
-                  label="Inactive Role"
-                  onChange={(e) => setCfgInactiveRoleId(e.target.value)}
-                >
-                  <MenuItem value=""><em>None</em></MenuItem>
-                  {selectableRoles.map((r) => (
-                    <MenuItem key={r.discordRoleId} value={r.discordRoleId}>
-                      {r.name || r.discordRoleId}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Box>
-
-            {/* Ranked Roles */}
-            <Box>
-              <Typography variant="subtitle2" gutterBottom>Ranked Roles</Typography>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                Roles representing member ranks used for leaderboard sorting. Toggle all that apply.
-              </Typography>
-              {selectableRoles.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">No roles available.</Typography>
-              ) : (
-                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-                  {selectableRoles.map((r) => (
-                    <Chip
-                      key={r.discordRoleId}
-                      label={r.name || r.discordRoleId}
-                      onClick={() =>
-                        setCfgRankedRoleIds((prev) =>
-                          prev.includes(r.discordRoleId)
-                            ? prev.filter((id) => id !== r.discordRoleId)
-                            : [...prev, r.discordRoleId]
-                        )
-                      }
-                      color={cfgRankedRoleIds.includes(r.discordRoleId) ? "primary" : "default"}
-                      variant={cfgRankedRoleIds.includes(r.discordRoleId) ? "filled" : "outlined"}
-                    />
-                  ))}
-                </Box>
-              )}
-            </Box>
-
-            {/* Moderator Roles */}
-            <Box>
-              <Typography variant="subtitle2" gutterBottom>Moderator Roles</Typography>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                Members holding any of these roles can create, edit, and delete event logs. Toggle all that apply.
-              </Typography>
-              {selectableRoles.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">No roles available.</Typography>
-              ) : (
-                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-                  {selectableRoles.map((r) => (
-                    <Chip
-                      key={r.discordRoleId}
-                      label={r.name || r.discordRoleId}
-                      onClick={() =>
-                        setCfgModeratorRoleIds((prev) =>
-                          prev.includes(r.discordRoleId)
-                            ? prev.filter((id) => id !== r.discordRoleId)
-                            : [...prev, r.discordRoleId]
-                        )
-                      }
-                      color={cfgModeratorRoleIds.includes(r.discordRoleId) ? "secondary" : "default"}
-                      variant={cfgModeratorRoleIds.includes(r.discordRoleId) ? "filled" : "outlined"}
-                    />
-                  ))}
-                </Box>
-              )}
-            </Box>
-
-            {configError && <Alert severity="error">{configError}</Alert>}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfigOpen(false)}>Cancel</Button>
-          <LoadingButton
-            variant="contained"
-            loading={configSaving}
-            onClick={handleSaveConfig}
-            disabled={!cfgActiveRoleId}
-          >
-            Save
-          </LoadingButton>
-        </DialogActions>
-      </Dialog>
+      <ConfigDialog
+        open={configOpen}
+        guild={dashboard?.guild ?? null}
+        guildId={guildId ?? ""}
+        selectableRoles={selectableRoles}
+        onClose={() => setConfigOpen(false)}
+        onSaved={(updates) => {
+          setDashboard((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  guild: {
+                    ...prev.guild,
+                    notificationConfig: {
+                      ...prev.guild.notificationConfig,
+                      statusRoles: {
+                        activeRoleId: updates.activeRoleId,
+                        inactiveRoleId: updates.inactiveRoleId,
+                        moderatorRoleIds: updates.moderatorRoleIds,
+                      },
+                    },
+                    roles: prev.guild.roles.map((r) => ({
+                      ...r,
+                      type: updates.rankedRoleIds.includes(r.discordRoleId) ? "ranked" : "default",
+                    })),
+                    eventConfig: {
+                      eventsChannelId: updates.eventsChannelId,
+                      eventTypes: updates.eventTypes,
+                    },
+                  },
+                }
+              : null
+          );
+        }}
+      />
 
       {/* Member Stats Modal */}
       <Dialog open={statsModalMember !== null} onClose={() => setStatsModalMember(null)} maxWidth="xs" fullWidth>
