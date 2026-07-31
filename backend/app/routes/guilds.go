@@ -56,6 +56,7 @@ func RegisterGuildsProtected(
 	g.PUT("/guilds/:guildId/roles", upsertRoleHandler(guildRepo))
 	g.PUT("/guilds/:guildId/config/member-role", updateMemberRoleHandler(guildRepo))
 	g.PUT("/guilds/:guildId/config", updateGuildConfigHandler(guildRepo))
+	g.PUT("/guilds/:guildId/config/event", updateEventConfigHandler(guildRepo))
 	g.DELETE("/guilds/:guildId", deleteGuildHandler(guildRepo, memberRepo))
 	g.GET("/guilds/:guildId/event-logs", listGuildEventLogsHandler(guildRepo, memberRepo, eventReportRepo))
 	g.POST("/guilds/:guildId/event-logs", createGuildEventLogHandler(guildRepo, memberRepo, eventReportRepo))
@@ -849,6 +850,51 @@ func updateGuildConfigHandler(guildRepo repositories.GuildRepository) echo.Handl
 			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to save guild config"})
 		}
 
+		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true})
+	}
+}
+
+func updateEventConfigHandler(guildRepo repositories.GuildRepository) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		claims, ok := c.Get("user").(*session.Claims)
+		if !ok || claims == nil {
+			return c.JSON(http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "missing session"})
+		}
+		guildID := strings.TrimSpace(c.Param("guildId"))
+		if guildID == "" {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "guildId is required"})
+		}
+		var in struct {
+			EventsChannelID string   `json:"eventsChannelId"`
+			EventTypes      []string `json:"eventTypes"`
+		}
+		if err := c.Bind(&in); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "invalid request body"})
+		}
+		ctx := c.Request().Context()
+		guild, err := guildRepo.FindByGuildID(ctx, guildID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
+		}
+		if guild == nil {
+			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "guild not found"})
+		}
+		if guild.OwnerDiscordID != claims.DiscordID {
+			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "you do not own this guild"})
+		}
+		cleanTypes := make([]string, 0, len(in.EventTypes))
+		for _, t := range in.EventTypes {
+			if t = strings.TrimSpace(t); t != "" {
+				cleanTypes = append(cleanTypes, t)
+			}
+		}
+		cfg := repositories.GuildEventConfig{
+			EventsChannelID: strings.TrimSpace(in.EventsChannelID),
+			EventTypes:      cleanTypes,
+		}
+		if err := guildRepo.UpdateEventConfig(ctx, guildID, cfg); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to save event config"})
+		}
 		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true})
 	}
 }

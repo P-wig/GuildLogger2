@@ -50,6 +50,12 @@ type GuildNotificationConfig struct {
 	MilestoneNotifications GuildMilestoneNotificationConfig `bson:"milestoneNotifications" json:"milestoneNotifications"`
 }
 
+// GuildEventConfig defines the events channel and event-type list used by bot slash commands.
+type GuildEventConfig struct {
+	EventsChannelID string   `bson:"eventsChannelId" json:"eventsChannelId"`
+	EventTypes      []string `bson:"eventTypes"      json:"eventTypes"`
+}
+
 // Guild is the aggregate root for guild configuration and role hierarchy.
 type Guild struct {
 	ID                 string                  `bson:"_id,omitempty"            json:"-"`
@@ -58,6 +64,7 @@ type Guild struct {
 	OwnerDiscordID     string                  `bson:"ownerDiscordId"           json:"ownerDiscordId"`
 	Roles              []GuildRole             `bson:"roles"                    json:"roles"`
 	NotificationConfig GuildNotificationConfig `bson:"notificationConfig"       json:"notificationConfig"`
+	EventConfig        GuildEventConfig        `bson:"eventConfig"              json:"eventConfig"`
 	BotInstalled       bool                    `bson:"botInstalled"             json:"botInstalled"`
 	BotInstalledAt     *time.Time              `bson:"botInstalledAt,omitempty" json:"botInstalledAt,omitempty"`
 	CreatedAt          time.Time               `bson:"createdAt"                json:"createdAt"`
@@ -86,6 +93,8 @@ type GuildRepository interface {
 	UpdateStatusRoleConfig(ctx context.Context, guildID string, cfg GuildStatusRoleConfig) error
 	UpdateMilestoneNotificationConfig(ctx context.Context, guildID string, cfg GuildMilestoneNotificationConfig) error
 	UpdateConfigAndRoles(ctx context.Context, guildID string, cfg GuildStatusRoleConfig, roles []GuildRole) error
+	// UpdateEventConfig saves the guild's events channel ID and event type list.
+	UpdateEventConfig(ctx context.Context, guildID string, cfg GuildEventConfig) error
 
 	EnsureIndexes(ctx context.Context) error
 }

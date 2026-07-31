@@ -22,6 +22,7 @@ type Config struct {
 	DiscordAuthBaseURL  string
 	DiscordAPIBaseURL   string
 	DiscordOAuthScopes  []string
+	DiscordPublicKey    string
 }
 
 func Load() Config {
@@ -50,6 +51,7 @@ func Load() Config {
 		DiscordAuthBaseURL:  getenv("DISCORD_AUTH_BASE_URL", "https://discord.com/api/oauth2"),
 		DiscordAPIBaseURL:   getenv("DISCORD_API_BASE_URL", "https://discord.com/api/v10"),
 		DiscordOAuthScopes:  trimAll(strings.Split(scopesRaw, " ")),
+		DiscordPublicKey:    getenv("DISCORD_PUBLIC_KEY", ""),
 	}
 }
 
