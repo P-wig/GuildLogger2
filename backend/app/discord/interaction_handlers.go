@@ -3,6 +3,7 @@ package discord
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,24 +18,30 @@ import (
 // InteractionHandler processes Discord interaction webhook payloads.
 // Inject dependencies via NewInteractionHandler and register Handle on the interactions route.
 type InteractionHandler struct {
-	guildRepo repositories.GuildRepository
-	eventRepo repositories.EventRepository
-	botClient *BotClient
-	publicKey string // hex-encoded Ed25519 public key; empty = skip verification (dev)
+	guildRepo       repositories.GuildRepository
+	memberRepo      repositories.MemberRepository
+	eventRepo       repositories.EventRepository
+	eventReportRepo repositories.EventReportRepository
+	botClient       *BotClient
+	publicKey       string // hex-encoded Ed25519 public key; empty = skip verification (dev)
 }
 
 // NewInteractionHandler creates an InteractionHandler with the given dependencies.
 func NewInteractionHandler(
 	guildRepo repositories.GuildRepository,
+	memberRepo repositories.MemberRepository,
 	eventRepo repositories.EventRepository,
+	eventReportRepo repositories.EventReportRepository,
 	botClient *BotClient,
 	publicKey string,
 ) *InteractionHandler {
 	return &InteractionHandler{
-		guildRepo: guildRepo,
-		eventRepo: eventRepo,
-		botClient: botClient,
-		publicKey: publicKey,
+		guildRepo:       guildRepo,
+		memberRepo:      memberRepo,
+		eventRepo:       eventRepo,
+		eventReportRepo: eventReportRepo,
+		botClient:       botClient,
+		publicKey:       publicKey,
 	}
 }
 
@@ -115,20 +122,45 @@ func parseStartTime(s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("could not parse %q — use a Unix timestamp or YYYY-MM-DD HH:MM (24h UTC)", s)
 }
 
-// --- APPLICATION_COMMAND: /start event [eventtype] ---
+// --- APPLICATION_COMMAND router ---
 
 func (h *InteractionHandler) handleCommand(c echo.Context, i *Interaction) error {
-	if i.Data == nil || i.Data.Name != "start" {
+	if i.Data == nil {
 		return c.JSON(http.StatusOK, ephemeralMsg("Unknown command."))
 	}
-	return h.handleStartCommand(c, i)
+	switch i.Data.Name {
+	case "event":
+		var subName string
+		for _, opt := range i.Data.Options {
+			if opt.Type == int(OptionTypeSubCommand) {
+				subName = opt.Name
+				break
+			}
+		}
+		switch subName {
+		case "create":
+			return h.handleEventCreate(c, i)
+		case "log":
+			return h.handleEventLog(c, i)
+		default:
+			return c.JSON(http.StatusOK, ephemeralMsg("Unknown subcommand."))
+		}
+	case "stats":
+		return h.handleStats(c, i)
+	case "anniversary":
+		return h.handleAnniversary(c, i)
+	case "help":
+		return h.handleHelp(c, i)
+	default:
+		return c.JSON(http.StatusOK, ephemeralMsg("Unknown command."))
+	}
 }
 
-func (h *InteractionHandler) handleStartCommand(c echo.Context, i *Interaction) error {
-	// Drill into the "event" subcommand to find the eventtype option value.
+func (h *InteractionHandler) handleEventCreate(c echo.Context, i *Interaction) error {
+	// Extract the eventtype option from the "create" subcommand.
 	var subOpts []InteractionDataOption
 	for _, opt := range i.Data.Options {
-		if opt.Name == "event" {
+		if opt.Name == "create" {
 			subOpts = opt.Options
 			break
 		}
@@ -145,43 +177,396 @@ func (h *InteractionHandler) handleStartCommand(c echo.Context, i *Interaction) 
 		return c.JSON(http.StatusOK, ephemeralMsg("Event type is required."))
 	}
 
-	// Respond with a modal — ephemeral window only the invoking user can see.
+	// Gate: invoking user must be an active registered member of this guild.
+	discordID := interactionUserID(i)
+	ctx := c.Request().Context()
+	member, err := h.memberRepo.FindByGuildAndDiscordID(ctx, i.GuildID, discordID)
+	if err != nil || member == nil || member.Status != repositories.MemberStatusActive {
+		return c.JSON(http.StatusOK, ephemeralMsg(
+			"⚠️ You must be a registered active member of this guild to create events.",
+		))
+	}
+
+	// Look up whether this event type is configured as a quick event (minimal modal, auto-message).
+	isQuick := false
+	if guild, gErr := h.guildRepo.FindByGuildID(ctx, i.GuildID); gErr == nil && guild != nil {
+		for _, et := range guild.EventConfig.EventTypes {
+			if strings.EqualFold(et.Name, eventType) {
+				isQuick = et.IsQuickEvent
+				break
+			}
+		}
+	}
+	modalFields := []TextInputRow{
+		{Type: 1, Components: []TextInput{{
+			Type:        4,
+			CustomID:    "start_time",
+			Style:       1,
+			Label:       "Start Time",
+			Required:    true,
+			Placeholder: "Unix epoch or YYYY-MM-DD HH:MM (24h, UTC)",
+			MaxLength:   30,
+		}}},
+	}
+	if !isQuick {
+		modalFields = append(modalFields,
+			TextInputRow{Type: 1, Components: []TextInput{{
+				Type:        4,
+				CustomID:    "message",
+				Style:       2,
+				Label:       "Rally Message",
+				Required:    false,
+				Placeholder: "Motivate your team! (optional)",
+				MaxLength:   500,
+			}}},
+		)
+	}
+	// Respond with a modal — only the invoking user sees it.
 	return c.JSON(http.StatusOK, interactionResponse{
 		Type: InteractionResponseModal,
 		Data: map[string]interface{}{
-			"custom_id": "start_event|" + eventType,
-			"title":     "Start Event: " + eventType,
+			"custom_id":  "start_event|" + eventType,
+			"title":      "Create Event: " + eventType,
+			"components": modalFields,
+		},
+	})
+}
+
+func (h *InteractionHandler) handleEventLog(c echo.Context, i *Interaction) error {
+	// Extract the eventid option from the "log" subcommand.
+	var subOpts []InteractionDataOption
+	for _, opt := range i.Data.Options {
+		if opt.Name == "log" {
+			subOpts = opt.Options
+			break
+		}
+	}
+	eventID := ""
+	for _, opt := range subOpts {
+		if opt.Name == "eventid" {
+			if v, ok := opt.Value.(string); ok {
+				eventID = strings.TrimSpace(v)
+			}
+		}
+	}
+	if eventID == "" {
+		return c.JSON(http.StatusOK, ephemeralMsg("Event ID is required."))
+	}
+
+	// Gate: invoking user must be an active registered member.
+	discordID := interactionUserID(i)
+	ctx := c.Request().Context()
+	member, err := h.memberRepo.FindByGuildAndDiscordID(ctx, i.GuildID, discordID)
+	if err != nil || member == nil || member.Status != repositories.MemberStatusActive {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ You must be a registered active member of this guild to log events."))
+	}
+
+	// Verify the event exists and belongs to this guild.
+	event, err := h.eventRepo.FindByID(ctx, eventID)
+	if err != nil || event == nil || event.GuildID != i.GuildID {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Event not found."))
+	}
+
+	return c.JSON(http.StatusOK, interactionResponse{
+		Type: InteractionResponseModal,
+		Data: map[string]interface{}{
+			"custom_id": "log_event|" + eventID,
+			"title":     "Log Event: " + event.Title,
 			"components": []TextInputRow{
 				{Type: 1, Components: []TextInput{{
 					Type:        4,
-					CustomID:    "start_time",
+					CustomID:    "date",
 					Style:       1,
-					Label:       "Start Time",
+					Label:       "Event Date",
 					Required:    true,
-					Placeholder: "Unix epoch or YYYY-MM-DD HH:MM (24h, UTC)",
-					MaxLength:   30,
+					Placeholder: "YYYY-MM-DD",
+					MaxLength:   10,
 				}}},
 				{Type: 1, Components: []TextInput{{
 					Type:        4,
-					CustomID:    "message",
+					CustomID:    "summary",
 					Style:       2,
-					Label:       "Rally Message",
-					Required:    false,
-					Placeholder: "Motivate your team! (optional)",
-					MaxLength:   500,
+					Label:       "Summary",
+					Required:    true,
+					Placeholder: "What happened at this event?",
+					MaxLength:   1000,
 				}}},
 			},
 		},
 	})
 }
 
-// --- APPLICATION_COMMAND_AUTOCOMPLETE: /start event eventtype ---
+func (h *InteractionHandler) handleEventList(c echo.Context, i *Interaction) error {
+	ctx := c.Request().Context()
+	allEvents, err := h.eventRepo.FindByGuildID(ctx, i.GuildID)
+	if err != nil {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Failed to retrieve events."))
+	}
+
+	// Filter to open/active only, sort by ScheduledAt ascending.
+	var upcoming []repositories.Event
+	for _, e := range allEvents {
+		if e.Status == repositories.EventStatusOpen || e.Status == repositories.EventStatusActive {
+			upcoming = append(upcoming, e)
+		}
+	}
+	for i := 1; i < len(upcoming); i++ {
+		for j := i; j > 0 && upcoming[j].ScheduledAt.Before(upcoming[j-1].ScheduledAt); j-- {
+			upcoming[j], upcoming[j-1] = upcoming[j-1], upcoming[j]
+		}
+	}
+
+	if len(upcoming) == 0 {
+		return c.JSON(http.StatusOK, ephemeralMsg("No upcoming events scheduled."))
+	}
+
+	const maxShown = 10
+	shown := upcoming
+	footerText := fmt.Sprintf("%d event(s) scheduled", len(upcoming))
+	if len(upcoming) > maxShown {
+		shown = upcoming[:maxShown]
+		footerText = fmt.Sprintf("Showing %d of %d upcoming events", maxShown, len(upcoming))
+	}
+
+	fields := make([]EmbedField, 0, len(shown))
+	for _, e := range shown {
+		attendees := len(e.AttendingIDs)
+		capStr := "∞"
+		if e.Capacity > 0 {
+			capStr = strconv.Itoa(e.Capacity)
+		}
+		statusEmoji := "🟢"
+		if e.Status == repositories.EventStatusActive {
+			statusEmoji = "🔵"
+		}
+		fields = append(fields, EmbedField{
+			Name: statusEmoji + " " + e.Title,
+			Value: fmt.Sprintf(
+				"Host: <@%s>\nStarts: <t:%d:F>\nAttending: %d / %s",
+				e.HostDiscordID,
+				e.ScheduledAt.Unix(),
+				attendees,
+				capStr,
+			),
+		})
+	}
+
+	return c.JSON(http.StatusOK, interactionResponse{
+		Type: InteractionResponseChannelMessage,
+		Data: map[string]interface{}{
+			"flags": MessageFlagEphemeral,
+			"embeds": []Embed{{
+				Title:  "📅 Upcoming Events",
+				Color:  0x5865F2, // Discord blurple
+				Fields: fields,
+				Footer: &EmbedFooter{Text: footerText},
+			}},
+		},
+	})
+}
+
+// --- APPLICATION_COMMAND: /log ---
+
+func (h *InteractionHandler) handleLog(c echo.Context, i *Interaction) error {
+	discordID := interactionUserID(i)
+	ctx := c.Request().Context()
+	member, err := h.memberRepo.FindByGuildAndDiscordID(ctx, i.GuildID, discordID)
+	if err != nil || member == nil || member.Status != repositories.MemberStatusActive {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ You must be a registered active member of this guild to log events."))
+	}
+
+	return c.JSON(http.StatusOK, interactionResponse{
+		Type: InteractionResponseModal,
+		Data: map[string]interface{}{
+			"custom_id": "log_event",
+			"title":     "Log Completed Event",
+			"components": []TextInputRow{
+				{Type: 1, Components: []TextInput{{
+					Type:        4,
+					CustomID:    "date",
+					Style:       1,
+					Label:       "Event Date",
+					Required:    true,
+					Placeholder: "YYYY-MM-DD",
+					MaxLength:   10,
+				}}},
+				{Type: 1, Components: []TextInput{{
+					Type:        4,
+					CustomID:    "summary",
+					Style:       2,
+					Label:       "Summary",
+					Required:    true,
+					Placeholder: "What happened at this event?",
+					MaxLength:   1000,
+				}}},
+			},
+		},
+	})
+}
+
+// --- APPLICATION_COMMAND: /stats ---
+
+func (h *InteractionHandler) handleStats(c echo.Context, i *Interaction) error {
+	ctx := c.Request().Context()
+
+	targetID := interactionUserID(i)
+	if i.Data != nil {
+		for _, opt := range i.Data.Options {
+			if opt.Name == "member" {
+				if v, ok := opt.Value.(string); ok && v != "" {
+					targetID = v
+				}
+			}
+		}
+	}
+	if targetID == "" {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Could not determine the target member."))
+	}
+
+	stats, err := h.memberRepo.GetStats(ctx, i.GuildID, targetID)
+	if err != nil || stats == nil {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Could not find stats for that member. They may not be registered."))
+	}
+
+	fields := []EmbedField{
+		{Name: "Events Hosted", Value: strconv.FormatInt(stats.HostedCount, 10), Inline: true},
+		{Name: "Events Attended", Value: strconv.FormatInt(stats.ParticipatedCount, 10), Inline: true},
+		{Name: "Discord Joined", Value: "<t:" + strconv.FormatInt(stats.DiscordJoinedAt.Unix(), 10) + ":D>", Inline: false},
+	}
+
+	return c.JSON(http.StatusOK, interactionResponse{
+		Type: InteractionResponseChannelMessage,
+		Data: map[string]interface{}{
+			"flags": MessageFlagEphemeral,
+			"embeds": []Embed{{
+				Title:  "📊 Stats for <@" + targetID + ">",
+				Color:  0x5865F2,
+				Fields: fields,
+			}},
+		},
+	})
+}
+
+// --- APPLICATION_COMMAND: /anniversary ---
+
+func (h *InteractionHandler) handleAnniversary(c echo.Context, i *Interaction) error {
+	ctx := c.Request().Context()
+	discordID := interactionUserID(i)
+
+	member, err := h.memberRepo.FindByGuildAndDiscordID(ctx, i.GuildID, discordID)
+	if err != nil || member == nil || member.Status != repositories.MemberStatusActive {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ You must be a registered active member of this guild to run this command."))
+	}
+
+	guild, err := h.guildRepo.FindByGuildID(ctx, i.GuildID)
+	if err != nil || guild == nil {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Could not find guild configuration."))
+	}
+
+	cfg := guild.NotificationConfig.MilestoneNotifications
+	if !cfg.Enabled {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Anniversary notifications are not enabled for this guild."))
+	}
+	if cfg.NotificationChannelID == "" {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ No notification channel configured for this guild."))
+	}
+	if len(cfg.AnniversaryYears) == 0 {
+		return c.JSON(http.StatusOK, ephemeralMsg("No anniversary years configured for this guild."))
+	}
+
+	members, err := h.memberRepo.FindAnniversaryMembers(ctx, i.GuildID, cfg.AnniversaryYears)
+	if err != nil {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Failed to query anniversary members."))
+	}
+
+	if len(members) == 0 {
+		return c.JSON(http.StatusOK, ephemeralMsg("No anniversary milestones today."))
+	}
+
+	now := time.Now().UTC()
+	notified := 0
+	for _, m := range members {
+		years := now.Year() - m.DiscordJoinedAt.UTC().Year()
+		msg := fmt.Sprintf("Happy %d-year anniversary <@%s>! Thank you for being a member of the server.", years, m.DiscordID)
+		if err := h.botClient.SendChannelMessage(ctx, cfg.NotificationChannelID, msg); err == nil {
+			notified++
+		}
+	}
+
+	return c.JSON(http.StatusOK, ephemeralMsg(fmt.Sprintf("✅ Sent anniversary messages to %d member(s).", notified)))
+}
+
+// --- APPLICATION_COMMAND: /help ---
+
+func (h *InteractionHandler) handleHelp(c echo.Context, i *Interaction) error {
+	fields := []EmbedField{
+		{Name: "/event create [eventtype]", Value: "Create a new event and post an RSVP announcement."},
+		{Name: "/event log [eventid]", Value: "Log a completed event and create a permanent record."},
+		{Name: "/stats [@member]", Value: "View event participation stats (defaults to yourself)."},
+		{Name: "/anniversary", Value: "Trigger anniversary milestone notifications."},
+		{Name: "/help", Value: "Show this help message."},
+	}
+
+	return c.JSON(http.StatusOK, interactionResponse{
+		Type: InteractionResponseChannelMessage,
+		Data: map[string]interface{}{
+			"flags": MessageFlagEphemeral,
+			"embeds": []Embed{{
+				Title:  "🤖 GuildLogger Commands",
+				Color:  0x5865F2,
+				Fields: fields,
+			}},
+		},
+	})
+}
+
+// --- MODAL_SUBMIT: log_event ---
+
+func (h *InteractionHandler) handleLogModalSubmit(c echo.Context, i *Interaction, eventID string) error {
+	dateStr := strings.TrimSpace(getModalValue(i, "date"))
+	summary := strings.TrimSpace(getModalValue(i, "summary"))
+	if dateStr == "" || summary == "" {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Date and summary are required."))
+	}
+
+	eventDate, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Invalid date format. Use YYYY-MM-DD."))
+	}
+
+	ctx := c.Request().Context()
+	discordID := interactionUserID(i)
+
+	// Use the event's host if found; fall back to the submitter.
+	hostID := discordID
+	if event, err := h.eventRepo.FindByID(ctx, eventID); err == nil && event != nil {
+		hostID = event.HostDiscordID
+	}
+
+	report := &repositories.EventReport{
+		EventID:              eventID,
+		GuildID:              i.GuildID,
+		HostDiscordID:        hostID,
+		EventDate:            eventDate.UTC(),
+		ParticipantIDs:       []string{},
+		Summary:              summary,
+		SubmittedByDiscordID: discordID,
+	}
+
+	if err := h.eventReportRepo.Create(ctx, report); err != nil {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Failed to save event log."))
+	}
+
+	return c.JSON(http.StatusOK, ephemeralMsg(fmt.Sprintf("✅ Event logged for %s.", eventDate.Format("January 2, 2006"))))
+}
+
+// --- APPLICATION_COMMAND_AUTOCOMPLETE: /event create eventtype ---
 
 func (h *InteractionHandler) handleAutocomplete(c echo.Context, i *Interaction) error {
 	focused := ""
 	if i.Data != nil {
 		for _, opt := range i.Data.Options {
-			if opt.Name == "event" {
+			if opt.Name == "create" {
 				for _, sub := range opt.Options {
 					if sub.Name == "eventtype" && sub.Focused {
 						if v, ok := sub.Value.(string); ok {
@@ -196,8 +581,8 @@ func (h *InteractionHandler) handleAutocomplete(c echo.Context, i *Interaction) 
 	choices := make([]AutocompleteChoice, 0)
 	if guild, err := h.guildRepo.FindByGuildID(c.Request().Context(), i.GuildID); err == nil && guild != nil {
 		for _, t := range guild.EventConfig.EventTypes {
-			if focused == "" || strings.Contains(strings.ToLower(t), focused) {
-				choices = append(choices, AutocompleteChoice{Name: t, Value: t})
+			if focused == "" || strings.Contains(strings.ToLower(t.Name), focused) {
+				choices = append(choices, AutocompleteChoice{Name: t.Name, Value: t.Name})
 				if len(choices) >= 25 {
 					break
 				}
@@ -218,6 +603,10 @@ func (h *InteractionHandler) handleModalSubmit(c echo.Context, i *Interaction) e
 		return c.JSON(http.StatusOK, ephemeralMsg("Something went wrong."))
 	}
 
+	if eventID, ok := strings.CutPrefix(i.Data.CustomID, "log_event|"); ok {
+		return h.handleLogModalSubmit(c, i, eventID)
+	}
+
 	eventType, ok := strings.CutPrefix(i.Data.CustomID, "start_event|")
 	if !ok || eventType == "" {
 		return c.JSON(http.StatusOK, interactionResponse{Type: InteractionResponsePong})
@@ -225,6 +614,7 @@ func (h *InteractionHandler) handleModalSubmit(c echo.Context, i *Interaction) e
 
 	startTimeStr := getModalValue(i, "start_time")
 	description := strings.TrimSpace(getModalValue(i, "message"))
+	capacity := 0
 
 	// Validate start time before acknowledging — cheap, no I/O.
 	startTime, err := parseStartTime(startTimeStr)
@@ -239,6 +629,11 @@ func (h *InteractionHandler) handleModalSubmit(c echo.Context, i *Interaction) e
 	token := i.Token
 	guildID := i.GuildID
 	hostID := interactionUserID(i)
+	// Capture parsed values for the goroutine (closures over loop-free vars are safe).
+	capturedCapacity := capacity
+	capturedDesc := description
+	capturedStart := startTime
+	capturedType := eventType
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 14*time.Second)
@@ -253,30 +648,65 @@ func (h *InteractionHandler) handleModalSubmit(c echo.Context, i *Interaction) e
 			editResp("⚠️ Could not find guild configuration.")
 			return
 		}
-		if guild.EventConfig.EventsChannelID == "" {
-			editResp("⚠️ No events channel configured. Set one in the GuildLogger dashboard under Guild Configuration.")
+
+		// Resolve the channel configured for this event type.
+		channelID := ""
+		isQuick := false
+		for _, et := range guild.EventConfig.EventTypes {
+			if strings.EqualFold(et.Name, capturedType) {
+				channelID = et.ChannelID
+				isQuick = et.IsQuickEvent
+				break
+			}
+		}
+		if channelID == "" {
+			editResp("⚠️ No channel configured for event type \"" + capturedType + "\". Set one in the GuildLogger dashboard under Guild Configuration.")
 			return
 		}
 
+		// Large events use a fixed capacity of 99.
+		if !isQuick {
+			capturedCapacity = 99
+		}
+
+		// For quick events the announcement message is auto-generated and sent as message
+		// content (above the embed) so the @role ping actually fires.
+		messageContent := ""
+		if isQuick {
+			epoch := capturedStart.Unix()
+			activeRoleID := guild.NotificationConfig.StatusRoles.ActiveRoleID
+			typeName := strings.ToLower(capturedType)
+			if activeRoleID != "" {
+				messageContent = fmt.Sprintf("<@&%s> <@%s> is hosting a %s at <t:%d:t> <t:%d:R>", activeRoleID, hostID, typeName, epoch, epoch)
+			} else {
+				messageContent = fmt.Sprintf("<@%s> is hosting a %s at <t:%d:t> <t:%d:R>", hostID, typeName, epoch, epoch)
+			}
+			capturedDesc = "" // Quick events have no user-supplied description; message is in content
+		}
+
 		event := &repositories.Event{
-			GuildID:       guildID,
-			HostDiscordID: hostID,
-			Title:         eventType,
-			Description:   description,
-			ScheduledAt:   startTime,
-			Status:        repositories.EventStatusOpen,
-			AttendingIDs:  []string{},
-			ChannelID:     guild.EventConfig.EventsChannelID,
-			CreatedAt:     time.Now(),
-			UpdatedAt:     time.Now(),
+			GuildID:         guildID,
+			HostDiscordID:   hostID,
+			Title:           capturedType,
+			EventType:       capturedType,
+			Description:     capturedDesc,
+			ScheduledAt:     capturedStart,
+			Status:          repositories.EventStatusOpen,
+			AttendingIDs:    []string{},
+			MaybeIDs:        []string{},
+			NotAttendingIDs: []string{},
+			ChannelID:       channelID,
+			Capacity:        capturedCapacity,
+			CreatedAt:       time.Now(),
+			UpdatedAt:       time.Now(),
 		}
 		if err := h.eventRepo.Create(ctx, event); err != nil {
 			editResp("⚠️ Failed to create event record.")
 			return
 		}
 
-		embed := buildEventEmbed(eventType, description, hostID, startTime.Unix(), []string{})
-		msgID, err := h.botClient.PostEmbedMessage(ctx, guild.EventConfig.EventsChannelID, []Embed{embed}, buildRSVPButtons(event.ID))
+		embed := buildEventEmbed(capturedType, isQuick, capturedDesc, hostID, capturedStart.Unix(), []string{}, []string{}, []string{})
+		msgID, err := h.botClient.PostEmbedMessage(ctx, channelID, messageContent, []Embed{embed}, buildRSVPButtons(event.ID, isQuick))
 		if err != nil {
 			// Event created but announcement failed — still usable via API.
 			editResp(fmt.Sprintf("✅ Event created (ID: %s) but announcement post failed: %v", event.ID, err))
@@ -288,7 +718,7 @@ func (h *InteractionHandler) handleModalSubmit(c echo.Context, i *Interaction) e
 		event.UpdatedAt = time.Now()
 		_ = h.eventRepo.Update(ctx, event.ID, event)
 
-		editResp(fmt.Sprintf("✅ **%s** event posted in <#%s>.", eventType, guild.EventConfig.EventsChannelID))
+		editResp(fmt.Sprintf("✅ **%s** event posted in <#%s>.", capturedType, channelID))
 	}()
 
 	// Return the deferred ephemeral acknowledgement immediately.
@@ -313,26 +743,62 @@ func (h *InteractionHandler) handleComponent(c echo.Context, i *Interaction) err
 		action, eventID = "join", id
 	} else if id, ok := strings.CutPrefix(i.Data.CustomID, "event_leave|"); ok {
 		action, eventID = "leave", id
+	} else if id, ok := strings.CutPrefix(i.Data.CustomID, "event_maybe|"); ok {
+		action, eventID = "maybe", id
+	} else if id, ok := strings.CutPrefix(i.Data.CustomID, "event_unmaybe|"); ok {
+		action, eventID = "unmaybe", id
+	} else if id, ok := strings.CutPrefix(i.Data.CustomID, "event_decline|"); ok {
+		action, eventID = "decline", id
+	} else if id, ok := strings.CutPrefix(i.Data.CustomID, "event_undecline|"); ok {
+		action, eventID = "undecline", id
 	} else {
 		return c.JSON(http.StatusOK, interactionResponse{Type: InteractionResponsePong})
 	}
 
 	var repoErr error
-	if action == "join" {
+	switch action {
+	case "join":
 		repoErr = h.eventRepo.AddAttendee(ctx, eventID, discordID)
-	} else {
+	case "leave":
 		repoErr = h.eventRepo.RemoveAttendee(ctx, eventID, discordID)
+	case "maybe":
+		repoErr = h.eventRepo.AddMaybe(ctx, eventID, discordID)
+	case "unmaybe":
+		repoErr = h.eventRepo.RemoveMaybe(ctx, eventID, discordID)
+	case "decline":
+		repoErr = h.eventRepo.AddDecline(ctx, eventID, discordID)
+	case "undecline":
+		repoErr = h.eventRepo.RemoveDecline(ctx, eventID, discordID)
 	}
 
-	switch repoErr {
-	case repositories.ErrAlreadyRegistered:
-		return c.JSON(http.StatusOK, ephemeralMsg("You're already attending this event!"))
-	case repositories.ErrNotRegistered:
-		return c.JSON(http.StatusOK, ephemeralMsg("You're not registered for this event."))
-	case repositories.ErrEventNotFound:
-		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ This event no longer exists."))
-	case nil:
+	switch {
+	case repoErr == nil:
 		// fall through to rebuild the embed
+	case errors.Is(repoErr, repositories.ErrEventNotFound):
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ This event no longer exists."))
+	case errors.Is(repoErr, repositories.ErrEventAtCapacity):
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ This event is at capacity."))
+	case errors.Is(repoErr, repositories.ErrAlreadyRegistered) ||
+		errors.Is(repoErr, repositories.ErrAlreadyMaybe) ||
+		errors.Is(repoErr, repositories.ErrAlreadyDeclined) ||
+		errors.Is(repoErr, repositories.ErrNotRegistered) ||
+		errors.Is(repoErr, repositories.ErrNotMaybe) ||
+		errors.Is(repoErr, repositories.ErrNotDeclined):
+		// User is already in the requested state — return the current embed unchanged
+		// so Discord clears the loading indicator without showing an error.
+		event, err := h.eventRepo.FindByID(ctx, eventID)
+		if err != nil || event == nil {
+			return c.JSON(http.StatusOK, interactionResponse{Type: InteractionResponseDeferredUpdate})
+		}
+		isQuick := h.lookupIsQuick(ctx, i.GuildID, event.EventType)
+		noop := buildEventEmbed(event.EventType, isQuick, event.Description, event.HostDiscordID, event.ScheduledAt.Unix(), event.AttendingIDs, event.MaybeIDs, event.NotAttendingIDs)
+		return c.JSON(http.StatusOK, interactionResponse{
+			Type: InteractionResponseUpdateMessage,
+			Data: map[string]interface{}{
+				"embeds":     []Embed{noop},
+				"components": buildRSVPButtons(event.ID, isQuick),
+			},
+		})
 	default:
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Failed to update attendance. Please try again."))
 	}
@@ -342,14 +808,29 @@ func (h *InteractionHandler) handleComponent(c echo.Context, i *Interaction) err
 		return c.JSON(http.StatusOK, interactionResponse{Type: InteractionResponseDeferredUpdate})
 	}
 
-	embed := buildEventEmbed(event.Title, event.Description, event.HostDiscordID, event.ScheduledAt.Unix(), event.AttendingIDs)
+	isQuick := h.lookupIsQuick(ctx, i.GuildID, event.EventType)
+	embed := buildEventEmbed(event.EventType, isQuick, event.Description, event.HostDiscordID, event.ScheduledAt.Unix(), event.AttendingIDs, event.MaybeIDs, event.NotAttendingIDs)
 
 	// UPDATE_MESSAGE replaces the original RSVP embed in place, visible to all users in the channel.
 	return c.JSON(http.StatusOK, interactionResponse{
 		Type: InteractionResponseUpdateMessage,
 		Data: map[string]interface{}{
 			"embeds":     []Embed{embed},
-			"components": buildRSVPButtons(event.ID),
+			"components": buildRSVPButtons(event.ID, isQuick),
 		},
 	})
+}
+
+// lookupIsQuick returns true if the given eventType is configured as a quick event in the guild.
+func (h *InteractionHandler) lookupIsQuick(ctx context.Context, guildID, eventType string) bool {
+	guild, err := h.guildRepo.FindByGuildID(ctx, guildID)
+	if err != nil || guild == nil {
+		return false
+	}
+	for _, et := range guild.EventConfig.EventTypes {
+		if strings.EqualFold(et.Name, eventType) {
+			return et.IsQuickEvent
+		}
+	}
+	return false
 }

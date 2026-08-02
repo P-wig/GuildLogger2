@@ -16,8 +16,9 @@ type runAnniversaryPayload struct {
 }
 
 // RegisterNotificationsProtected registers all notification job routes on the JWT-guarded group.
-func RegisterNotificationsProtected(g *echo.Group, guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository, botClient *discord.BotClient) {
+func RegisterNotificationsProtected(g *echo.Group, guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository, botClient *discord.BotClient, eventRepo repositories.EventRepository) {
 	g.POST("/notifications/members/anniversaries/run", runAnniversaryNotificationsHandler(guildRepo, memberRepo, botClient))
+	g.POST("/notifications/events/reminders/run", runEventRemindersHandler(eventRepo, memberRepo, botClient))
 }
 
 func runAnniversaryNotificationsHandler(guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository, botClient *discord.BotClient) echo.HandlerFunc {
@@ -76,6 +77,51 @@ func runAnniversaryNotificationsHandler(guildRepo repositories.GuildRepository, 
 			"notified": len(notified),
 			"members":  notified,
 			"failed":   failed,
+		})
+	}
+}
+
+// runEventRemindersHandler sends DM reminders to "maybe" attendees for Skirmish events
+// that start within the next hour and have not yet received a reminder.
+func runEventRemindersHandler(eventRepo repositories.EventRepository, memberRepo repositories.MemberRepository, botClient *discord.BotClient) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		ctx := c.Request().Context()
+		now := time.Now().UTC()
+		cutoff := now.Add(time.Hour)
+
+		events, err := eventRepo.FindUpcomingSkirmishForReminders(ctx, now, cutoff)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{
+				"ok":    false,
+				"error": "failed to query events",
+			})
+		}
+
+		totalSent := 0
+		var failures []string
+
+		for _, event := range events {
+			for _, discordID := range event.MaybeIDs {
+				msg := fmt.Sprintf(
+					"⏰ Reminder: The **%s** event starts <t:%d:R>! Don't forget to update your RSVP if your plans have changed.",
+					event.Title, event.ScheduledAt.Unix(),
+				)
+				if err := botClient.SendDMToUser(ctx, discordID, msg); err == nil {
+					totalSent++
+				} else {
+					failures = append(failures, discordID)
+				}
+			}
+			if err := eventRepo.MarkReminderSent(ctx, event.ID, now); err != nil {
+				failures = append(failures, "mark:"+event.ID)
+			}
+		}
+
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"ok":     true,
+			"sent":   totalSent,
+			"failed": failures,
+			"events": len(events),
 		})
 	}
 }

@@ -224,14 +224,58 @@ func (c *BotClient) SendChannelMessage(ctx context.Context, channelID, content s
 	return nil
 }
 
+// SendDMToUser sends a Discord direct message to a user identified by their Discord user ID.
+// Opens (or reuses) a DM channel via POST /users/@me/channels, then sends the message.
+func (c *BotClient) SendDMToUser(ctx context.Context, userDiscordID, content string) error {
+	dmPayload, err := json.Marshal(map[string]string{"recipient_id": userDiscordID})
+	if err != nil {
+		return err
+	}
+
+	dmReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.apiBaseURL+"/users/@me/channels",
+		bytes.NewReader(dmPayload),
+	)
+	if err != nil {
+		return err
+	}
+	dmReq.Header.Set("Authorization", "Bot "+c.botToken)
+	dmReq.Header.Set("Content-Type", "application/json")
+
+	dmResp, err := c.httpClient.Do(dmReq)
+	if err != nil {
+		return err
+	}
+	dmRaw, _ := io.ReadAll(dmResp.Body)
+	dmResp.Body.Close()
+
+	if dmResp.StatusCode != http.StatusOK && dmResp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("failed to open DM channel for user %s: status %d", userDiscordID, dmResp.StatusCode)
+	}
+
+	var dmChannel struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(dmRaw, &dmChannel); err != nil {
+		return fmt.Errorf("failed to parse DM channel response: %w", err)
+	}
+	if dmChannel.ID == "" {
+		return fmt.Errorf("empty DM channel ID for user %s", userDiscordID)
+	}
+
+	return c.SendChannelMessage(ctx, dmChannel.ID, content)
+}
+
 // PostEmbedMessage posts a message with rich embeds and interactive components to a channel.
+// content is optional plain-text that appears above the embed (use for role/user pings on Raid events).
 // Returns the Discord message ID of the posted message, used to update the embed later.
-func (c *BotClient) PostEmbedMessage(ctx context.Context, channelID string, embeds []Embed, components []ActionRow) (string, error) {
+func (c *BotClient) PostEmbedMessage(ctx context.Context, channelID, content string, embeds []Embed, components []ActionRow) (string, error) {
 	type payload struct {
+		Content    string      `json:"content,omitempty"`
 		Embeds     []Embed     `json:"embeds"`
 		Components []ActionRow `json:"components,omitempty"`
 	}
-	body, err := json.Marshal(payload{Embeds: embeds, Components: components})
+	body, err := json.Marshal(payload{Content: content, Embeds: embeds, Components: components})
 	if err != nil {
 		return "", err
 	}

@@ -20,9 +20,17 @@ FRONTEND_LOG="/tmp/frontend.log"
  echo -e "${BLUE}═══════════════════════════════════════${NC}"
  echo ""
 
+CLOUDFLARE_LOG="/tmp/cloudflare.log"
+CLOUDFLARE_PID=""
+TUNNEL_URL=""
+
 # Function to cleanup background processes on exit
 cleanup() {
     echo -e "\n${YELLOW}Shutting down services...${NC}"
+    if [ ! -z "$CLOUDFLARE_PID" ]; then
+        kill $CLOUDFLARE_PID 2>/dev/null
+        echo -e "${GREEN}Cloudflare tunnel stopped${NC}"
+    fi
     if [ ! -z "$FRONTEND_PID" ]; then
         kill $FRONTEND_PID 2>/dev/null
         echo -e "${GREEN}Frontend stopped${NC}"
@@ -93,6 +101,36 @@ if ! docker compose --project-directory "$REPO_ROOT" --env-file "$ENV_FILE" -f "
  echo -e "${GREEN}Backend is healthy${NC}"
  echo ""
 
+ # Start Cloudflare tunnel for Discord slash command interactions.
+ # The tunnel URL changes each session — it is printed in the URLs block below.
+ echo -e "${GREEN}⛅ Cloudflare tunnel...${NC}"
+ CLOUDFLARED_BIN=""
+ if command -v cloudflared >/dev/null 2>&1; then
+     CLOUDFLARED_BIN="cloudflared"
+ elif [ -f "/c/Program Files (x86)/cloudflared/cloudflared.exe" ]; then
+     CLOUDFLARED_BIN="/c/Program Files (x86)/cloudflared/cloudflared.exe"
+ fi
+
+ if [ -n "$CLOUDFLARED_BIN" ]; then
+     "$CLOUDFLARED_BIN" tunnel --url http://localhost:5001 > "$CLOUDFLARE_LOG" 2>&1 &
+     CLOUDFLARE_PID=$!
+     for i in $(seq 1 30); do
+         TUNNEL_URL=$(grep -o 'https://[^[:space:]]*.trycloudflare.com' "$CLOUDFLARE_LOG" 2>/dev/null | head -1)
+         [ -n "$TUNNEL_URL" ] && break
+         sleep 1
+     done
+     if [ -z "$TUNNEL_URL" ]; then
+         echo -e "${YELLOW}⚠ Tunnel did not produce a URL within 30s — slash commands unavailable.${NC}"
+         echo -e "${YELLOW}  Check /tmp/cloudflare.log for details.${NC}"
+     else
+         echo -e "${GREEN}✓ Cloudflare tunnel active${NC}"
+     fi
+ else
+     echo -e "${YELLOW}⚠ cloudflared not found — skipping tunnel. Slash commands will be unavailable.${NC}"
+     echo -e "${YELLOW}  Install: winget install Cloudflare.cloudflared${NC}"
+ fi
+ echo ""
+
  # Start frontend server
  echo -e "${GREEN}🎨 Frontend ...${NC}"
  "$SCRIPT_DIR/start_frontend.sh" > "$FRONTEND_LOG" 2>&1 &
@@ -139,9 +177,13 @@ fi
  echo -e "${BLUE}═══════════════════════════════════════${NC}"
  echo ""
  echo -e "${CYAN}🌐 Application URLs:${NC}"
- echo -e "${YELLOW}Frontend:${NC} http://127.0.0.1:5173"
- echo -e "${YELLOW}Backend:${NC}  http://127.0.0.1:5001"
+ echo -e "${YELLOW}Frontend:${NC}   http://127.0.0.1:5173"
+ echo -e "${YELLOW}Backend:${NC}    http://127.0.0.1:5001"
  echo -e "${YELLOW}API Health:${NC} http://127.0.0.1:5001/api/health"
+ if [ -n "$TUNNEL_URL" ]; then
+     echo -e "${YELLOW}Interactions:${NC} ${TUNNEL_URL}/api/interactions"
+     echo -e "${CYAN}  ↑ Paste into Discord Developer Portal → General Information → Interactions Endpoint URL${NC}"
+ fi
  echo ""
  echo -e "${CYAN}📋 Logs:${NC}"
  echo -e "${YELLOW}Backend logs:${NC}  tail -f /tmp/backend.log"

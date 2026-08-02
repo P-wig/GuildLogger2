@@ -30,8 +30,7 @@ export type LinkedGuild = {
   createdAt: string;
   updatedAt: string;
   eventConfig: {
-    eventsChannelId: string;
-    eventTypes: string[];
+    eventTypes: { name: string; channelId: string; isQuickEvent: boolean }[];
   };
 };
 
@@ -124,6 +123,24 @@ export type EventLog = {
   submittedByDiscordId?: string;
 };
 
+export type ActiveEvent = {
+  id: string;
+  guildId: string;
+  hostDiscordId: string;
+  eventType: string;
+  description: string;
+  attendingIds: string[];
+  maybeIds: string[];
+  notAttendingIds: string[];
+  scheduledAt: string;
+  status: "open" | "active" | "closed";
+  channelId: string;
+  announcementMessageId?: string;
+  capacity: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type SyncStatus = {
   memberCount: number;
   synced: boolean;
@@ -160,7 +177,7 @@ export const guildsApi = {
     api.put<{ ok: boolean }>(`/guilds/${guildId}/config/member-role`, { roleId }),
   updateGuildConfig: (guildId: string, config: { activeRoleId: string; inactiveRoleId?: string; rankedRoleIds?: string[]; moderatorRoleIds?: string[] }) =>
     api.put<{ ok: boolean }>(`/guilds/${guildId}/config`, config),
-  updateEventConfig: (guildId: string, config: { eventsChannelId: string; eventTypes: string[] }) =>
+  updateEventConfig: (guildId: string, config: { eventTypes: { name: string; channelId: string; isQuickEvent: boolean }[] }) =>
     api.put<{ ok: boolean }>(`/guilds/${guildId}/config/event`, config),
   deleteGuild: (guildId: string) =>
     api.delete<{ ok: boolean }>(`/guilds/${guildId}`),
@@ -172,4 +189,8 @@ export const guildsApi = {
     api.put<{ ok: boolean }>(`/guilds/${guildId}/event-logs/${logId}`, payload),
   deleteEventLog: (guildId: string, logId: string) =>
     api.delete<{ ok: boolean }>(`/guilds/${guildId}/event-logs/${logId}`),
+  listActiveEvents: (guildId: string) =>
+    api.get<{ ok: boolean; events: ActiveEvent[] }>(`/guilds/${guildId}/active-events`),
+  deleteActiveEvent: (guildId: string, eventId: string) =>
+    api.delete<{ ok: boolean }>(`/guilds/${guildId}/active-events/${eventId}`),
 };

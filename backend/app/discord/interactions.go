@@ -183,11 +183,12 @@ func VerifyRequest(r *http.Request, body []byte, publicKeyHex string) error {
 }
 
 // buildEventEmbed constructs the RSVP announcement embed displayed in the events channel.
-func buildEventEmbed(eventType, description, hostID string, epochSecs int64, attendeeIDs []string) Embed {
+// maybeIDs and notAttendingIDs are only shown for Skirmish events.
+func buildEventEmbed(eventType string, isQuick bool, description, hostID string, epochSecs int64, attendingIDs, maybeIDs, notAttendingIDs []string) Embed {
 	attendeeText := "*No one yet — be the first!*"
-	if len(attendeeIDs) > 0 {
-		parts := make([]string, len(attendeeIDs))
-		for i, id := range attendeeIDs {
+	if len(attendingIDs) > 0 {
+		parts := make([]string, len(attendingIDs))
+		for i, id := range attendingIDs {
 			parts[i] = "<@" + id + ">"
 		}
 		attendeeText = strings.Join(parts, "  ")
@@ -201,25 +202,50 @@ func buildEventEmbed(eventType, description, hostID string, epochSecs int64, att
 		fields = append(fields, EmbedField{Name: "📢 Rally Message", Value: description})
 	}
 	fields = append(fields, EmbedField{
-		Name:  fmt.Sprintf("📋 Attending (%d)", len(attendeeIDs)),
+		Name:  fmt.Sprintf("📋 Attending (%d)", len(attendingIDs)),
 		Value: attendeeText,
 	})
 
+	color := 0x57F287 // green (quick event default)
+	footerText := "Click Attending below to register"
+
+	if !isQuick {
+		color = 0xFEE75C // gold for large events
+		footerText = "RSVP below — Maybe attendees get a 1-hour DM reminder"
+
+		maybeText := "*No one yet*"
+		if len(maybeIDs) > 0 {
+			parts := make([]string, len(maybeIDs))
+			for i, id := range maybeIDs {
+				parts[i] = "<@" + id + ">"
+			}
+			maybeText = strings.Join(parts, "  ")
+		}
+		fields = append(fields, EmbedField{
+			Name:  fmt.Sprintf("❓ Maybe (%d)", len(maybeIDs)),
+			Value: maybeText,
+		})
+	}
+
 	return Embed{
 		Title:  "🎮 " + eventType,
-		Color:  0x57F287, // Discord green
+		Color:  color,
 		Fields: fields,
-		Footer: &EmbedFooter{Text: "Click Join below to register your attendance"},
+		Footer: &EmbedFooter{Text: footerText},
 	}
 }
 
-// buildRSVPButtons returns the Join / Leave action row for an event embed.
-func buildRSVPButtons(eventID string) []ActionRow {
-	return []ActionRow{{
-		Type: 1,
-		Components: []Component{
-			{Type: 2, Style: 3, Label: "✅  Join", CustomID: "event_join|" + eventID},
-			{Type: 2, Style: 4, Label: "❌  Leave", CustomID: "event_leave|" + eventID},
-		},
-	}}
+// buildRSVPButtons returns the RSVP action row for an event embed.
+// Quick events get 2 buttons; large events get 3 (adds Maybe).
+func buildRSVPButtons(eventID string, isQuick bool) []ActionRow {
+	buttons := []Component{
+		{Type: 2, Style: 3, Label: "✅  Attending", CustomID: "event_join|" + eventID},
+		{Type: 2, Style: 4, Label: "❌  Not Attending", CustomID: "event_decline|" + eventID},
+	}
+	if !isQuick {
+		buttons = append(buttons, Component{
+			Type: 2, Style: 2, Label: "❓  Maybe", CustomID: "event_maybe|" + eventID,
+		})
+	}
+	return []ActionRow{{Type: 1, Components: buttons}}
 }

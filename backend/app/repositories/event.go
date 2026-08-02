@@ -13,6 +13,10 @@ var ErrRegistrationClosed = errors.New("registration is closed for this event")
 var ErrEventAtCapacity = errors.New("event is at capacity")
 var ErrInvalidStatusTransition = errors.New("invalid event status transition")
 var ErrReportNotFound = errors.New("event report not found")
+var ErrAlreadyMaybe = errors.New("already marked as maybe for this event")
+var ErrNotMaybe = errors.New("not in maybe list for this event")
+var ErrAlreadyDeclined = errors.New("already declined this event")
+var ErrNotDeclined = errors.New("not declined for this event")
 
 type EventStatus string
 
@@ -39,24 +43,27 @@ type EventReport struct {
 // Event is the aggregate root for a scheduled guild event.
 // Events may be deleted after closing; reports are the permanent record.
 type Event struct {
-	ID                    string      `bson:"_id,omitempty"`
-	GuildID               string      `bson:"guildId"`
-	HostDiscordID         string      `bson:"hostDiscordId"`
-	Title                 string      `bson:"title"`
-	Description           string      `bson:"description"`                     // pre-event description, max 3000 chars
-	AttendingIDs          []string    `bson:"attendingIds"`                    // Discord IDs registered to attend
-	ScheduledAt           time.Time   `bson:"scheduledAt"`                     // epoch set by the host
-	Status                EventStatus `bson:"status"`                          // open|active|closed
-	ChannelID             string      `bson:"channelId"`                       // Discord channel the bot opens/closes
-	AnnouncementMessageID string      `bson:"announcementMessageId,omitempty"` // Discord message ID for the RSVP embed
-	ReminderEnabled       bool        `bson:"reminderEnabled"`                 // send 1hr pre-event reminder to registrants
-	Capacity              int         `bson:"capacity"`                        // max registrations; 0 = unlimited
-	CutoffAt              *time.Time  `bson:"cutoffAt,omitempty"`
-	ReminderSentAt        *time.Time  `bson:"reminderSentAt,omitempty"`
-	StartedAt             *time.Time  `bson:"startedAt,omitempty"`
-	ClosedAt              *time.Time  `bson:"closedAt,omitempty"`
-	CreatedAt             time.Time   `bson:"createdAt"`
-	UpdatedAt             time.Time   `bson:"updatedAt"`
+	ID                    string      `bson:"_id,omitempty"                    json:"id"`
+	GuildID               string      `bson:"guildId"                          json:"guildId"`
+	HostDiscordID         string      `bson:"hostDiscordId"                    json:"hostDiscordId"`
+	Title                 string      `bson:"title"                            json:"title"`
+	EventType             string      `bson:"eventType"                        json:"eventType"`
+	Description           string      `bson:"description"                      json:"description"`
+	AttendingIDs          []string    `bson:"attendingIds"                     json:"attendingIds"`
+	MaybeIDs              []string    `bson:"maybeIds"                         json:"maybeIds"`
+	NotAttendingIDs       []string    `bson:"notAttendingIds"                  json:"notAttendingIds"`
+	ScheduledAt           time.Time   `bson:"scheduledAt"                      json:"scheduledAt"`
+	Status                EventStatus `bson:"status"                           json:"status"`
+	ChannelID             string      `bson:"channelId"                        json:"channelId"`
+	AnnouncementMessageID string      `bson:"announcementMessageId,omitempty"  json:"announcementMessageId,omitempty"`
+	ReminderEnabled       bool        `bson:"reminderEnabled"                  json:"reminderEnabled"`
+	Capacity              int         `bson:"capacity"                         json:"capacity"`
+	CutoffAt              *time.Time  `bson:"cutoffAt,omitempty"               json:"cutoffAt,omitempty"`
+	ReminderSentAt        *time.Time  `bson:"reminderSentAt,omitempty"         json:"reminderSentAt,omitempty"`
+	StartedAt             *time.Time  `bson:"startedAt,omitempty"              json:"startedAt,omitempty"`
+	ClosedAt              *time.Time  `bson:"closedAt,omitempty"               json:"closedAt,omitempty"`
+	CreatedAt             time.Time   `bson:"createdAt"                        json:"createdAt"`
+	UpdatedAt             time.Time   `bson:"updatedAt"                        json:"updatedAt"`
 }
 
 // EventRepository defines the contract for event data access operations.
@@ -82,6 +89,24 @@ type EventRepository interface {
 	// Returns ErrNotRegistered if not attending, ErrEventNotFound if event missing.
 	RemoveAttendee(ctx context.Context, eventID, discordID string) error
 
+	// AddMaybe marks a member as "maybe" attending (Skirmish events).
+	// Automatically removes the member from attendingIds and notAttendingIds.
+	// Returns ErrAlreadyMaybe if already maybe, ErrEventNotFound if event missing.
+	AddMaybe(ctx context.Context, eventID, discordID string) error
+
+	// RemoveMaybe removes a member's "maybe" response.
+	// Returns ErrNotMaybe if not in the maybe list.
+	RemoveMaybe(ctx context.Context, eventID, discordID string) error
+
+	// AddDecline marks a member as "not attending".
+	// Automatically removes the member from attendingIds and maybeIds.
+	// Returns ErrAlreadyDeclined if already declined.
+	AddDecline(ctx context.Context, eventID, discordID string) error
+
+	// RemoveDecline removes a member's "not attending" response.
+	// Returns ErrNotDeclined if not in the declined list.
+	RemoveDecline(ctx context.Context, eventID, discordID string) error
+
 	// Start transitions the event from open → active and records StartedAt.
 	// Returns ErrInvalidStatusTransition if not currently open.
 	Start(ctx context.Context, eventID string) error
@@ -93,6 +118,13 @@ type EventRepository interface {
 
 	// GetLiveEventCounts returns count of open/active events from the events collection.
 	GetLiveEventCounts(ctx context.Context, guildID string) (openOrActiveCount int64, err error)
+
+	// FindUpcomingSkirmishForReminders returns Skirmish events with scheduledAt in (now, cutoff)
+	// that have not yet had a reminder sent (reminderSentAt == nil).
+	FindUpcomingSkirmishForReminders(ctx context.Context, now, cutoff time.Time) ([]Event, error)
+
+	// MarkReminderSent sets reminderSentAt on an event to record that reminders were dispatched.
+	MarkReminderSent(ctx context.Context, eventID string, sentAt time.Time) error
 
 	EnsureIndexes(ctx context.Context) error
 }

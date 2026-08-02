@@ -24,8 +24,11 @@ type eventDoc struct {
 	GuildID               string      `bson:"guildId"`
 	HostDiscordID         string      `bson:"hostDiscordId"`
 	Title                 string      `bson:"title"`
+	EventType             string      `bson:"eventType"`
 	DescriptionCompressed []byte      `bson:"description"`
 	AttendingIDs          []string    `bson:"attendingIds"`
+	MaybeIDs              []string    `bson:"maybeIds"`
+	NotAttendingIDs       []string    `bson:"notAttendingIds"`
 	ScheduledAt           time.Time   `bson:"scheduledAt"`
 	Status                EventStatus `bson:"status"`
 	ChannelID             string      `bson:"channelId"`
@@ -76,8 +79,11 @@ func toEventDoc(event *Event) (*eventDoc, error) {
 		GuildID:               event.GuildID,
 		HostDiscordID:         event.HostDiscordID,
 		Title:                 event.Title,
+		EventType:             event.EventType,
 		DescriptionCompressed: description,
 		AttendingIDs:          event.AttendingIDs,
+		MaybeIDs:              event.MaybeIDs,
+		NotAttendingIDs:       event.NotAttendingIDs,
 		ScheduledAt:           event.ScheduledAt,
 		Status:                event.Status,
 		ChannelID:             event.ChannelID,
@@ -98,13 +104,24 @@ func fromEventDoc(doc *eventDoc) (*Event, error) {
 	if err != nil {
 		return nil, err
 	}
+	maybeIDs := doc.MaybeIDs
+	if maybeIDs == nil {
+		maybeIDs = []string{}
+	}
+	notAttendingIDs := doc.NotAttendingIDs
+	if notAttendingIDs == nil {
+		notAttendingIDs = []string{}
+	}
 	return &Event{
 		ID:                    doc.ID,
 		GuildID:               doc.GuildID,
 		HostDiscordID:         doc.HostDiscordID,
 		Title:                 doc.Title,
+		EventType:             doc.EventType,
 		Description:           description,
 		AttendingIDs:          doc.AttendingIDs,
+		MaybeIDs:              maybeIDs,
+		NotAttendingIDs:       notAttendingIDs,
 		ScheduledAt:           doc.ScheduledAt,
 		Status:                doc.Status,
 		ChannelID:             doc.ChannelID,
@@ -169,6 +186,12 @@ func (r *MongoEventRepository) Create(ctx context.Context, event *Event) error {
 	}
 	if event.AttendingIDs == nil {
 		event.AttendingIDs = []string{}
+	}
+	if event.MaybeIDs == nil {
+		event.MaybeIDs = []string{}
+	}
+	if event.NotAttendingIDs == nil {
+		event.NotAttendingIDs = []string{}
 	}
 
 	doc, err := toEventDoc(event)
@@ -235,9 +258,10 @@ func (r *MongoEventRepository) Delete(ctx context.Context, eventID string) error
 func (r *MongoEventRepository) AddAttendee(ctx context.Context, eventID, discordID string) error {
 	result, err := db.EventsCollection(r.database).UpdateOne(
 		ctx,
-		bson.M{"_id": eventID},
+		bson.M{"_id": eventID, "attendingIds": bson.M{"$ne": discordID}},
 		bson.M{
 			"$addToSet": bson.M{"attendingIds": discordID},
+			"$pull":     bson.M{"maybeIds": discordID, "notAttendingIds": discordID},
 			"$set":      bson.M{"updatedAt": time.Now()},
 		},
 	)
@@ -245,9 +269,10 @@ func (r *MongoEventRepository) AddAttendee(ctx context.Context, eventID, discord
 		return err
 	}
 	if result.MatchedCount == 0 {
-		return ErrEventNotFound
-	}
-	if result.ModifiedCount == 0 {
+		count, _ := db.EventsCollection(r.database).CountDocuments(ctx, bson.M{"_id": eventID})
+		if count == 0 {
+			return ErrEventNotFound
+		}
 		return ErrAlreadyRegistered
 	}
 	return nil
@@ -335,4 +360,107 @@ func (r *MongoEventRepository) GetLiveEventCounts(ctx context.Context, guildID s
 		return 0, err
 	}
 	return count, nil
+}
+
+// atomicRsvpUpdate is shared by AddMaybe, AddDecline, AddAttendee for cross-clearing.
+// filter is used as-is so callers can include array membership guards.
+func (r *MongoEventRepository) addToListAndClearOthers(ctx context.Context, eventID, discordID, targetList string, clearLists []string, alreadyErr error) error {
+	clearPull := bson.M{}
+	for _, l := range clearLists {
+		clearPull[l] = discordID
+	}
+	result, err := db.EventsCollection(r.database).UpdateOne(
+		ctx,
+		bson.M{"_id": eventID, targetList: bson.M{"$ne": discordID}},
+		bson.M{
+			"$addToSet": bson.M{targetList: discordID},
+			"$pull":     clearPull,
+			"$set":      bson.M{"updatedAt": time.Now()},
+		},
+	)
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount == 0 {
+		count, _ := db.EventsCollection(r.database).CountDocuments(ctx, bson.M{"_id": eventID})
+		if count == 0 {
+			return ErrEventNotFound
+		}
+		return alreadyErr
+	}
+	return nil
+}
+
+func (r *MongoEventRepository) removeFromList(ctx context.Context, eventID, discordID, targetList string, notInErr error) error {
+	result, err := db.EventsCollection(r.database).UpdateOne(
+		ctx,
+		bson.M{"_id": eventID},
+		bson.M{
+			"$pull": bson.M{targetList: discordID},
+			"$set":  bson.M{"updatedAt": time.Now()},
+		},
+	)
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount == 0 {
+		return ErrEventNotFound
+	}
+	if result.ModifiedCount == 0 {
+		return notInErr
+	}
+	return nil
+}
+
+func (r *MongoEventRepository) AddMaybe(ctx context.Context, eventID, discordID string) error {
+	return r.addToListAndClearOthers(ctx, eventID, discordID, "maybeIds", []string{"attendingIds", "notAttendingIds"}, ErrAlreadyMaybe)
+}
+
+func (r *MongoEventRepository) RemoveMaybe(ctx context.Context, eventID, discordID string) error {
+	return r.removeFromList(ctx, eventID, discordID, "maybeIds", ErrNotMaybe)
+}
+
+func (r *MongoEventRepository) AddDecline(ctx context.Context, eventID, discordID string) error {
+	return r.addToListAndClearOthers(ctx, eventID, discordID, "notAttendingIds", []string{"attendingIds", "maybeIds"}, ErrAlreadyDeclined)
+}
+
+func (r *MongoEventRepository) RemoveDecline(ctx context.Context, eventID, discordID string) error {
+	return r.removeFromList(ctx, eventID, discordID, "notAttendingIds", ErrNotDeclined)
+}
+
+func (r *MongoEventRepository) FindUpcomingSkirmishForReminders(ctx context.Context, now, cutoff time.Time) ([]Event, error) {
+	filter := bson.M{
+		"eventType":      bson.M{"$regex": "skirmish", "$options": "i"},
+		"scheduledAt":    bson.M{"$gt": now, "$lte": cutoff},
+		"reminderSentAt": nil,
+		"status":         bson.M{"$ne": EventStatusClosed},
+	}
+	cursor, err := db.EventsCollection(r.database).Find(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var results []Event
+	for cursor.Next(ctx) {
+		var doc eventDoc
+		if err := cursor.Decode(&doc); err != nil {
+			continue
+		}
+		event, err := fromEventDoc(&doc)
+		if err != nil {
+			continue
+		}
+		results = append(results, *event)
+	}
+	return results, cursor.Err()
+}
+
+func (r *MongoEventRepository) MarkReminderSent(ctx context.Context, eventID string, sentAt time.Time) error {
+	_, err := db.EventsCollection(r.database).UpdateOne(
+		ctx,
+		bson.M{"_id": eventID},
+		bson.M{"$set": bson.M{"reminderSentAt": sentAt, "updatedAt": time.Now()}},
+	)
+	return err
 }

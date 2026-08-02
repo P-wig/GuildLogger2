@@ -511,6 +511,19 @@ Response (404): guild or event log not found.
 
 All event endpoints require `Authorization: Bearer <token>`.
 
+#### Event Type Behavior
+
+The `eventType` field on an event controls the Discord embed button set and available RSVP options:
+
+| Event Type | Buttons | Maybe Tracking | Reminder DMs | Mod Mail |
+|------------|---------|---------------|--------------|----------|
+| **Raid** | ✅ Attending \| ❌ Not Attending | No | No | No |
+| **Skirmish** | ✅ Attending \| ❌ Not Attending \| ❓ Maybe | Yes (`maybeIds`) | Yes (1h before event, to `maybeIds`) | Yes (non-responders) |
+
+**Non-responders** are guild members not present in `attendingIds`, `notAttendingIds`, or `maybeIds`. Moderators can trigger a mod-mail DM blast to this group for Skirmish events to drive headcount.
+
+Event type values are configured per-guild in `eventConfig.eventTypes` and selected via the `/event create` slash command autocomplete.
+
 #### POST /api/events/:eventId/start
 
 Transitions an event from `open` to `active`. Only the event host can start the event.
@@ -567,11 +580,14 @@ Response (409): event is not currently in `active` status.
 
 Creates a new event for a guild. The authenticated user becomes the host.
 
+`eventType` drives the Discord embed button set — use `"Raid"` for a 2-button embed or `"Skirmish"` for a 3-button embed with Maybe. Other configured event types default to Raid behavior.
+
 Request body:
 ```json
 {
   "guildId": "...",
   "title": "Raid Night",
+  "eventType": "Raid",
   "description": "Optional description, max 3000 characters",
   "scheduledAt": "2026-06-10T20:00:00Z",
   "channelId": "...",
@@ -581,9 +597,11 @@ Request body:
 }
 ```
 
+- `eventType` (optional): `"Raid"` or `"Skirmish"`. Defaults to `"Raid"` behavior when omitted.
+
 Response (200):
 ```json
-{ "ok": true, "event": { "id": "...", "guildId": "...", "title": "Raid Night", "status": "open", "attendingIds": [] } }
+{ "ok": true, "event": { "id": "...", "guildId": "...", "title": "Raid Night", "eventType": "Raid", "status": "open", "attendingIds": [], "maybeIds": [], "notAttendingIds": [] } }
 ```
 
 Response (400): `guildId` or `title` missing.
@@ -610,8 +628,35 @@ Returns a single event by ID.
 
 Response (200):
 ```json
-{ "ok": true, "event": { "id": "...", "status": "open" } }
+{
+  "ok": true,
+  "event": {
+    "id": "...",
+    "guildId": "...",
+    "hostDiscordId": "...",
+    "title": "Skirmish Saturday",
+    "eventType": "Skirmish",
+    "description": "...",
+    "scheduledAt": "2026-06-10T20:00:00Z",
+    "status": "open",
+    "channelId": "...",
+    "attendingIds": ["1234567890"],
+    "maybeIds": ["0987654321"],
+    "notAttendingIds": [],
+    "capacity": 0,
+    "reminderEnabled": true,
+    "reminderSentAt": null,
+    "cutoffAt": null,
+    "createdAt": "...",
+    "updatedAt": "..."
+  }
+}
 ```
+
+Field notes:
+- `maybeIds`: Discord IDs of members who responded "Maybe" (Skirmish only; always empty for Raid).
+- `notAttendingIds`: Discord IDs of members who explicitly declined.
+- `reminderSentAt`: set when 1-hour reminder DMs have been dispatched to `maybeIds`.
 
 Response (401): missing, invalid, or expired token.
 Response (404): event not found.
@@ -641,6 +686,84 @@ Response (200):
 Response (401): missing, invalid, or expired token.
 Response (404): event not found.
 Response (409): not registered for this event.
+
+#### POST /api/events/:eventId/maybe
+
+Marks the authenticated user as "Maybe" attending. Only valid for Skirmish events. Automatically removes the user from `attendingIds` and `notAttendingIds` if present.
+
+Response (200):
+```json
+{ "ok": true }
+```
+
+Response (401): missing, invalid, or expired token.
+Response (404): event not found.
+Response (409): already marked as maybe, event type does not support maybe (Raid), registration is closed, or event is at capacity.
+
+#### POST /api/events/:eventId/unmaybe
+
+Removes the authenticated user's "Maybe" response.
+
+Response (200):
+```json
+{ "ok": true }
+```
+
+Response (401): missing, invalid, or expired token.
+Response (404): event not found.
+Response (409): user is not in the maybe list.
+
+#### POST /api/events/:eventId/decline
+
+Marks the authenticated user as "Not Attending". Automatically removes the user from `attendingIds` and `maybeIds` if present.
+
+Response (200):
+```json
+{ "ok": true }
+```
+
+Response (401): missing, invalid, or expired token.
+Response (404): event not found.
+Response (409): already declined, or registration is closed.
+
+#### POST /api/events/:eventId/undecline
+
+Removes the authenticated user's "Not Attending" response.
+
+Response (200):
+```json
+{ "ok": true }
+```
+
+Response (401): missing, invalid, or expired token.
+Response (404): event not found.
+Response (409): user has not declined this event.
+
+#### POST /api/events/:eventId/mod-mail
+
+Sends a Discord DM to every active guild member who has not yet responded to the event (not in `attendingIds`, `notAttendingIds`, or `maybeIds`). Only available for Skirmish events. Caller must hold a moderator role configured in the guild's `moderatorRoleIds`.
+
+Request body (optional):
+```json
+{
+  "message": "Custom message override (optional). Defaults to a generated rally message."
+}
+```
+
+Response (200):
+```json
+{
+  "ok": true,
+  "sent": 12,
+  "failed": []
+}
+```
+
+Response (401): missing, invalid, or expired token.
+Response (403): caller does not hold a moderator role for this guild.
+Response (404): event not found.
+Response (409): event type does not support mod mail (Raid), or event is closed.
+Response (422): no non-responding members to contact.
 
 ### Member Analytics
 
@@ -706,9 +829,37 @@ Response (502): one or more Discord channel messages failed to send (partial suc
 
 ## Planned Endpoints (Target Contract)
 
-### Notifications
+### Event Notifications
 
-- POST /api/notifications/events/reminders/run
+#### POST /api/notifications/events/reminders/run
+
+Scans all open/active Skirmish events whose `scheduledAt` falls within the next hour, and sends a Discord DM reminder to every member in the event's `maybeIds` list who has not already received one (`reminderSentAt` is null). Sets `reminderSentAt` on each event after dispatching.
+
+Request body:
+```json
+{
+  "guildId": "..."
+}
+```
+
+Response (200):
+```json
+{
+  "ok": true,
+  "processed": 2,
+  "reminded": 7,
+  "failed": []
+}
+```
+
+- `processed`: number of events scanned.
+- `reminded`: total DMs sent across all events.
+- `failed`: Discord IDs for which DM delivery failed.
+
+Response (200, none eligible): `{ "ok": true, "processed": 0, "reminded": 0, "skipped": "no Skirmish events starting within 1 hour" }`
+Response (400): `guildId` missing or invalid.
+Response (401): missing, invalid, or expired token.
+Response (404): guild not found.
 
 ## Response Format Guidance
 
