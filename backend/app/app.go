@@ -160,7 +160,7 @@ func CreateApp() (*echo.Echo, func() error, error) {
 	// Register Discord interaction webhook.
 	// POST /api/interactions handles slash command responses, modal submits, and button clicks.
 	// Authenticated via Ed25519 signature (not JWT) — must be registered before the JWT group.
-	interactionHandler := discord.NewInteractionHandler(guildRepo, memberRepo, eventsRepo, eventReportRepo, botClient, cfg.DiscordPublicKey)
+	interactionHandler := discord.NewInteractionHandler(guildRepo, memberRepo, eventsRepo, eventReportRepo, botClient, cfg.DiscordPublicKey, cfg.SecretKey, cfg.AppURL)
 	routes.RegisterInteractions(e, interactionHandler)
 
 	// jwtMiddleware guards any route group that requires an authenticated session.
@@ -172,6 +172,7 @@ func CreateApp() (*echo.Echo, func() error, error) {
 	routes.RegisterRoot(e)
 	routes.RegisterHealth(e)
 	routes.RegisterAuth(e, userRepo, oauthClient, cfg.SecretKey)
+	routes.RegisterEventLogRoutes(e, eventsRepo, eventReportRepo, memberRepo, cfg.SecretKey)
 
 	// Protected routes: JWT middleware is enforced by the `protected` group.
 	// Add new authenticated endpoints here as new route files are created.

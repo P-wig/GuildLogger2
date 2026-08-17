@@ -2,7 +2,7 @@ import { createBrowserRouter } from "react-router";
 import { AuthRoute } from "./AuthRoute";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { AppLayout } from "../layouts";
-import { Account, Auth, Home, Welcome, Guilds, GuildDashboard, GuildEvents, GuildActiveEvents } from "../pages";
+import { Account, Auth, Home, Welcome, Guilds, GuildDashboard, GuildEvents, GuildActiveEvents, EventLogSubmit } from "../pages";
 
 export const router = createBrowserRouter([
   {
@@ -11,6 +11,10 @@ export const router = createBrowserRouter([
     children: [
       // Public welcome page - no authentication required
       { index: true, element: <Welcome /> },
+
+      // Public event-log submission page — accessible without a user session.
+      // The one-time signed token in the URL provides access control.
+      { path: "log-event", element: <EventLogSubmit /> },
 
       // Auth routes - only for unauthenticated users
       {

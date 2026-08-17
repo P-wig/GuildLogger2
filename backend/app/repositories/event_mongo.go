@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"compress/zlib"
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/hex"
 	"errors"
 	"io"
 	"strings"
@@ -178,7 +180,12 @@ func (r *MongoEventRepository) EnsureIndexes(ctx context.Context) error {
 
 func (r *MongoEventRepository) Create(ctx context.Context, event *Event) error {
 	now := time.Now()
-	event.ID = primitive.NewObjectID().Hex()
+	b := make([]byte, 4)
+	if _, err := cryptorand.Read(b); err != nil {
+		event.ID = primitive.NewObjectID().Hex()[16:] // fallback: last 8 chars of ObjectID
+	} else {
+		event.ID = hex.EncodeToString(b)
+	}
 	event.CreatedAt = now
 	event.UpdatedAt = now
 	if event.Status == "" {

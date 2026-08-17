@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/P-wig/GuildLogger2/backend/app/repositories"
+	"github.com/P-wig/GuildLogger2/backend/app/session"
 	"github.com/labstack/echo/v4"
 )
 
@@ -24,6 +25,8 @@ type InteractionHandler struct {
 	eventReportRepo repositories.EventReportRepository
 	botClient       *BotClient
 	publicKey       string // hex-encoded Ed25519 public key; empty = skip verification (dev)
+	secretKey       string // JWT signing key used to generate event-log tokens
+	appURL          string // frontend base URL, e.g. "https://app.example.com"
 }
 
 // NewInteractionHandler creates an InteractionHandler with the given dependencies.
@@ -34,6 +37,8 @@ func NewInteractionHandler(
 	eventReportRepo repositories.EventReportRepository,
 	botClient *BotClient,
 	publicKey string,
+	secretKey string,
+	appURL string,
 ) *InteractionHandler {
 	return &InteractionHandler{
 		guildRepo:       guildRepo,
@@ -42,6 +47,8 @@ func NewInteractionHandler(
 		eventReportRepo: eventReportRepo,
 		botClient:       botClient,
 		publicKey:       publicKey,
+		secretKey:       secretKey,
+		appURL:          appURL,
 	}
 }
 
@@ -261,37 +268,36 @@ func (h *InteractionHandler) handleEventLog(c echo.Context, i *Interaction) erro
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ You must be a registered active member of this guild to log events."))
 	}
 
-	// Verify the event exists and belongs to this guild.
+	// Verify the event exists, belongs to this guild, and the caller is the host.
 	event, err := h.eventRepo.FindByID(ctx, eventID)
 	if err != nil || event == nil || event.GuildID != i.GuildID {
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Event not found."))
 	}
+	if event.HostDiscordID != discordID {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Only the event host can log this event."))
+	}
+	if event.Status == repositories.EventStatusClosed {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ This event is already closed."))
+	}
 
+	// Ensure no report has already been submitted for this event.
+	existing, _ := h.eventReportRepo.FindByEventID(ctx, eventID)
+	if existing != nil {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ This event has already been logged."))
+	}
+
+	// Generate a time-limited signed token the host can use in the webapp.
+	token, err := session.SignEventLog(eventID, i.GuildID, discordID, h.secretKey)
+	if err != nil {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Failed to generate log link. Please try again."))
+	}
+
+	logURL := h.appURL + "/log-event?token=" + token
 	return c.JSON(http.StatusOK, interactionResponse{
-		Type: InteractionResponseModal,
+		Type: InteractionResponseChannelMessage,
 		Data: map[string]interface{}{
-			"custom_id": "log_event|" + eventID,
-			"title":     "Log Event: " + event.Title,
-			"components": []TextInputRow{
-				{Type: 1, Components: []TextInput{{
-					Type:        4,
-					CustomID:    "date",
-					Style:       1,
-					Label:       "Event Date",
-					Required:    true,
-					Placeholder: "YYYY-MM-DD",
-					MaxLength:   10,
-				}}},
-				{Type: 1, Components: []TextInput{{
-					Type:        4,
-					CustomID:    "summary",
-					Style:       2,
-					Label:       "Summary",
-					Required:    true,
-					Placeholder: "What happened at this event?",
-					MaxLength:   1000,
-				}}},
-			},
+			"flags":   MessageFlagEphemeral,
+			"content": "✅ Use the link below to submit your event log (expires in 48 hours):\n" + logURL,
 		},
 	})
 }

@@ -23,6 +23,9 @@ type Config struct {
 	DiscordAPIBaseURL   string
 	DiscordOAuthScopes  []string
 	DiscordPublicKey    string
+	// AppURL is the base URL of the frontend application, used to generate browser links.
+	// Defaults to http://localhost:5173 in development.
+	AppURL string
 }
 
 func Load() Config {
@@ -52,6 +55,7 @@ func Load() Config {
 		DiscordAPIBaseURL:   getenv("DISCORD_API_BASE_URL", "https://discord.com/api/v10"),
 		DiscordOAuthScopes:  trimAll(strings.Split(scopesRaw, " ")),
 		DiscordPublicKey:    getenv("DISCORD_PUBLIC_KEY", ""),
+		AppURL:              getenv("APP_URL", "http://localhost:5173"),
 	}
 }
 

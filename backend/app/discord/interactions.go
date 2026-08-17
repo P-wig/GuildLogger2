@@ -225,6 +225,19 @@ func buildEventEmbed(eventType string, isQuick bool, description, hostID string,
 			Name:  fmt.Sprintf("❓ Maybe (%d)", len(maybeIDs)),
 			Value: maybeText,
 		})
+
+		notAttendingText := "*No one*"
+		if len(notAttendingIDs) > 0 {
+			parts := make([]string, len(notAttendingIDs))
+			for i, id := range notAttendingIDs {
+				parts[i] = "<@" + id + ">"
+			}
+			notAttendingText = strings.Join(parts, "  ")
+		}
+		fields = append(fields, EmbedField{
+			Name:  fmt.Sprintf("❌ Not Attending (%d)", len(notAttendingIDs)),
+			Value: notAttendingText,
+		})
 	}
 
 	return Embed{

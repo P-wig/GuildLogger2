@@ -7,3 +7,4 @@ export { Events } from "./Events";
 export { GuildDashboard } from "./GuildDashboard";
 export { GuildEvents } from "./GuildEvents";
 export { GuildActiveEvents } from "./GuildActiveEvents";
+export { EventLogSubmit } from "./EventLogSubmit";
