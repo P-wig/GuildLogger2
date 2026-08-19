@@ -52,6 +52,7 @@ func validateEventLogHandler(
 
 		claims, err := session.VerifyEventLog(tokenStr, secretKey)
 		if err != nil {
+			c.Logger().Warnf("event-log validate: JWT error: %v", err)
 			return c.JSON(http.StatusOK, map[string]interface{}{
 				"ok": false, "reason": "expired",
 			})
@@ -97,7 +98,7 @@ func validateEventLogHandler(
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"ok":             true,
 			"event":          event,
-			"preSelectedIds": event.AttendingIDs,
+			"preSelectedIds": preSelectedIDs(event),
 			"members":        members,
 		})
 	}
@@ -189,4 +190,17 @@ func submitEventLogHandler(
 
 		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true})
 	}
+}
+
+// preSelectedIDs returns the best available participant list for the event log form.
+// Voice channel members captured at event-end are used when available; otherwise
+// the RSVP attending list is returned as the default selection.
+func preSelectedIDs(event *repositories.Event) []string {
+	if len(event.VoiceMemberIDs) > 0 {
+		return event.VoiceMemberIDs
+	}
+	if event.AttendingIDs != nil {
+		return event.AttendingIDs
+	}
+	return []string{}
 }

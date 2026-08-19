@@ -82,7 +82,7 @@ func ValidateOAuthConfig(cfg Config) error {
 }
 
 func getenv(k, d string) string {
-	v := os.Getenv(k)
+	v := strings.TrimSpace(os.Getenv(k))
 	if v == "" {
 		return d
 	}

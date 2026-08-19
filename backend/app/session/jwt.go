@@ -47,7 +47,7 @@ func Verify(tokenStr, secretKey string) (*Claims, error) {
 
 // ─── Event-log one-time tokens ────────────────────────────────────────────────
 
-const eventLogTTL = 48 * time.Hour
+const eventLogTTL = 8 * time.Hour
 
 // EventLogClaims is the payload for a one-time event-log submission token.
 // Subject is always "event_log" so it cannot be confused with session tokens.

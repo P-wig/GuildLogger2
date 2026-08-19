@@ -8,6 +8,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	gommonlog "github.com/labstack/gommon/log"
 
 	"github.com/P-wig/GuildLogger2/backend/app/config"
 	"github.com/P-wig/GuildLogger2/backend/app/db"
@@ -59,6 +60,7 @@ func CreateApp() (*echo.Echo, func() error, error) {
 	}
 
 	e := echo.New()
+	e.Logger.SetLevel(gommonlog.INFO)
 
 	e.Use(middleware.Recover())
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{

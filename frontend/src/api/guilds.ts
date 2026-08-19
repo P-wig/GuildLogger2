@@ -31,6 +31,8 @@ export type LinkedGuild = {
   updatedAt: string;
   eventConfig: {
     eventTypes: { name: string; channelId: string; isQuickEvent: boolean }[];
+    voiceCategoryId: string;
+    lobbyChannelId: string;
   };
 };
 
@@ -177,7 +179,7 @@ export const guildsApi = {
     api.put<{ ok: boolean }>(`/guilds/${guildId}/config/member-role`, { roleId }),
   updateGuildConfig: (guildId: string, config: { activeRoleId: string; inactiveRoleId?: string; rankedRoleIds?: string[]; moderatorRoleIds?: string[] }) =>
     api.put<{ ok: boolean }>(`/guilds/${guildId}/config`, config),
-  updateEventConfig: (guildId: string, config: { eventTypes: { name: string; channelId: string; isQuickEvent: boolean }[] }) =>
+  updateEventConfig: (guildId: string, config: { eventTypes: { name: string; channelId: string; isQuickEvent: boolean }[]; voiceCategoryId?: string; lobbyChannelId?: string }) =>
     api.put<{ ok: boolean }>(`/guilds/${guildId}/config/event`, config),
   deleteGuild: (guildId: string) =>
     api.delete<{ ok: boolean }>(`/guilds/${guildId}`),

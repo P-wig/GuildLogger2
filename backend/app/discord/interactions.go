@@ -98,9 +98,11 @@ type AutocompleteChoice struct {
 
 // InteractionMember holds the guild member who triggered the interaction.
 type InteractionMember struct {
+	Nick string `json:"nick"`
 	User *struct {
-		ID       string `json:"id"`
-		Username string `json:"username"`
+		ID         string `json:"id"`
+		Username   string `json:"username"`
+		GlobalName string `json:"global_name"`
 	} `json:"user"`
 	Roles []string `json:"roles"`
 }
@@ -129,7 +131,6 @@ type ModalComponentRow struct {
 
 // InteractionData is the command, component, or modal data attached to an Interaction.
 type InteractionData struct {
-	ID         string                  `json:"id,omitempty"`
 	Name       string                  `json:"name,omitempty"`
 	Options    []InteractionDataOption `json:"options,omitempty"`
 	CustomID   string                  `json:"custom_id,omitempty"`
@@ -184,7 +185,7 @@ func VerifyRequest(r *http.Request, body []byte, publicKeyHex string) error {
 
 // buildEventEmbed constructs the RSVP announcement embed displayed in the events channel.
 // maybeIDs and notAttendingIDs are only shown for Skirmish events.
-func buildEventEmbed(eventType string, isQuick bool, description, hostID string, epochSecs int64, attendingIDs, maybeIDs, notAttendingIDs []string) Embed {
+func buildEventEmbed(eventType string, isQuick bool, description, hostID, eventID string, epochSecs int64, attendingIDs, maybeIDs, notAttendingIDs []string) Embed {
 	attendeeText := "*No one yet — be the first!*"
 	if len(attendingIDs) > 0 {
 		parts := make([]string, len(attendingIDs))
@@ -244,12 +245,13 @@ func buildEventEmbed(eventType string, isQuick bool, description, hostID string,
 		Title:  "🎮 " + eventType,
 		Color:  color,
 		Fields: fields,
-		Footer: &EmbedFooter{Text: footerText},
+		Footer: &EmbedFooter{Text: footerText + " • ID: " + eventID},
 	}
 }
 
 // buildRSVPButtons returns the RSVP action row for an event embed.
 // Quick events get 2 buttons; large events get 3 (adds Maybe).
+// A second row with host-only Start/End controls is always appended.
 func buildRSVPButtons(eventID string, isQuick bool) []ActionRow {
 	buttons := []Component{
 		{Type: 2, Style: 3, Label: "✅  Attending", CustomID: "event_join|" + eventID},
@@ -260,5 +262,12 @@ func buildRSVPButtons(eventID string, isQuick bool) []ActionRow {
 			Type: 2, Style: 2, Label: "❓  Maybe", CustomID: "event_maybe|" + eventID,
 		})
 	}
-	return []ActionRow{{Type: 1, Components: buttons}}
+	controlRow := ActionRow{
+		Type: 1,
+		Components: []Component{
+			{Type: 2, Style: 3, Label: "▶️  Start Event", CustomID: "ctrl_start|" + eventID},
+			{Type: 2, Style: 4, Label: "⏹️  End Event", CustomID: "ctrl_end|" + eventID},
+		},
+	}
+	return []ActionRow{{Type: 1, Components: buttons}, controlRow}
 }

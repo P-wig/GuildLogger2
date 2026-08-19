@@ -59,7 +59,11 @@ type GuildEventTypeConfig struct {
 
 // GuildEventConfig defines the per-event-type channel mapping and event-type list used by bot slash commands.
 type GuildEventConfig struct {
-	EventTypes []GuildEventTypeConfig `bson:"eventTypes" json:"eventTypes"`
+	EventTypes []GuildEventTypeConfig `bson:"eventTypes"      json:"eventTypes"`
+	// VoiceCategoryID is the Discord category under which event voice channels are created.
+	VoiceCategoryID string `bson:"voiceCategoryId" json:"voiceCategoryId"`
+	// LobbyChannelID is the voice channel members are moved back to after an event ends.
+	LobbyChannelID string `bson:"lobbyChannelId"  json:"lobbyChannelId"`
 }
 
 // Guild is the aggregate root for guild configuration and role hierarchy.

@@ -872,6 +872,8 @@ func updateEventConfigHandler(guildRepo repositories.GuildRepository) echo.Handl
 				ChannelID    string `json:"channelId"`
 				IsQuickEvent bool   `json:"isQuickEvent"`
 			} `json:"eventTypes"`
+			VoiceCategoryID string `json:"voiceCategoryId"`
+			LobbyChannelID  string `json:"lobbyChannelId"`
 		}
 		if err := c.Bind(&in); err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "invalid request body"})
@@ -899,7 +901,9 @@ func updateEventConfigHandler(guildRepo repositories.GuildRepository) echo.Handl
 			}
 		}
 		cfg := repositories.GuildEventConfig{
-			EventTypes: cleanTypes,
+			EventTypes:      cleanTypes,
+			VoiceCategoryID: strings.TrimSpace(in.VoiceCategoryID),
+			LobbyChannelID:  strings.TrimSpace(in.LobbyChannelID),
 		}
 		if err := guildRepo.UpdateEventConfig(ctx, guildID, cfg); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to save event config"})

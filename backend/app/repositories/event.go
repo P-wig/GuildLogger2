@@ -58,6 +58,8 @@ type Event struct {
 	AnnouncementMessageID string      `bson:"announcementMessageId,omitempty"  json:"announcementMessageId,omitempty"`
 	ReminderEnabled       bool        `bson:"reminderEnabled"                  json:"reminderEnabled"`
 	Capacity              int         `bson:"capacity"                         json:"capacity"`
+	VoiceChannelID        string      `bson:"voiceChannelId,omitempty"          json:"voiceChannelId,omitempty"`
+	VoiceMemberIDs        []string    `bson:"voiceMemberIds,omitempty"          json:"voiceMemberIds,omitempty"`
 	CutoffAt              *time.Time  `bson:"cutoffAt,omitempty"               json:"cutoffAt,omitempty"`
 	ReminderSentAt        *time.Time  `bson:"reminderSentAt,omitempty"         json:"reminderSentAt,omitempty"`
 	StartedAt             *time.Time  `bson:"startedAt,omitempty"              json:"startedAt,omitempty"`

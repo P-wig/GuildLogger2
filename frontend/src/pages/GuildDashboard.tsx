@@ -50,6 +50,8 @@ type ConfigSavedUpdates = {
   moderatorRoleIds: string[];
   rankedRoleIds: string[];
   eventTypes: { name: string; channelId: string; isQuickEvent: boolean }[];
+  voiceCategoryId: string;
+  lobbyChannelId: string;
 };
 
 const ConfigDialog = ({
@@ -74,6 +76,8 @@ const ConfigDialog = ({
   const [cfgEventTypes, setCfgEventTypes] = useState<{ name: string; channelId: string; isQuickEvent: boolean }[]>([]);
   const [cfgNewEventTypeName, setCfgNewEventTypeName] = useState("");
   const [cfgNewEventTypeChannelId, setCfgNewEventTypeChannelId] = useState("");
+  const [cfgVoiceCategoryId, setCfgVoiceCategoryId] = useState("");
+  const [cfgLobbyChannelId, setCfgLobbyChannelId] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,6 +89,8 @@ const ConfigDialog = ({
     setCfgRankedRoleIds(guild.roles?.filter((r) => r.type === "ranked").map((r) => r.discordRoleId) ?? []);
     setCfgModeratorRoleIds(guild.notificationConfig?.statusRoles?.moderatorRoleIds ?? []);
     setCfgEventTypes(guild.eventConfig?.eventTypes ?? []);
+    setCfgVoiceCategoryId(guild.eventConfig?.voiceCategoryId ?? "");
+    setCfgLobbyChannelId(guild.eventConfig?.lobbyChannelId ?? "");
     setCfgNewEventTypeName("");
     setCfgNewEventTypeChannelId("");
     setError(null);
@@ -104,6 +110,8 @@ const ConfigDialog = ({
         }),
         guildsApi.updateEventConfig(guildId, {
           eventTypes: cfgEventTypes,
+          voiceCategoryId: cfgVoiceCategoryId,
+          lobbyChannelId: cfgLobbyChannelId,
         }),
       ]);
       onSaved({
@@ -112,6 +120,8 @@ const ConfigDialog = ({
         moderatorRoleIds: cfgModeratorRoleIds,
         rankedRoleIds: cfgRankedRoleIds,
         eventTypes: cfgEventTypes,
+        voiceCategoryId: cfgVoiceCategoryId,
+        lobbyChannelId: cfgLobbyChannelId,
       });
       onClose();
     } catch (err) {
@@ -339,6 +349,34 @@ const ConfigDialog = ({
                   Add
                 </Button>
               </Stack>
+            </Stack>
+          </Box>
+
+          {/* Voice channel config */}
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>
+              Voice Channel Config
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+              Used by the bot to create private event voice channels. Find these IDs in Discord by enabling Developer Mode and right-clicking a category or channel.
+            </Typography>
+            <Stack spacing={2}>
+              <TextField
+                label="Voice Category ID"
+                placeholder="Discord category ID for event channels"
+                size="small"
+                fullWidth
+                value={cfgVoiceCategoryId}
+                onChange={(e) => setCfgVoiceCategoryId(e.target.value)}
+              />
+              <TextField
+                label="Lobby Channel ID"
+                placeholder="Voice channel members return to after the event"
+                size="small"
+                fullWidth
+                value={cfgLobbyChannelId}
+                onChange={(e) => setCfgLobbyChannelId(e.target.value)}
+              />
             </Stack>
           </Box>
 
@@ -1376,6 +1414,8 @@ export const GuildDashboard = () => {
                     })),
                     eventConfig: {
                       eventTypes: updates.eventTypes,
+                      voiceCategoryId: updates.voiceCategoryId,
+                      lobbyChannelId: updates.lobbyChannelId,
                     },
                   },
                 }

@@ -381,3 +381,230 @@ func (c *BotClient) EditMessage(ctx context.Context, channelID, messageID string
 	}
 	return nil
 }
+
+// ─── Voice channel management ─────────────────────────────────────────────────
+
+// Discord permission bitfield constants used for voice-channel overwrites.
+const (
+	permViewChannel = int64(1 << 10) // 1024
+	permConnect     = int64(1 << 20) // 1048576
+	permSpeak       = int64(1 << 21) // 2097152
+	permMoveMembers = int64(1 << 24) // 16777216
+)
+
+// channelOverwrite is a Discord permission overwrite object.
+// id is a role ID (type 0) or member ID (type 1).
+type channelOverwrite struct {
+	ID    string `json:"id"`
+	Type  int    `json:"type"` // 0 = role, 1 = member
+	Allow string `json:"allow"`
+	Deny  string `json:"deny"`
+}
+
+// CreateEventVoiceChannel creates a private voice channel inside the given category.
+// The host is granted VIEW_CHANNEL + CONNECT + SPEAK + MOVE_MEMBERS.
+// @everyone is denied CONNECT (so they can see the channel but cannot join), which
+// also lets the bot query voice states in the channel via the REST API.
+// Returns the new channel ID.
+func (c *BotClient) CreateEventVoiceChannel(ctx context.Context, guildID, name, categoryID, hostDiscordID string) (string, error) {
+	hostPerms := permViewChannel | permConnect | permSpeak | permMoveMembers
+	overwrites := []channelOverwrite{
+		{
+			ID:    guildID, // @everyone role has the same ID as the guild
+			Type:  0,
+			Allow: "0",
+			Deny:  fmt.Sprintf("%d", permConnect), // deny join only; view kept for bot voice-state visibility
+		},
+		{
+			ID:    hostDiscordID,
+			Type:  1,
+			Allow: fmt.Sprintf("%d", hostPerms),
+			Deny:  "0",
+		},
+	}
+	type payload struct {
+		Name                 string             `json:"name"`
+		Type                 int                `json:"type"` // 2 = GUILD_VOICE
+		ParentID             string             `json:"parent_id,omitempty"`
+		PermissionOverwrites []channelOverwrite `json:"permission_overwrites"`
+	}
+	body, err := json.Marshal(payload{
+		Name:                 name,
+		Type:                 2,
+		ParentID:             categoryID,
+		PermissionOverwrites: overwrites,
+	})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.apiBaseURL+"/guilds/"+guildID+"/channels",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bot "+c.botToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusCreated {
+		return "", fmt.Errorf("create voice channel failed: status %d body %s", resp.StatusCode, string(raw))
+	}
+	var ch struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &ch); err != nil {
+		return "", fmt.Errorf("parse create channel response: %w", err)
+	}
+	return ch.ID, nil
+}
+
+// MoveGuildMember moves a guild member to a voice channel.
+// The member must already be connected to a voice channel; Discord will reject the move otherwise.
+func (c *BotClient) MoveGuildMember(ctx context.Context, guildID, userID, channelID string) error {
+	body, err := json.Marshal(map[string]string{"channel_id": channelID})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch,
+		c.apiBaseURL+"/guilds/"+guildID+"/members/"+userID,
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bot "+c.botToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	// 200 = moved, 204 = already there or no-op
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("move guild member failed: status %d body %s", resp.StatusCode, string(raw))
+	}
+	return nil
+}
+
+// SetVoiceChannelLock updates the @everyone permission overwrite on a voice channel.
+// locked=true: deny VIEW_CHANNEL + CONNECT (private).
+// locked=false: allow VIEW_CHANNEL + CONNECT + SPEAK (open to all).
+func (c *BotClient) SetVoiceChannelLock(ctx context.Context, channelID, guildID string, locked bool) error {
+	var allow, deny string
+	if locked {
+		allow = "0"
+		deny = fmt.Sprintf("%d", permViewChannel|permConnect)
+	} else {
+		allow = fmt.Sprintf("%d", permViewChannel|permConnect|permSpeak)
+		deny = "0"
+	}
+	body, err := json.Marshal(map[string]interface{}{
+		"allow": allow,
+		"deny":  deny,
+		"type":  0,
+	})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
+		c.apiBaseURL+"/channels/"+channelID+"/permissions/"+guildID,
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bot "+c.botToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("set channel permissions failed: status %d body %s", resp.StatusCode, string(raw))
+	}
+	return nil
+}
+
+// VoiceState represents a single Discord guild voice-state entry.
+type VoiceState struct {
+	UserID    string `json:"user_id"`
+	ChannelID string `json:"channel_id"`
+}
+
+// GetGuildVoiceStates returns all voice states for a guild.
+// Filters out entries where ChannelID is empty (members who just disconnected).
+func (c *BotClient) GetGuildVoiceStates(ctx context.Context, guildID string) ([]VoiceState, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.apiBaseURL+"/guilds/"+guildID+"/voice-states",
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bot "+c.botToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("get voice states failed: status %d body %s", resp.StatusCode, string(raw))
+	}
+	var states []VoiceState
+	if err := json.Unmarshal(raw, &states); err != nil {
+		return nil, fmt.Errorf("parse voice states: %w", err)
+	}
+	return states, nil
+}
+
+// DeleteChannel permanently deletes a Discord channel.
+func (c *BotClient) DeleteChannel(ctx context.Context, channelID string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete,
+		c.apiBaseURL+"/channels/"+channelID,
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bot "+c.botToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("delete channel failed: status %d body %s", resp.StatusCode, string(raw))
+	}
+	return nil
+}

@@ -41,6 +41,8 @@ type eventDoc struct {
 	ReminderSentAt        *time.Time  `bson:"reminderSentAt,omitempty"`
 	StartedAt             *time.Time  `bson:"startedAt,omitempty"`
 	ClosedAt              *time.Time  `bson:"closedAt,omitempty"`
+	VoiceChannelID        string      `bson:"voiceChannelId,omitempty"`
+	VoiceMemberIDs        []string    `bson:"voiceMemberIds,omitempty"`
 	CreatedAt             time.Time   `bson:"createdAt"`
 	UpdatedAt             time.Time   `bson:"updatedAt"`
 }
@@ -96,6 +98,8 @@ func toEventDoc(event *Event) (*eventDoc, error) {
 		ReminderSentAt:        event.ReminderSentAt,
 		StartedAt:             event.StartedAt,
 		ClosedAt:              event.ClosedAt,
+		VoiceChannelID:        event.VoiceChannelID,
+		VoiceMemberIDs:        event.VoiceMemberIDs,
 		CreatedAt:             event.CreatedAt,
 		UpdatedAt:             event.UpdatedAt,
 	}, nil
@@ -134,6 +138,8 @@ func fromEventDoc(doc *eventDoc) (*Event, error) {
 		ReminderSentAt:        doc.ReminderSentAt,
 		StartedAt:             doc.StartedAt,
 		ClosedAt:              doc.ClosedAt,
+		VoiceChannelID:        doc.VoiceChannelID,
+		VoiceMemberIDs:        doc.VoiceMemberIDs,
 		CreatedAt:             doc.CreatedAt,
 		UpdatedAt:             doc.UpdatedAt,
 	}, nil
