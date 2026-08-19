@@ -64,6 +64,8 @@ type GuildEventConfig struct {
 	VoiceCategoryID string `bson:"voiceCategoryId" json:"voiceCategoryId"`
 	// LobbyChannelID is the voice channel members are moved back to after an event ends.
 	LobbyChannelID string `bson:"lobbyChannelId"  json:"lobbyChannelId"`
+	// LogsChannelID is the Discord channel where a copy of every submitted event log is posted.
+	LogsChannelID string `bson:"logsChannelId"   json:"logsChannelId"`
 }
 
 // Guild is the aggregate root for guild configuration and role hierarchy.

@@ -174,7 +174,7 @@ func CreateApp() (*echo.Echo, func() error, error) {
 	routes.RegisterRoot(e)
 	routes.RegisterHealth(e)
 	routes.RegisterAuth(e, userRepo, oauthClient, cfg.SecretKey)
-	routes.RegisterEventLogRoutes(e, eventsRepo, eventReportRepo, memberRepo, cfg.SecretKey)
+	routes.RegisterEventLogRoutes(e, eventsRepo, eventReportRepo, memberRepo, guildRepo, botClient, cfg.SecretKey)
 
 	// Protected routes: JWT middleware is enforced by the `protected` group.
 	// Add new authenticated endpoints here as new route files are created.
@@ -184,7 +184,15 @@ func CreateApp() (*echo.Echo, func() error, error) {
 	routes.RegisterMembersProtected(protected, memberRepo)
 	routes.RegisterNotificationsProtected(protected, guildRepo, memberRepo, botClient, eventsRepo)
 
+	// Start the hourly reminder scheduler. It aligns its first tick to the top of
+	// the next clock hour so reminders always fire on the hour boundary regardless
+	// of when the server was started. schedulerCancel is called in cleanup to stop
+	// the goroutine cleanly on shutdown.
+	schedulerCtx, schedulerCancel := context.WithCancel(context.Background())
+	routes.StartReminderScheduler(schedulerCtx, eventsRepo, botClient, e.Logger)
+
 	cleanup := func() error {
+		schedulerCancel()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		return db.CloseMongo(ctx, mongoClient)

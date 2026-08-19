@@ -39,6 +39,7 @@ type eventDoc struct {
 	Capacity              int         `bson:"capacity"`
 	CutoffAt              *time.Time  `bson:"cutoffAt,omitempty"`
 	ReminderSentAt        *time.Time  `bson:"reminderSentAt,omitempty"`
+	ModMailSentAt         *time.Time  `bson:"modMailSentAt,omitempty"`
 	StartedAt             *time.Time  `bson:"startedAt,omitempty"`
 	ClosedAt              *time.Time  `bson:"closedAt,omitempty"`
 	VoiceChannelID        string      `bson:"voiceChannelId,omitempty"`
@@ -96,6 +97,7 @@ func toEventDoc(event *Event) (*eventDoc, error) {
 		Capacity:              event.Capacity,
 		CutoffAt:              event.CutoffAt,
 		ReminderSentAt:        event.ReminderSentAt,
+		ModMailSentAt:         event.ModMailSentAt,
 		StartedAt:             event.StartedAt,
 		ClosedAt:              event.ClosedAt,
 		VoiceChannelID:        event.VoiceChannelID,
@@ -136,6 +138,7 @@ func fromEventDoc(doc *eventDoc) (*Event, error) {
 		Capacity:              doc.Capacity,
 		CutoffAt:              doc.CutoffAt,
 		ReminderSentAt:        doc.ReminderSentAt,
+		ModMailSentAt:         doc.ModMailSentAt,
 		StartedAt:             doc.StartedAt,
 		ClosedAt:              doc.ClosedAt,
 		VoiceChannelID:        doc.VoiceChannelID,
@@ -443,10 +446,11 @@ func (r *MongoEventRepository) RemoveDecline(ctx context.Context, eventID, disco
 
 func (r *MongoEventRepository) FindUpcomingSkirmishForReminders(ctx context.Context, now, cutoff time.Time) ([]Event, error) {
 	filter := bson.M{
-		"eventType":      bson.M{"$regex": "skirmish", "$options": "i"},
-		"scheduledAt":    bson.M{"$gt": now, "$lte": cutoff},
-		"reminderSentAt": nil,
-		"status":         bson.M{"$ne": EventStatusClosed},
+		"eventType":       bson.M{"$regex": "skirmish", "$options": "i"},
+		"scheduledAt":     bson.M{"$gt": now, "$lte": cutoff},
+		"reminderEnabled": true,
+		"reminderSentAt":  nil,
+		"status":          bson.M{"$ne": EventStatusClosed},
 	}
 	cursor, err := db.EventsCollection(r.database).Find(ctx, filter)
 	if err != nil {
@@ -474,6 +478,15 @@ func (r *MongoEventRepository) MarkReminderSent(ctx context.Context, eventID str
 		ctx,
 		bson.M{"_id": eventID},
 		bson.M{"$set": bson.M{"reminderSentAt": sentAt, "updatedAt": time.Now()}},
+	)
+	return err
+}
+
+func (r *MongoEventRepository) MarkModMailSent(ctx context.Context, eventID string, sentAt time.Time) error {
+	_, err := db.EventsCollection(r.database).UpdateOne(
+		ctx,
+		bson.M{"_id": eventID},
+		bson.M{"$set": bson.M{"modMailSentAt": sentAt, "updatedAt": time.Now()}},
 	)
 	return err
 }

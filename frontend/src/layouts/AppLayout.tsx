@@ -44,7 +44,12 @@ export const AppLayout = () => {
 
           {/* LEFT: App Title (desktop) */}
           <Box sx={{ display: { xs: "none", md: "flex" }, alignItems: "center" }}>
-            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            <Typography
+              variant="h6"
+              sx={{ fontWeight: 600, textDecoration: "none", color: "inherit" }}
+              component={Link}
+              to="/"
+            >
               GuildLogger2
             </Typography>
           </Box>
@@ -85,7 +90,12 @@ export const AppLayout = () => {
               justifyContent: "center",
             }}
           >
-            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            <Typography
+              variant="h6"
+              sx={{ fontWeight: 600, textDecoration: "none", color: "inherit" }}
+              component={Link}
+              to="/"
+            >
               GuildLogger2
             </Typography>
           </Box>

@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -78,6 +79,73 @@ func runAnniversaryNotificationsHandler(guildRepo repositories.GuildRepository, 
 			"members":  notified,
 			"failed":   failed,
 		})
+	}
+}
+
+// StartReminderScheduler launches a background goroutine that fires reminder DMs
+// once per hour, aligned to the top of the clock hour. If the server starts at
+// 12:50, the first fire is at 13:00; subsequent fires are at 14:00, 15:00, …
+// This ensures an 8 pm event is always caught at the 7 pm tick, not at 7:50.
+// ctx cancellation stops the goroutine cleanly on server shutdown.
+func StartReminderScheduler(ctx context.Context, eventRepo repositories.EventRepository, botClient *discord.BotClient, logger echo.Logger) {
+	go func() {
+		// Sleep until the top of the next clock hour.
+		now := time.Now()
+		nextHour := now.Truncate(time.Hour).Add(time.Hour)
+		initial := time.NewTimer(nextHour.Sub(now))
+		defer initial.Stop()
+		logger.Infof("reminder scheduler: first fire at %s", nextHour.Format("15:04:05 UTC"))
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-initial.C:
+		}
+
+		// Fire immediately at the top of the first hour, then every hour.
+		fireRemindersOnce(ctx, eventRepo, botClient, logger)
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				fireRemindersOnce(ctx, eventRepo, botClient, logger)
+			}
+		}
+	}()
+}
+
+// fireRemindersOnce runs one reminder pass: queries for Skirmish events in the
+// next hour and sends DMs to their MaybeIDs. Called by both the scheduler and
+// the manual HTTP trigger.
+func fireRemindersOnce(ctx context.Context, eventRepo repositories.EventRepository, botClient *discord.BotClient, logger echo.Logger) {
+	bgCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	now := time.Now().UTC()
+	events, err := eventRepo.FindUpcomingSkirmishForReminders(bgCtx, now, now.Add(time.Hour))
+	if err != nil {
+		logger.Errorf("reminder scheduler: query failed: %v", err)
+		return
+	}
+	for _, event := range events {
+		for _, discordID := range event.MaybeIDs {
+			msg := fmt.Sprintf(
+				"⏰ Reminder: The **%s** event starts <t:%d:R>! Don't forget to update your RSVP if your plans have changed.",
+				event.Title, event.ScheduledAt.Unix(),
+			)
+			if err := botClient.SendDMToUser(bgCtx, discordID, msg); err != nil {
+				logger.Errorf("reminder scheduler: DM to %s failed: %v", discordID, err)
+			}
+		}
+		if err := eventRepo.MarkReminderSent(bgCtx, event.ID, now); err != nil {
+			logger.Errorf("reminder scheduler: MarkReminderSent %s: %v", event.ID, err)
+		}
+	}
+	if len(events) > 0 {
+		logger.Infof("reminder scheduler: sent reminders for %d event(s)", len(events))
 	}
 }
 

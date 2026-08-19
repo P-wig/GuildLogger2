@@ -262,12 +262,14 @@ func buildRSVPButtons(eventID string, isQuick bool) []ActionRow {
 			Type: 2, Style: 2, Label: "❓  Maybe", CustomID: "event_maybe|" + eventID,
 		})
 	}
-	controlRow := ActionRow{
-		Type: 1,
-		Components: []Component{
-			{Type: 2, Style: 3, Label: "▶️  Start Event", CustomID: "ctrl_start|" + eventID},
-			{Type: 2, Style: 4, Label: "⏹️  End Event", CustomID: "ctrl_end|" + eventID},
-		},
+	controlButtons := []Component{
+		{Type: 2, Style: 3, Label: "▶️  Start Event", CustomID: "ctrl_start|" + eventID},
+		{Type: 2, Style: 4, Label: "⏹️  End Event", CustomID: "ctrl_end|" + eventID},
 	}
-	return []ActionRow{{Type: 1, Components: buttons}, controlRow}
+	if !isQuick {
+		controlButtons = append(controlButtons, Component{
+			Type: 2, Style: 2, Label: "📧  Boost Headcount", CustomID: "ctrl_modmail|" + eventID,
+		})
+	}
+	return []ActionRow{{Type: 1, Components: buttons}, {Type: 1, Components: controlButtons}}
 }

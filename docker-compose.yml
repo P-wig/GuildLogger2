@@ -27,6 +27,7 @@ services:
       - DISCORD_API_BASE_URL=${DISCORD_API_BASE_URL}
       - DISCORD_OAUTH_SCOPES=${DISCORD_OAUTH_SCOPES}
       - DISCORD_PUBLIC_KEY=${DISCORD_PUBLIC_KEY}
+      - APP_URL=${APP_URL}
     depends_on:
       - mongo
 

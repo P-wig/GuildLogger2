@@ -62,6 +62,7 @@ type Event struct {
 	VoiceMemberIDs        []string    `bson:"voiceMemberIds,omitempty"          json:"voiceMemberIds,omitempty"`
 	CutoffAt              *time.Time  `bson:"cutoffAt,omitempty"               json:"cutoffAt,omitempty"`
 	ReminderSentAt        *time.Time  `bson:"reminderSentAt,omitempty"         json:"reminderSentAt,omitempty"`
+	ModMailSentAt         *time.Time  `bson:"modMailSentAt,omitempty"          json:"modMailSentAt,omitempty"`
 	StartedAt             *time.Time  `bson:"startedAt,omitempty"              json:"startedAt,omitempty"`
 	ClosedAt              *time.Time  `bson:"closedAt,omitempty"               json:"closedAt,omitempty"`
 	CreatedAt             time.Time   `bson:"createdAt"                        json:"createdAt"`
@@ -127,6 +128,9 @@ type EventRepository interface {
 
 	// MarkReminderSent sets reminderSentAt on an event to record that reminders were dispatched.
 	MarkReminderSent(ctx context.Context, eventID string, sentAt time.Time) error
+
+	// MarkModMailSent sets modMailSentAt to prevent the host from triggering a second wave.
+	MarkModMailSent(ctx context.Context, eventID string, sentAt time.Time) error
 
 	EnsureIndexes(ctx context.Context) error
 }

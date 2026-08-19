@@ -684,19 +684,20 @@ func (h *InteractionHandler) handleModalSubmit(c echo.Context, i *Interaction) e
 			capturedCapacity = 99
 		}
 
-		// For quick events the announcement message is auto-generated and sent as message
-		// content (above the embed) so the @role ping actually fires.
+		// Build the announcement message content that appears above the embed.
+		// This must be plain text (not inside the embed) so the @role mention
+		// fires a push notification for both quick and non-quick event types.
+		epoch := capturedStart.Unix()
+		activeRoleID := guild.NotificationConfig.StatusRoles.ActiveRoleID
+		typeName := strings.ToLower(capturedType)
 		messageContent := ""
+		if activeRoleID != "" {
+			messageContent = fmt.Sprintf("<@&%s> <@%s> is hosting a %s at <t:%d:t> <t:%d:R>", activeRoleID, hostID, typeName, epoch, epoch)
+		} else {
+			messageContent = fmt.Sprintf("<@%s> is hosting a %s at <t:%d:t> <t:%d:R>", hostID, typeName, epoch, epoch)
+		}
 		if isQuick {
-			epoch := capturedStart.Unix()
-			activeRoleID := guild.NotificationConfig.StatusRoles.ActiveRoleID
-			typeName := strings.ToLower(capturedType)
-			if activeRoleID != "" {
-				messageContent = fmt.Sprintf("<@&%s> <@%s> is hosting a %s at <t:%d:t> <t:%d:R>", activeRoleID, hostID, typeName, epoch, epoch)
-			} else {
-				messageContent = fmt.Sprintf("<@%s> is hosting a %s at <t:%d:t> <t:%d:R>", hostID, typeName, epoch, epoch)
-			}
-			capturedDesc = "" // Quick events have no user-supplied description; message is in content
+			capturedDesc = "" // Quick events carry no user description; the message content is the announcement
 		}
 
 		event := &repositories.Event{
@@ -770,6 +771,8 @@ func (h *InteractionHandler) handleComponent(c echo.Context, i *Interaction) err
 		return h.handleCtrlStart(c, i, id)
 	} else if id, ok := strings.CutPrefix(i.Data.CustomID, "ctrl_end|"); ok {
 		return h.handleCtrlEnd(c, i, id)
+	} else if id, ok := strings.CutPrefix(i.Data.CustomID, "ctrl_modmail|"); ok {
+		return h.handleCtrlModMail(c, i, id)
 	} else {
 		return c.JSON(http.StatusOK, interactionResponse{Type: InteractionResponsePong})
 	}
@@ -841,6 +844,48 @@ func (h *InteractionHandler) handleComponent(c echo.Context, i *Interaction) err
 }
 
 // --- MESSAGE_COMPONENT: ctrl_start|{eventID} ---
+
+// collectVoiceChannelMembers returns the user IDs currently in channelID.
+// It first tries the guild-wide voice-states endpoint; if that returns an
+// error or no members in the target channel it falls back to querying each
+// candidate user individually (attendees + maybe-RSVPs).
+func (h *InteractionHandler) collectVoiceChannelMembers(
+	ctx context.Context,
+	guildID, channelID string,
+	candidates []string,
+	logger echo.Logger,
+) []string {
+	// Attempt bulk lookup.
+	states, err := h.botClient.GetGuildVoiceStates(ctx, guildID)
+	if err == nil {
+		var ids []string
+		for _, vs := range states {
+			if vs.ChannelID == channelID && vs.UserID != "" {
+				ids = append(ids, vs.UserID)
+			}
+		}
+		if len(ids) > 0 {
+			return ids
+		}
+		logger.Infof("collectVoiceChannelMembers: bulk endpoint returned 0 members in %s — falling back to per-user lookup", channelID)
+	} else {
+		logger.Errorf("collectVoiceChannelMembers: bulk endpoint error: %v — falling back to per-user lookup", err)
+	}
+
+	// Per-user fallback: check every candidate (attendees + maybe RSVPs).
+	var ids []string
+	for _, uid := range candidates {
+		vs, vsErr := h.botClient.GetUserVoiceState(ctx, guildID, uid)
+		if vsErr != nil {
+			logger.Errorf("collectVoiceChannelMembers: GetUserVoiceState %s: %v", uid, vsErr)
+			continue
+		}
+		if vs != nil && vs.ChannelID == channelID {
+			ids = append(ids, uid)
+		}
+	}
+	return ids
+}
 
 func (h *InteractionHandler) handleCtrlStart(c echo.Context, i *Interaction, eventID string) error {
 	discordID := interactionUserID(i)
@@ -941,22 +986,15 @@ func (h *InteractionHandler) handleCtrlEnd(c echo.Context, i *Interaction, event
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Failed to generate log link. Please try again."))
 	}
 
-	// Capture voice-channel members synchronously so the log form pre-fills correctly
-	// when the user opens the link immediately after clicking End.
+	// Snapshot who is actually in the voice channel right now.
+	// This snapshot drives both the pre-fill on the log form AND the lobby move.
 	if event.VoiceChannelID != "" {
-		voiceStates, vsErr := h.botClient.GetGuildVoiceStates(ctx, i.GuildID)
-		if vsErr == nil {
-			var ids []string
-			for _, vs := range voiceStates {
-				if vs.ChannelID == event.VoiceChannelID && vs.UserID != "" {
-					ids = append(ids, vs.UserID)
-				}
-			}
-			if len(ids) > 0 {
-				event.VoiceMemberIDs = ids
-				event.UpdatedAt = time.Now()
-				_ = h.eventRepo.Update(ctx, event.ID, event)
-			}
+		candidates := append(event.AttendingIDs, event.MaybeIDs...)
+		ids := h.collectVoiceChannelMembers(ctx, i.GuildID, event.VoiceChannelID, candidates, c.Logger())
+		if len(ids) > 0 {
+			event.VoiceMemberIDs = ids
+			event.UpdatedAt = time.Now()
+			_ = h.eventRepo.Update(ctx, event.ID, event)
 		}
 	}
 
@@ -971,6 +1009,7 @@ func (h *InteractionHandler) handleCtrlEnd(c echo.Context, i *Interaction, event
 		defer cancel()
 
 		vcID := capturedVoiceChannelID
+		memberIDs := capturedVoiceMemberIDs
 		if vcID == "" {
 			// Race condition: the ctrl_start goroutine may still be writing the
 			// VoiceChannelID to the DB. Re-fetch once to pick it up.
@@ -980,6 +1019,9 @@ func (h *InteractionHandler) handleCtrlEnd(c echo.Context, i *Interaction, event
 				return
 			}
 			vcID = ev.VoiceChannelID
+			// VoiceMemberIDs was captured before we had a vcID — snapshot now.
+			candidates := append(ev.AttendingIDs, ev.MaybeIDs...)
+			memberIDs = h.collectVoiceChannelMembers(bgCtx, capturedGuildID, vcID, candidates, bgLogger)
 		}
 
 		if err := h.botClient.SetVoiceChannelLock(bgCtx, vcID, capturedGuildID, true); err != nil {
@@ -991,7 +1033,7 @@ func (h *InteractionHandler) handleCtrlEnd(c echo.Context, i *Interaction, event
 			lobbyID = guild.EventConfig.LobbyChannelID
 		}
 		if lobbyID != "" {
-			for _, uid := range capturedVoiceMemberIDs {
+			for _, uid := range memberIDs {
 				if err := h.botClient.MoveGuildMember(bgCtx, capturedGuildID, uid, lobbyID); err != nil {
 					bgLogger.Errorf("ctrl_end cleanup: MoveGuildMember %s: %v", uid, err)
 				}
@@ -1030,6 +1072,78 @@ func memberDisplayName(m *InteractionMember) string {
 		return m.Nick
 	}
 	return "event"
+}
+
+// --- MESSAGE_COMPONENT: ctrl_modmail|{eventID} ---
+
+func (h *InteractionHandler) handleCtrlModMail(c echo.Context, i *Interaction, eventID string) error {
+	discordID := interactionUserID(i)
+	ctx := c.Request().Context()
+
+	event, err := h.eventRepo.FindByID(ctx, eventID)
+	if err != nil || event == nil || event.GuildID != i.GuildID {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Event not found."))
+	}
+	if event.HostDiscordID != discordID {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Only the event host can send the headcount boost."))
+	}
+	if event.Status == repositories.EventStatusClosed {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ This event is already closed."))
+	}
+	if event.ModMailSentAt != nil {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ The headcount boost has already been sent for this event."))
+	}
+
+	// Mark as sent BEFORE dispatching to prevent a second trigger from a rapid double-click.
+	now := time.Now()
+	if err := h.eventRepo.MarkModMailSent(ctx, eventID, now); err != nil {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Could not lock headcount boost. Please try again."))
+	}
+
+	// Dispatch DMs in the background so we stay within Discord's 3-second response window.
+	capturedEvent := event
+	capturedGuildID := i.GuildID
+	bgLogger := c.Logger()
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		allMembers, err := h.memberRepo.FindByGuildID(bgCtx, capturedGuildID)
+		if err != nil {
+			bgLogger.Errorf("ctrl_modmail: load members %s: %v", capturedGuildID, err)
+			return
+		}
+
+		responded := make(map[string]bool)
+		for _, id := range capturedEvent.AttendingIDs {
+			responded[id] = true
+		}
+		for _, id := range capturedEvent.MaybeIDs {
+			responded[id] = true
+		}
+		for _, id := range capturedEvent.NotAttendingIDs {
+			responded[id] = true
+		}
+
+		msg := fmt.Sprintf(
+			"📢 Hey! The **%s** event needs your RSVP. Head to the event channel and let us know if you're Attending, Not Attending, or Maybe!",
+			capturedEvent.Title,
+		)
+
+		sent := 0
+		for _, m := range allMembers {
+			if m.Status == repositories.MemberStatusActive && !responded[m.DiscordID] && !m.NotificationsOptOut {
+				if err := h.botClient.SendDMToUser(bgCtx, m.DiscordID, msg); err != nil {
+					bgLogger.Errorf("ctrl_modmail: DM to %s: %v", m.DiscordID, err)
+				} else {
+					sent++
+				}
+			}
+		}
+		bgLogger.Infof("ctrl_modmail: sent %d headcount boost DMs for event %s", sent, capturedEvent.ID)
+	}()
+
+	return c.JSON(http.StatusOK, ephemeralMsg("📧 Headcount boost DMs are being sent to non-responding active members."))
 }
 
 // memberChannelName builds a Discord voice channel name from a host display name

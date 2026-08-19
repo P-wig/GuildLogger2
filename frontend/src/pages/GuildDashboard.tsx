@@ -52,6 +52,7 @@ type ConfigSavedUpdates = {
   eventTypes: { name: string; channelId: string; isQuickEvent: boolean }[];
   voiceCategoryId: string;
   lobbyChannelId: string;
+  logsChannelId: string;
 };
 
 const ConfigDialog = ({
@@ -78,6 +79,7 @@ const ConfigDialog = ({
   const [cfgNewEventTypeChannelId, setCfgNewEventTypeChannelId] = useState("");
   const [cfgVoiceCategoryId, setCfgVoiceCategoryId] = useState("");
   const [cfgLobbyChannelId, setCfgLobbyChannelId] = useState("");
+  const [cfgLogsChannelId, setCfgLogsChannelId] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -91,6 +93,7 @@ const ConfigDialog = ({
     setCfgEventTypes(guild.eventConfig?.eventTypes ?? []);
     setCfgVoiceCategoryId(guild.eventConfig?.voiceCategoryId ?? "");
     setCfgLobbyChannelId(guild.eventConfig?.lobbyChannelId ?? "");
+    setCfgLogsChannelId(guild.eventConfig?.logsChannelId ?? "");
     setCfgNewEventTypeName("");
     setCfgNewEventTypeChannelId("");
     setError(null);
@@ -112,6 +115,7 @@ const ConfigDialog = ({
           eventTypes: cfgEventTypes,
           voiceCategoryId: cfgVoiceCategoryId,
           lobbyChannelId: cfgLobbyChannelId,
+          logsChannelId: cfgLogsChannelId,
         }),
       ]);
       onSaved({
@@ -122,6 +126,7 @@ const ConfigDialog = ({
         eventTypes: cfgEventTypes,
         voiceCategoryId: cfgVoiceCategoryId,
         lobbyChannelId: cfgLobbyChannelId,
+        logsChannelId: cfgLogsChannelId,
       });
       onClose();
     } catch (err) {
@@ -378,6 +383,25 @@ const ConfigDialog = ({
                 onChange={(e) => setCfgLobbyChannelId(e.target.value)}
               />
             </Stack>
+          </Box>
+
+          {/* Logs channel */}
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>
+              Event Logs Channel
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+              Discord text channel where a copy of each submitted event log is posted as an embed.
+              Right-click the channel in Discord (Developer Mode) and copy the channel ID.
+            </Typography>
+            <TextField
+              label="Logs Channel ID"
+              placeholder="Text channel ID for event log embeds"
+              size="small"
+              fullWidth
+              value={cfgLogsChannelId}
+              onChange={(e) => setCfgLogsChannelId(e.target.value)}
+            />
           </Box>
 
           {error && <Alert severity="error">{error}</Alert>}
@@ -1416,6 +1440,7 @@ export const GuildDashboard = () => {
                       eventTypes: updates.eventTypes,
                       voiceCategoryId: updates.voiceCategoryId,
                       lobbyChannelId: updates.lobbyChannelId,
+                      logsChannelId: updates.logsChannelId,
                     },
                   },
                 }

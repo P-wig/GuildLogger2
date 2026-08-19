@@ -583,6 +583,37 @@ func (c *BotClient) GetGuildVoiceStates(ctx context.Context, guildID string) ([]
 	return states, nil
 }
 
+// GetUserVoiceState returns the current voice state for a single guild member.
+// Returns nil, nil when the user is not in any voice channel (Discord 404).
+func (c *BotClient) GetUserVoiceState(ctx context.Context, guildID, userID string) (*VoiceState, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.apiBaseURL+"/guilds/"+guildID+"/voice-states/"+userID,
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bot "+c.botToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil // user not in a voice channel
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("get user voice state: status %d body %s", resp.StatusCode, string(raw))
+	}
+	var vs VoiceState
+	if err := json.Unmarshal(raw, &vs); err != nil {
+		return nil, fmt.Errorf("parse user voice state: %w", err)
+	}
+	return &vs, nil
+}
+
 // DeleteChannel permanently deletes a Discord channel.
 func (c *BotClient) DeleteChannel(ctx context.Context, channelID string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete,
