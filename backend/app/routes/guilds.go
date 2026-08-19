@@ -62,6 +62,8 @@ func RegisterGuildsProtected(
 	g.POST("/guilds/:guildId/event-logs", createGuildEventLogHandler(guildRepo, memberRepo, eventReportRepo))
 	g.PUT("/guilds/:guildId/event-logs/:logId", updateGuildEventLogHandler(guildRepo, memberRepo, eventReportRepo))
 	g.DELETE("/guilds/:guildId/event-logs/:logId", deleteGuildEventLogHandler(guildRepo, memberRepo, eventReportRepo))
+	g.GET("/guilds/:guildId/active-events", listGuildActiveEventsHandler(guildRepo, memberRepo, eventRepo))
+	g.DELETE("/guilds/:guildId/active-events/:eventId", deleteGuildActiveEventHandler(guildRepo, memberRepo, eventRepo))
 }
 
 func listGuildsHandler(guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository) echo.HandlerFunc {
@@ -865,8 +867,14 @@ func updateEventConfigHandler(guildRepo repositories.GuildRepository) echo.Handl
 			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "guildId is required"})
 		}
 		var in struct {
-			EventsChannelID string   `json:"eventsChannelId"`
-			EventTypes      []string `json:"eventTypes"`
+			EventTypes []struct {
+				Name         string `json:"name"`
+				ChannelID    string `json:"channelId"`
+				IsQuickEvent bool   `json:"isQuickEvent"`
+			} `json:"eventTypes"`
+			VoiceCategoryID string `json:"voiceCategoryId"`
+			LobbyChannelID  string `json:"lobbyChannelId"`
+			LogsChannelID   string `json:"logsChannelId"`
 		}
 		if err := c.Bind(&in); err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "invalid request body"})
@@ -882,15 +890,22 @@ func updateEventConfigHandler(guildRepo repositories.GuildRepository) echo.Handl
 		if guild.OwnerDiscordID != claims.DiscordID {
 			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "you do not own this guild"})
 		}
-		cleanTypes := make([]string, 0, len(in.EventTypes))
+		cleanTypes := make([]repositories.GuildEventTypeConfig, 0, len(in.EventTypes))
 		for _, t := range in.EventTypes {
-			if t = strings.TrimSpace(t); t != "" {
-				cleanTypes = append(cleanTypes, t)
+			name := strings.TrimSpace(t.Name)
+			if name != "" {
+				cleanTypes = append(cleanTypes, repositories.GuildEventTypeConfig{
+					Name:         name,
+					ChannelID:    strings.TrimSpace(t.ChannelID),
+					IsQuickEvent: t.IsQuickEvent,
+				})
 			}
 		}
 		cfg := repositories.GuildEventConfig{
-			EventsChannelID: strings.TrimSpace(in.EventsChannelID),
 			EventTypes:      cleanTypes,
+			VoiceCategoryID: strings.TrimSpace(in.VoiceCategoryID),
+			LobbyChannelID:  strings.TrimSpace(in.LobbyChannelID),
+			LogsChannelID:   strings.TrimSpace(in.LogsChannelID),
 		}
 		if err := guildRepo.UpdateEventConfig(ctx, guildID, cfg); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to save event config"})
@@ -1236,6 +1251,77 @@ func deleteGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to delete event log"})
 		}
 
+		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true})
+	}
+}
+
+func listGuildActiveEventsHandler(guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository, eventRepo repositories.EventRepository) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		claims, ok := c.Get("user").(*session.Claims)
+		if !ok || claims == nil {
+			return c.JSON(http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "missing session"})
+		}
+		guildID := strings.TrimSpace(c.Param("guildId"))
+		if guildID == "" {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "guildId is required"})
+		}
+		ctx := c.Request().Context()
+		guild, err := guildRepo.FindByGuildID(ctx, guildID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
+		}
+		if guild == nil {
+			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "guild not found"})
+		}
+		if getGuildMemberTier(ctx, memberRepo, guildID, guild, claims.DiscordID) < tierModerator {
+			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "access denied: moderator role required"})
+		}
+		all, err := eventRepo.FindByGuildID(ctx, guildID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
+		}
+		active := make([]repositories.Event, 0)
+		for _, e := range all {
+			if e.Status == repositories.EventStatusOpen || e.Status == repositories.EventStatusActive {
+				active = append(active, e)
+			}
+		}
+		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true, "events": active})
+	}
+}
+
+func deleteGuildActiveEventHandler(guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository, eventRepo repositories.EventRepository) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		claims, ok := c.Get("user").(*session.Claims)
+		if !ok || claims == nil {
+			return c.JSON(http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "missing session"})
+		}
+		guildID := strings.TrimSpace(c.Param("guildId"))
+		eventID := strings.TrimSpace(c.Param("eventId"))
+		if guildID == "" || eventID == "" {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "guildId and eventId are required"})
+		}
+		ctx := c.Request().Context()
+		guild, err := guildRepo.FindByGuildID(ctx, guildID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
+		}
+		if guild == nil {
+			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "guild not found"})
+		}
+		if getGuildMemberTier(ctx, memberRepo, guildID, guild, claims.DiscordID) < tierModerator {
+			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "access denied: moderator role required"})
+		}
+		event, err := eventRepo.FindByID(ctx, eventID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
+		}
+		if event == nil || event.GuildID != guildID {
+			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "event not found"})
+		}
+		if err := eventRepo.Delete(ctx, eventID); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to delete event"})
+		}
 		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true})
 	}
 }

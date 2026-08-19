@@ -8,6 +8,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	gommonlog "github.com/labstack/gommon/log"
 
 	"github.com/P-wig/GuildLogger2/backend/app/config"
 	"github.com/P-wig/GuildLogger2/backend/app/db"
@@ -59,6 +60,7 @@ func CreateApp() (*echo.Echo, func() error, error) {
 	}
 
 	e := echo.New()
+	e.Logger.SetLevel(gommonlog.INFO)
 
 	e.Use(middleware.Recover())
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
@@ -160,7 +162,7 @@ func CreateApp() (*echo.Echo, func() error, error) {
 	// Register Discord interaction webhook.
 	// POST /api/interactions handles slash command responses, modal submits, and button clicks.
 	// Authenticated via Ed25519 signature (not JWT) — must be registered before the JWT group.
-	interactionHandler := discord.NewInteractionHandler(guildRepo, eventsRepo, botClient, cfg.DiscordPublicKey)
+	interactionHandler := discord.NewInteractionHandler(guildRepo, memberRepo, eventsRepo, eventReportRepo, botClient, cfg.DiscordPublicKey, cfg.SecretKey, cfg.AppURL)
 	routes.RegisterInteractions(e, interactionHandler)
 
 	// jwtMiddleware guards any route group that requires an authenticated session.
@@ -172,16 +174,25 @@ func CreateApp() (*echo.Echo, func() error, error) {
 	routes.RegisterRoot(e)
 	routes.RegisterHealth(e)
 	routes.RegisterAuth(e, userRepo, oauthClient, cfg.SecretKey)
+	routes.RegisterEventLogRoutes(e, eventsRepo, eventReportRepo, memberRepo, guildRepo, botClient, cfg.SecretKey)
 
 	// Protected routes: JWT middleware is enforced by the `protected` group.
 	// Add new authenticated endpoints here as new route files are created.
 	routes.RegisterAuthProtected(protected, userRepo)
 	routes.RegisterGuildsProtected(protected, guildRepo, memberRepo, eventsRepo, eventReportRepo, userRepo, oauthClient, botClient)
-	routes.RegisterEventsProtected(protected, eventsRepo, eventReportRepo)
+	routes.RegisterEventsProtected(protected, eventsRepo, eventReportRepo, guildRepo, memberRepo, botClient)
 	routes.RegisterMembersProtected(protected, memberRepo)
-	routes.RegisterNotificationsProtected(protected, guildRepo, memberRepo, botClient)
+	routes.RegisterNotificationsProtected(protected, guildRepo, memberRepo, botClient, eventsRepo)
+
+	// Start the hourly reminder scheduler. It aligns its first tick to the top of
+	// the next clock hour so reminders always fire on the hour boundary regardless
+	// of when the server was started. schedulerCancel is called in cleanup to stop
+	// the goroutine cleanly on shutdown.
+	schedulerCtx, schedulerCancel := context.WithCancel(context.Background())
+	routes.StartReminderScheduler(schedulerCtx, eventsRepo, botClient, e.Logger)
 
 	cleanup := func() error {
+		schedulerCancel()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		return db.CloseMongo(ctx, mongoClient)

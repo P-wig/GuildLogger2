@@ -57,25 +57,6 @@ type ApplicationCommand struct {
 // command here and restarting the backend is the only step required.
 var BotCommands = []ApplicationCommand{
 	{
-		Name:        "log",
-		Description: "Log a completed event for this guild",
-		Type:        CommandTypeChatInput,
-		Options: []ApplicationCommandOption{
-			{
-				Type:        OptionTypeString,
-				Name:        "summary",
-				Description: "A brief summary of what happened at the event",
-				Required:    true,
-			},
-			{
-				Type:        OptionTypeString,
-				Name:        "date",
-				Description: "Date the event took place (YYYY-MM-DD)",
-				Required:    true,
-			},
-		},
-	},
-	{
 		Name:        "stats",
 		Description: "View event participation stats for yourself or another member",
 		Type:        CommandTypeChatInput,
@@ -99,21 +80,34 @@ var BotCommands = []ApplicationCommand{
 		Type:        CommandTypeChatInput,
 	},
 	{
-		Name:        "start",
-		Description: "Start a new guild event and post an RSVP announcement",
+		Name:        "event",
+		Description: "Manage guild events",
 		Type:        CommandTypeChatInput,
 		Options: []ApplicationCommandOption{
 			{
 				Type:        OptionTypeSubCommand,
-				Name:        "event",
-				Description: "Post an event RSVP announcement to the configured events channel",
+				Name:        "create",
+				Description: "Create a new event and post an RSVP announcement to the events channel",
 				Options: []ApplicationCommandOption{
 					{
 						Type:         OptionTypeString,
 						Name:         "eventtype",
-						Description:  "The type of event to start (configured in the GuildLogger dashboard)",
+						Description:  "The type of event (configured in the GuildLogger dashboard)",
 						Required:     true,
 						Autocomplete: true,
+					},
+				},
+			},
+			{
+				Type:        OptionTypeSubCommand,
+				Name:        "log",
+				Description: "Log a completed event and create a permanent record",
+				Options: []ApplicationCommandOption{
+					{
+						Type:        OptionTypeString,
+						Name:        "eventid",
+						Description: "The ID of the event to log",
+						Required:    true,
 					},
 				},
 			},

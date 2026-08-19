@@ -20,9 +20,17 @@ FRONTEND_LOG="/tmp/frontend.log"
  echo -e "${BLUE}═══════════════════════════════════════${NC}"
  echo ""
 
+NGROK_LOG="/tmp/ngrok.log"
+TUNNEL_PID=""
+TUNNEL_URL=""
+
 # Function to cleanup background processes on exit
 cleanup() {
     echo -e "\n${YELLOW}Shutting down services...${NC}"
+    if [ ! -z "$TUNNEL_PID" ]; then
+        kill $TUNNEL_PID 2>/dev/null
+        echo -e "${GREEN}Tunnel stopped${NC}"
+    fi
     if [ ! -z "$FRONTEND_PID" ]; then
         kill $FRONTEND_PID 2>/dev/null
         echo -e "${GREEN}Frontend stopped${NC}"
@@ -63,7 +71,12 @@ if [ ${#MISSING[@]} -ne 0 ]; then
     exit 1
  fi
  
-if ! docker compose --project-directory "$REPO_ROOT" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build --force-recreate mongo backend > "$BACKEND_LOG" 2>&1; then
+if ! docker compose --project-directory "$REPO_ROOT" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build --no-cache backend >> "$BACKEND_LOG" 2>&1; then
+    echo -e "${RED}Backend image build failed. Reading $BACKEND_LOG...${NC}"
+    cat "$BACKEND_LOG"
+    exit 1
+fi
+if ! docker compose --project-directory "$REPO_ROOT" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --force-recreate mongo backend > "$BACKEND_LOG" 2>&1; then
     echo -e "${RED}Backend failed to start. Reading $BACKEND_LOG...${NC}"
     cat "$BACKEND_LOG"
     echo -e "${BLUE}Container logs:${NC}"
@@ -91,6 +104,53 @@ if ! docker compose --project-directory "$REPO_ROOT" --env-file "$ENV_FILE" -f "
  fi
  
  echo -e "${GREEN}Backend is healthy${NC}"
+ echo ""
+
+ # Start ngrok tunnel for Discord interaction webhooks.
+ # For a persistent URL (no portal update needed on each restart), set NGROK_DOMAIN
+ # in backend/.env to your free static ngrok domain, e.g.:
+ #   NGROK_DOMAIN=your-name.ngrok-free.app
+ echo -e "${GREEN}⛅ Starting ngrok tunnel...${NC}"
+
+ if command -v ngrok >/dev/null 2>&1; then
+     if [ -n "$NGROK_DOMAIN" ]; then
+         NGROK_DOMAIN="$(printf '%s' "$NGROK_DOMAIN" | tr -d '\r')"
+         ngrok http http://localhost:5001 --url="$NGROK_DOMAIN" > "$NGROK_LOG" 2>&1 &
+         TUNNEL_PID=$!
+         TUNNEL_URL="https://$NGROK_DOMAIN"
+         for i in $(seq 1 15); do
+             if curl -s http://localhost:4040/api/tunnels 2>/dev/null | grep -q "$NGROK_DOMAIN"; then
+                 break
+             fi
+             sleep 1
+         done
+         if curl -s http://localhost:4040/api/tunnels 2>/dev/null | grep -q "$NGROK_DOMAIN"; then
+             echo -e "${GREEN}✓ ngrok tunnel active: $TUNNEL_URL${NC}"
+         else
+             echo -e "${YELLOW}⚠ ngrok tunnel did not bind static domain. Check /tmp/ngrok.log${NC}"
+             cat "$NGROK_LOG"
+         fi
+     else
+         ngrok http http://localhost:5001 > "$NGROK_LOG" 2>&1 &
+         TUNNEL_PID=$!
+         for i in $(seq 1 15); do
+             TUNNEL_URL=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null \
+                 | grep -o '"public_url":"https://[^"]*"' | head -1 \
+                 | sed 's/"public_url":"//;s/"$//')
+             [ -n "$TUNNEL_URL" ] && break
+             sleep 1
+         done
+         if [ -n "$TUNNEL_URL" ]; then
+             echo -e "${GREEN}✓ ngrok tunnel active: $TUNNEL_URL${NC}"
+         else
+             echo -e "${YELLOW}⚠ ngrok did not produce a URL — slash commands unavailable.${NC}"
+             cat "$NGROK_LOG"
+         fi
+     fi
+ else
+     echo -e "${YELLOW}⚠ ngrok not found — slash commands will be unavailable.${NC}"
+     echo -e "${YELLOW}  Install ngrok: https://ngrok.com/download${NC}"
+ fi
  echo ""
 
  # Start frontend server
@@ -139,9 +199,13 @@ fi
  echo -e "${BLUE}═══════════════════════════════════════${NC}"
  echo ""
  echo -e "${CYAN}🌐 Application URLs:${NC}"
- echo -e "${YELLOW}Frontend:${NC} http://127.0.0.1:5173"
- echo -e "${YELLOW}Backend:${NC}  http://127.0.0.1:5001"
+ echo -e "${YELLOW}Frontend:${NC}   http://127.0.0.1:5173"
+ echo -e "${YELLOW}Backend:${NC}    http://127.0.0.1:5001"
  echo -e "${YELLOW}API Health:${NC} http://127.0.0.1:5001/api/health"
+ if [ -n "$TUNNEL_URL" ]; then
+     echo -e "${YELLOW}Interactions:${NC} ${TUNNEL_URL}/api/interactions"
+     echo -e "${CYAN}  ↑ Paste into Discord Developer Portal → General Information → Interactions Endpoint URL${NC}"
+ fi
  echo ""
  echo -e "${CYAN}📋 Logs:${NC}"
  echo -e "${YELLOW}Backend logs:${NC}  tail -f /tmp/backend.log"

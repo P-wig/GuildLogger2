@@ -29,6 +29,9 @@ import InputAdornment from "@mui/material/InputAdornment";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
+import Switch from "@mui/material/Switch";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import DeleteIcon from "@mui/icons-material/Delete";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import InfoIcon from "@mui/icons-material/Info";
@@ -46,8 +49,10 @@ type ConfigSavedUpdates = {
   inactiveRoleId: string;
   moderatorRoleIds: string[];
   rankedRoleIds: string[];
-  eventsChannelId: string;
-  eventTypes: string[];
+  eventTypes: { name: string; channelId: string; isQuickEvent: boolean }[];
+  voiceCategoryId: string;
+  lobbyChannelId: string;
+  logsChannelId: string;
 };
 
 const ConfigDialog = ({
@@ -69,9 +74,12 @@ const ConfigDialog = ({
   const [cfgInactiveRoleId, setCfgInactiveRoleId] = useState("");
   const [cfgRankedRoleIds, setCfgRankedRoleIds] = useState<string[]>([]);
   const [cfgModeratorRoleIds, setCfgModeratorRoleIds] = useState<string[]>([]);
-  const [cfgEventsChannelId, setCfgEventsChannelId] = useState("");
-  const [cfgEventTypes, setCfgEventTypes] = useState<string[]>([]);
-  const [cfgNewEventType, setCfgNewEventType] = useState("");
+  const [cfgEventTypes, setCfgEventTypes] = useState<{ name: string; channelId: string; isQuickEvent: boolean }[]>([]);
+  const [cfgNewEventTypeName, setCfgNewEventTypeName] = useState("");
+  const [cfgNewEventTypeChannelId, setCfgNewEventTypeChannelId] = useState("");
+  const [cfgVoiceCategoryId, setCfgVoiceCategoryId] = useState("");
+  const [cfgLobbyChannelId, setCfgLobbyChannelId] = useState("");
+  const [cfgLogsChannelId, setCfgLogsChannelId] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,9 +90,12 @@ const ConfigDialog = ({
     setCfgInactiveRoleId(guild.notificationConfig?.statusRoles?.inactiveRoleId ?? "");
     setCfgRankedRoleIds(guild.roles?.filter((r) => r.type === "ranked").map((r) => r.discordRoleId) ?? []);
     setCfgModeratorRoleIds(guild.notificationConfig?.statusRoles?.moderatorRoleIds ?? []);
-    setCfgEventsChannelId(guild.eventConfig?.eventsChannelId ?? "");
     setCfgEventTypes(guild.eventConfig?.eventTypes ?? []);
-    setCfgNewEventType("");
+    setCfgVoiceCategoryId(guild.eventConfig?.voiceCategoryId ?? "");
+    setCfgLobbyChannelId(guild.eventConfig?.lobbyChannelId ?? "");
+    setCfgLogsChannelId(guild.eventConfig?.logsChannelId ?? "");
+    setCfgNewEventTypeName("");
+    setCfgNewEventTypeChannelId("");
     setError(null);
   }, [open, guild]);
 
@@ -101,8 +112,10 @@ const ConfigDialog = ({
           moderatorRoleIds: cfgModeratorRoleIds,
         }),
         guildsApi.updateEventConfig(guildId, {
-          eventsChannelId: cfgEventsChannelId,
           eventTypes: cfgEventTypes,
+          voiceCategoryId: cfgVoiceCategoryId,
+          lobbyChannelId: cfgLobbyChannelId,
+          logsChannelId: cfgLogsChannelId,
         }),
       ]);
       onSaved({
@@ -110,8 +123,10 @@ const ConfigDialog = ({
         inactiveRoleId: cfgInactiveRoleId,
         moderatorRoleIds: cfgModeratorRoleIds,
         rankedRoleIds: cfgRankedRoleIds,
-        eventsChannelId: cfgEventsChannelId,
         eventTypes: cfgEventTypes,
+        voiceCategoryId: cfgVoiceCategoryId,
+        lobbyChannelId: cfgLobbyChannelId,
+        logsChannelId: cfgLogsChannelId,
       });
       onClose();
     } catch (err) {
@@ -239,65 +254,154 @@ const ConfigDialog = ({
             )}
           </Box>
 
-          {/* Events Channel */}
-          <Box>
-            <Typography variant="subtitle2" gutterBottom>Events Channel</Typography>
-            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-              Discord channel ID where the bot posts event RSVP announcements. Right-click the channel → Copy Channel ID.
-            </Typography>
-            <TextField
-              size="small"
-              fullWidth
-              value={cfgEventsChannelId}
-              onChange={(e) => setCfgEventsChannelId(e.target.value)}
-              placeholder="e.g. 1234567890123456789"
-            />
-          </Box>
-
           {/* Event Types */}
           <Box>
             <Typography variant="subtitle2" gutterBottom>Event Types</Typography>
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-              Types available in the /start event slash command. Press Enter or click Add.
+              Each type maps to a Discord channel for announcements. Right-click a channel → Copy Channel ID.
             </Typography>
-            <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
-              <TextField
-                size="small"
-                value={cfgNewEventType}
-                onChange={(e) => setCfgNewEventType(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && cfgNewEventType.trim() && !cfgEventTypes.includes(cfgNewEventType.trim())) {
-                    setCfgEventTypes((prev) => [...prev, cfgNewEventType.trim()]);
-                    setCfgNewEventType("");
-                  }
-                }}
-                placeholder="e.g. Raid Night"
-                sx={{ flex: 1 }}
-              />
-              <Button
-                size="small"
-                variant="outlined"
-                disabled={!cfgNewEventType.trim() || cfgEventTypes.includes(cfgNewEventType.trim())}
-                onClick={() => {
-                  setCfgEventTypes((prev) => [...prev, cfgNewEventType.trim()]);
-                  setCfgNewEventType("");
-                }}
-              >
-                Add
-              </Button>
-            </Stack>
-            {cfgEventTypes.length > 0 && (
-              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-                {cfgEventTypes.map((t) => (
-                  <Chip
-                    key={t}
-                    label={t}
+            <Stack spacing={1}>
+              {cfgEventTypes.map((et, idx) => (
+                <Stack key={idx} direction="row" spacing={1} alignItems="center">
+                  <TextField
                     size="small"
-                    onDelete={() => setCfgEventTypes((prev) => prev.filter((x) => x !== t))}
+                    label="Name"
+                    value={et.name}
+                    onChange={(e) =>
+                      setCfgEventTypes((prev) =>
+                        prev.map((x, i) => (i === idx ? { ...x, name: e.target.value } : x))
+                      )
+                    }
+                    sx={{ flex: 1 }}
                   />
-                ))}
-              </Box>
-            )}
+                  <TextField
+                    size="small"
+                    label="Channel ID"
+                    value={et.channelId}
+                    onChange={(e) =>
+                      setCfgEventTypes((prev) =>
+                        prev.map((x, i) => (i === idx ? { ...x, channelId: e.target.value } : x))
+                      )
+                    }
+                    placeholder="e.g. 1234567890123456789"
+                    sx={{ flex: 1 }}
+                  />
+                  <Tooltip title="Quick events show only a start time, auto-generate an @mention message, and have no Maybe button.">
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          size="small"
+                          checked={et.isQuickEvent}
+                          onChange={(e) =>
+                            setCfgEventTypes((prev) =>
+                              prev.map((x, i) => (i === idx ? { ...x, isQuickEvent: e.target.checked } : x))
+                            )
+                          }
+                        />
+                      }
+                      label={<Typography variant="caption">Quick</Typography>}
+                      sx={{ ml: 0, mr: 0 }}
+                    />
+                  </Tooltip>
+                  <IconButton
+                    size="small"
+                    onClick={() => setCfgEventTypes((prev) => prev.filter((_, i) => i !== idx))}
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Stack>
+              ))}
+              <Stack direction="row" spacing={1} alignItems="center">
+                <TextField
+                  size="small"
+                  label="Name"
+                  value={cfgNewEventTypeName}
+                  onChange={(e) => setCfgNewEventTypeName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && cfgNewEventTypeName.trim()) {
+                      setCfgEventTypes((prev) => [
+                        ...prev,
+                        { name: cfgNewEventTypeName.trim(), channelId: cfgNewEventTypeChannelId.trim(), isQuickEvent: false },
+                      ]);
+                      setCfgNewEventTypeName("");
+                      setCfgNewEventTypeChannelId("");
+                    }
+                  }}
+                  placeholder="e.g. Raid"
+                  sx={{ flex: 1 }}
+                />
+                <TextField
+                  size="small"
+                  label="Channel ID"
+                  value={cfgNewEventTypeChannelId}
+                  onChange={(e) => setCfgNewEventTypeChannelId(e.target.value)}
+                  placeholder="e.g. 1234567890123456789"
+                  sx={{ flex: 1 }}
+                />
+                <Button
+                  size="small"
+                  variant="outlined"
+                  disabled={!cfgNewEventTypeName.trim()}
+                  onClick={() => {
+                    setCfgEventTypes((prev) => [
+                      ...prev,
+                      { name: cfgNewEventTypeName.trim(), channelId: cfgNewEventTypeChannelId.trim(), isQuickEvent: false },
+                    ]);
+                    setCfgNewEventTypeName("");
+                    setCfgNewEventTypeChannelId("");
+                  }}
+                >
+                  Add
+                </Button>
+              </Stack>
+            </Stack>
+          </Box>
+
+          {/* Voice channel config */}
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>
+              Voice Channel Config
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+              Used by the bot to create private event voice channels. Find these IDs in Discord by enabling Developer Mode and right-clicking a category or channel.
+            </Typography>
+            <Stack spacing={2}>
+              <TextField
+                label="Voice Category ID"
+                placeholder="Discord category ID for event channels"
+                size="small"
+                fullWidth
+                value={cfgVoiceCategoryId}
+                onChange={(e) => setCfgVoiceCategoryId(e.target.value)}
+              />
+              <TextField
+                label="Lobby Channel ID"
+                placeholder="Voice channel members return to after the event"
+                size="small"
+                fullWidth
+                value={cfgLobbyChannelId}
+                onChange={(e) => setCfgLobbyChannelId(e.target.value)}
+              />
+            </Stack>
+          </Box>
+
+          {/* Logs channel */}
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>
+              Event Logs Channel
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+              Discord text channel where a copy of each submitted event log is posted as an embed.
+              Right-click the channel in Discord (Developer Mode) and copy the channel ID.
+            </Typography>
+            <TextField
+              label="Logs Channel ID"
+              placeholder="Text channel ID for event log embeds"
+              size="small"
+              fullWidth
+              value={cfgLogsChannelId}
+              onChange={(e) => setCfgLogsChannelId(e.target.value)}
+            />
           </Box>
 
           {error && <Alert severity="error">{error}</Alert>}
@@ -674,13 +778,21 @@ export const GuildDashboard = () => {
             <Typography variant="h6">{stats.totalEvents}</Typography>
           </CardContent>
         </Card>
-        <Card variant="outlined" sx={{ flex: 1, minWidth: 150 }}>
-          <CardContent>
-            <Typography color="text.secondary" variant="body2">
-              Active Events
-            </Typography>
-            <Typography variant="h6">{stats.liveEvents}</Typography>
-          </CardContent>
+        <Card
+          variant="outlined"
+          sx={{ flex: 1, minWidth: 150, cursor: "pointer" }}
+          component={RouterLink}
+          to={`/app/guilds/${guildId}/active-events`}
+        >
+          <CardActionArea sx={{ height: "100%" }}>
+            <CardContent>
+              <Typography color="text.secondary" variant="body2">
+                Active Events
+              </Typography>
+              <Typography variant="h6">{stats.liveEvents}</Typography>
+              <Typography variant="caption" color="primary">View →</Typography>
+            </CardContent>
+          </CardActionArea>
         </Card>
         <Card
           variant="outlined"
@@ -1325,8 +1437,10 @@ export const GuildDashboard = () => {
                       type: updates.rankedRoleIds.includes(r.discordRoleId) ? "ranked" : "default",
                     })),
                     eventConfig: {
-                      eventsChannelId: updates.eventsChannelId,
                       eventTypes: updates.eventTypes,
+                      voiceCategoryId: updates.voiceCategoryId,
+                      lobbyChannelId: updates.lobbyChannelId,
+                      logsChannelId: updates.logsChannelId,
                     },
                   },
                 }

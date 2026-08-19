@@ -50,10 +50,22 @@ type GuildNotificationConfig struct {
 	MilestoneNotifications GuildMilestoneNotificationConfig `bson:"milestoneNotifications" json:"milestoneNotifications"`
 }
 
-// GuildEventConfig defines the events channel and event-type list used by bot slash commands.
+// GuildEventTypeConfig pairs an event type name with the Discord channel where events of that type are announced.
+type GuildEventTypeConfig struct {
+	Name         string `bson:"name"         json:"name"`
+	ChannelID    string `bson:"channelId"    json:"channelId"`
+	IsQuickEvent bool   `bson:"isQuickEvent" json:"isQuickEvent"`
+}
+
+// GuildEventConfig defines the per-event-type channel mapping and event-type list used by bot slash commands.
 type GuildEventConfig struct {
-	EventsChannelID string   `bson:"eventsChannelId" json:"eventsChannelId"`
-	EventTypes      []string `bson:"eventTypes"      json:"eventTypes"`
+	EventTypes []GuildEventTypeConfig `bson:"eventTypes"      json:"eventTypes"`
+	// VoiceCategoryID is the Discord category under which event voice channels are created.
+	VoiceCategoryID string `bson:"voiceCategoryId" json:"voiceCategoryId"`
+	// LobbyChannelID is the voice channel members are moved back to after an event ends.
+	LobbyChannelID string `bson:"lobbyChannelId"  json:"lobbyChannelId"`
+	// LogsChannelID is the Discord channel where a copy of every submitted event log is posted.
+	LogsChannelID string `bson:"logsChannelId"   json:"logsChannelId"`
 }
 
 // Guild is the aggregate root for guild configuration and role hierarchy.
