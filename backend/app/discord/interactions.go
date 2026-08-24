@@ -249,27 +249,31 @@ func buildEventEmbed(eventType string, isQuick bool, description, hostID, eventI
 	}
 }
 
-// buildRSVPButtons returns the RSVP action row for an event embed.
-// Quick events get 2 buttons; large events get 3 (adds Maybe).
-// A second row with host-only Start/End controls is always appended.
-func buildRSVPButtons(eventID string, isQuick bool) []ActionRow {
+// buildRSVPButtons returns the component rows for an event embed.
+// status: "open" → only Start active; "active" → only End/Boost active;
+// "closed" → only Close Channel active; "done" → all disabled.
+func buildRSVPButtons(eventID string, isQuick bool, status string) []ActionRow {
+	rsvpOff := status == "closed" || status == "done"
 	buttons := []Component{
-		{Type: 2, Style: 3, Label: "✅  Attending", CustomID: "event_join|" + eventID},
-		{Type: 2, Style: 4, Label: "❌  Not Attending", CustomID: "event_decline|" + eventID},
+		{Type: 2, Style: 3, Label: "✅  Attending", CustomID: "event_join|" + eventID, Disabled: rsvpOff},
+		{Type: 2, Style: 4, Label: "❌  Not Attending", CustomID: "event_decline|" + eventID, Disabled: rsvpOff},
 	}
 	if !isQuick {
 		buttons = append(buttons, Component{
-			Type: 2, Style: 2, Label: "❓  Maybe", CustomID: "event_maybe|" + eventID,
+			Type: 2, Style: 2, Label: "❓  Maybe", CustomID: "event_maybe|" + eventID, Disabled: rsvpOff,
 		})
 	}
 	controlButtons := []Component{
-		{Type: 2, Style: 3, Label: "▶️  Start Event", CustomID: "ctrl_start|" + eventID},
-		{Type: 2, Style: 4, Label: "⏹️  End Event", CustomID: "ctrl_end|" + eventID},
+		{Type: 2, Style: 3, Label: "▶️  Start Event", CustomID: "ctrl_start|" + eventID, Disabled: status != "open"},
+		{Type: 2, Style: 4, Label: "⏹️  End Event", CustomID: "ctrl_end|" + eventID, Disabled: status != "active"},
 	}
 	if !isQuick {
 		controlButtons = append(controlButtons, Component{
-			Type: 2, Style: 2, Label: "📧  Boost Headcount", CustomID: "ctrl_modmail|" + eventID,
+			Type: 2, Style: 2, Label: "📧  Mail", CustomID: "ctrl_modmail|" + eventID, Disabled: status == "done",
 		})
 	}
+	controlButtons = append(controlButtons, Component{
+		Type: 2, Style: 2, Label: "🔒  Close Channel", CustomID: "ctrl_close_channel|" + eventID, Disabled: status != "closed",
+	})
 	return []ActionRow{{Type: 1, Components: buttons}, {Type: 1, Components: controlButtons}}
 }
