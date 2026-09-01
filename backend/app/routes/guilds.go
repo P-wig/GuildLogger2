@@ -1284,7 +1284,7 @@ func listGuildActiveEventsHandler(guildRepo repositories.GuildRepository, member
 		}
 		active := make([]repositories.Event, 0)
 		for _, e := range all {
-			if e.Status == repositories.EventStatusOpen || e.Status == repositories.EventStatusActive || e.Status == repositories.EventStatusClosed {
+			if e.Status == repositories.EventStatusOpen || e.Status == repositories.EventStatusActive {
 				active = append(active, e)
 			}
 		}

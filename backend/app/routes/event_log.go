@@ -182,9 +182,6 @@ func submitEventLogHandler(
 			})
 		}
 
-		// Delete the live event — it is now fully logged.
-		_ = eventRepo.Delete(ctx, claims.EventID)
-
 		// Post embed to the configured logs channel in the background.
 		capturedEvent := event
 		capturedReport := report

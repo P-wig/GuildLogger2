@@ -128,7 +128,11 @@ func getModalValue(i *Interaction, customID string) string {
 func parseStartTime(s string) (time.Time, error) {
 	s = strings.TrimSpace(s)
 	if epoch, err := strconv.ParseInt(s, 10, 64); err == nil {
-		return time.Unix(epoch, 0).UTC(), nil
+		t := time.Unix(epoch, 0).UTC()
+		if y := t.Year(); y < 2000 || y >= 10000 {
+			return time.Time{}, fmt.Errorf("timestamp %q is out of range — use seconds, not milliseconds (e.g. 1753000000)", s)
+		}
+		return t, nil
 	}
 	for _, layout := range []string{"2006-01-02 15:04", "2006-01-02T15:04", "2006-01-02", time.RFC3339} {
 		if t, err := time.Parse(layout, s); err == nil {
@@ -218,6 +222,11 @@ func (h *InteractionHandler) handleEventCreate(c echo.Context, i *Interaction) e
 		for _, et := range guild.EventConfig.EventTypes {
 			if strings.EqualFold(et.Name, eventType) {
 				isQuick = et.IsQuickEvent
+				if et.ChannelID != "" && i.ChannelID != et.ChannelID {
+					return c.JSON(http.StatusOK, ephemeralMsg(
+						fmt.Sprintf("⚠️ /event create %s can only be used in <#%s>.", eventType, et.ChannelID),
+					))
+				}
 				break
 			}
 		}
@@ -1253,6 +1262,7 @@ func (h *InteractionHandler) handleCtrlCloseChannel(c echo.Context, i *Interacti
 	isQuick := h.lookupIsQuick(ctx, i.GuildID, event.EventType)
 	embed := buildEventEmbed(event.EventType, isQuick, event.Description, event.HostDiscordID, eventID, string(event.Status), event.ScheduledAt.Unix(), event.AttendingIDs, event.MaybeIDs, event.NotAttendingIDs)
 
+	capturedEventID := eventID
 	capturedGuildID := i.GuildID
 	capturedVoiceChannelID := event.VoiceChannelID
 	capturedVoiceMemberIDs := event.VoiceMemberIDs
@@ -1260,6 +1270,7 @@ func (h *InteractionHandler) handleCtrlCloseChannel(c echo.Context, i *Interacti
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		defer func() { _ = h.eventRepo.Delete(bgCtx, capturedEventID) }()
 
 		if capturedVoiceChannelID == "" {
 			return
