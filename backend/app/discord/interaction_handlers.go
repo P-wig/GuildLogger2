@@ -128,7 +128,11 @@ func getModalValue(i *Interaction, customID string) string {
 func parseStartTime(s string) (time.Time, error) {
 	s = strings.TrimSpace(s)
 	if epoch, err := strconv.ParseInt(s, 10, 64); err == nil {
-		return time.Unix(epoch, 0).UTC(), nil
+		t := time.Unix(epoch, 0).UTC()
+		if y := t.Year(); y < 2000 || y >= 10000 {
+			return time.Time{}, fmt.Errorf("timestamp %q is out of range — use seconds, not milliseconds (e.g. 1753000000)", s)
+		}
+		return t, nil
 	}
 	for _, layout := range []string{"2006-01-02 15:04", "2006-01-02T15:04", "2006-01-02", time.RFC3339} {
 		if t, err := time.Parse(layout, s); err == nil {
@@ -143,6 +147,15 @@ func parseStartTime(s string) (time.Time, error) {
 func (h *InteractionHandler) handleCommand(c echo.Context, i *Interaction) error {
 	if i.Data == nil {
 		return c.JSON(http.StatusOK, ephemeralMsg("Unknown command."))
+	}
+	// Enforce designated command channel if one is configured for this guild.
+	if i.GuildID != "" {
+		ctx := c.Request().Context()
+		if guild, err := h.guildRepo.FindByGuildID(ctx, i.GuildID); err == nil && guild != nil {
+			if ch := guild.EventConfig.CommandChannelID; ch != "" && i.ChannelID != ch {
+				return c.JSON(http.StatusOK, ephemeralMsg(fmt.Sprintf("⚠️ This command can only be used in <#%s>.", ch)))
+			}
+		}
 	}
 	switch i.Data.Name {
 	case "event":
@@ -209,6 +222,11 @@ func (h *InteractionHandler) handleEventCreate(c echo.Context, i *Interaction) e
 		for _, et := range guild.EventConfig.EventTypes {
 			if strings.EqualFold(et.Name, eventType) {
 				isQuick = et.IsQuickEvent
+				if et.ChannelID != "" && i.ChannelID != et.ChannelID {
+					return c.JSON(http.StatusOK, ephemeralMsg(
+						fmt.Sprintf("⚠️ /event create %s can only be used in <#%s>.", eventType, et.ChannelID),
+					))
+				}
 				break
 			}
 		}
@@ -621,6 +639,9 @@ func (h *InteractionHandler) handleModalSubmit(c echo.Context, i *Interaction) e
 	if eventID, ok := strings.CutPrefix(i.Data.CustomID, "log_event|"); ok {
 		return h.handleLogModalSubmit(c, i, eventID)
 	}
+	if eventID, ok := strings.CutPrefix(i.Data.CustomID, "mail_event|"); ok {
+		return h.handleMailModalSubmit(c, i, eventID)
+	}
 
 	eventType, ok := strings.CutPrefix(i.Data.CustomID, "start_event|")
 	if !ok || eventType == "" {
@@ -692,9 +713,12 @@ func (h *InteractionHandler) handleModalSubmit(c echo.Context, i *Interaction) e
 		typeName := strings.ToLower(capturedType)
 		messageContent := ""
 		if activeRoleID != "" {
-			messageContent = fmt.Sprintf("<@&%s> <@%s> is hosting a %s at <t:%d:t> <t:%d:R>", activeRoleID, hostID, typeName, epoch, epoch)
+			messageContent = fmt.Sprintf("<@%s> is hosting a %s at <t:%d:t> <t:%d:R>", hostID, typeName, epoch, epoch)
+			// comment out the role mention to avoid unnecessary pings during testing ONLY, switch back later
+			//messageContent = fmt.Sprintf("<@&%s> <@%s> is hosting a %s at <t:%d:t> <t:%d:R>", activeRoleID, hostID, typeName, epoch, epoch)
 		} else {
 			messageContent = fmt.Sprintf("<@%s> is hosting a %s at <t:%d:t> <t:%d:R>", hostID, typeName, epoch, epoch)
+			//messageContent = fmt.Sprintf("<@&%s> <@%s> is hosting a %s at <t:%d:t> <t:%d:R>", activeRoleID, hostID, typeName, epoch, epoch)
 		}
 		if isQuick {
 			capturedDesc = "" // Quick events carry no user description; the message content is the announcement
@@ -721,7 +745,7 @@ func (h *InteractionHandler) handleModalSubmit(c echo.Context, i *Interaction) e
 			return
 		}
 
-		embed := buildEventEmbed(capturedType, isQuick, capturedDesc, hostID, event.ID, capturedStart.Unix(), []string{}, []string{}, []string{})
+		embed := buildEventEmbed(capturedType, isQuick, capturedDesc, hostID, event.ID, "open", capturedStart.Unix(), []string{}, []string{}, []string{})
 		msgID, err := h.botClient.PostEmbedMessage(ctx, channelID, messageContent, []Embed{embed}, buildRSVPButtons(event.ID, isQuick, "open"))
 		if err != nil {
 			// Event created but announcement failed — still usable via API.
@@ -815,7 +839,7 @@ func (h *InteractionHandler) handleComponent(c echo.Context, i *Interaction) err
 			return c.JSON(http.StatusOK, interactionResponse{Type: InteractionResponseDeferredUpdate})
 		}
 		isQuick := h.lookupIsQuick(ctx, i.GuildID, event.EventType)
-		noop := buildEventEmbed(event.EventType, isQuick, event.Description, event.HostDiscordID, eventID, event.ScheduledAt.Unix(), event.AttendingIDs, event.MaybeIDs, event.NotAttendingIDs)
+		noop := buildEventEmbed(event.EventType, isQuick, event.Description, event.HostDiscordID, eventID, string(event.Status), event.ScheduledAt.Unix(), event.AttendingIDs, event.MaybeIDs, event.NotAttendingIDs)
 		return c.JSON(http.StatusOK, interactionResponse{
 			Type: InteractionResponseUpdateMessage,
 			Data: map[string]interface{}{
@@ -833,7 +857,7 @@ func (h *InteractionHandler) handleComponent(c echo.Context, i *Interaction) err
 	}
 
 	isQuick := h.lookupIsQuick(ctx, i.GuildID, event.EventType)
-	embed := buildEventEmbed(event.EventType, isQuick, event.Description, event.HostDiscordID, eventID, event.ScheduledAt.Unix(), event.AttendingIDs, event.MaybeIDs, event.NotAttendingIDs)
+	embed := buildEventEmbed(event.EventType, isQuick, event.Description, event.HostDiscordID, eventID, string(event.Status), event.ScheduledAt.Unix(), event.AttendingIDs, event.MaybeIDs, event.NotAttendingIDs)
 
 	// UPDATE_MESSAGE replaces the original RSVP embed in place, visible to all users in the channel.
 	return c.JSON(http.StatusOK, interactionResponse{
@@ -950,7 +974,7 @@ func (h *InteractionHandler) handleCtrlStart(c echo.Context, i *Interaction, eve
 			updatedEvent, fErr := h.eventRepo.FindByID(bgCtx, capturedEventID)
 			if fErr == nil && updatedEvent != nil {
 				isQuick := h.lookupIsQuick(bgCtx, capturedGuildID, updatedEvent.EventType)
-				embed := buildEventEmbed(updatedEvent.EventType, isQuick, updatedEvent.Description, updatedEvent.HostDiscordID, capturedEventID, updatedEvent.ScheduledAt.Unix(), updatedEvent.AttendingIDs, updatedEvent.MaybeIDs, updatedEvent.NotAttendingIDs)
+				embed := buildEventEmbed(updatedEvent.EventType, isQuick, updatedEvent.Description, updatedEvent.HostDiscordID, capturedEventID, string(updatedEvent.Status), updatedEvent.ScheduledAt.Unix(), updatedEvent.AttendingIDs, updatedEvent.MaybeIDs, updatedEvent.NotAttendingIDs)
 				_ = h.botClient.EditMessage(bgCtx, capturedChannelID, capturedMsgID, []Embed{embed}, buildRSVPButtons(updatedEvent.ID, isQuick, string(updatedEvent.Status)))
 			}
 		}
@@ -1032,6 +1056,7 @@ func (h *InteractionHandler) handleCtrlEnd(c echo.Context, i *Interaction, event
 		}
 
 		if capturedMsgID == "" {
+			bgLogger.Warnf("ctrl_end: no AnnouncementMessageID for event %s — Close Channel button will not be enabled", capturedEventID)
 			return
 		}
 		ev, fErr := h.eventRepo.FindByID(bgCtx, capturedEventID)
@@ -1039,8 +1064,10 @@ func (h *InteractionHandler) handleCtrlEnd(c echo.Context, i *Interaction, event
 			return
 		}
 		isQuick := h.lookupIsQuick(bgCtx, capturedGuildID, ev.EventType)
-		embed := buildEventEmbed(ev.EventType, isQuick, ev.Description, ev.HostDiscordID, capturedEventID, ev.ScheduledAt.Unix(), ev.AttendingIDs, ev.MaybeIDs, ev.NotAttendingIDs)
-		_ = h.botClient.EditMessage(bgCtx, capturedChannelID, capturedMsgID, []Embed{embed}, buildRSVPButtons(capturedEventID, isQuick, "closed"))
+		embed := buildEventEmbed(ev.EventType, isQuick, ev.Description, ev.HostDiscordID, capturedEventID, string(ev.Status), ev.ScheduledAt.Unix(), ev.AttendingIDs, ev.MaybeIDs, ev.NotAttendingIDs)
+		if err := h.botClient.EditMessage(bgCtx, capturedChannelID, capturedMsgID, []Embed{embed}, buildRSVPButtons(capturedEventID, isQuick, "closed")); err != nil {
+			bgLogger.Errorf("ctrl_end: EditMessage %s/%s: %v", capturedChannelID, capturedMsgID, err)
+		}
 	}()
 
 	logURL := h.appURL + "/log-event?token=" + token
@@ -1090,23 +1117,72 @@ func (h *InteractionHandler) handleCtrlModMail(c echo.Context, i *Interaction, e
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Mail has already been sent for this event."))
 	}
 
-	// Mark as sent BEFORE dispatching to prevent a second trigger from a rapid double-click.
-	now := time.Now()
-	if err := h.eventRepo.MarkModMailSent(ctx, eventID, now); err != nil {
-		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Could not lock headcount boost. Please try again."))
+	return c.JSON(http.StatusOK, interactionResponse{
+		Type: InteractionResponseModal,
+		Data: map[string]interface{}{
+			"custom_id": "mail_event|" + eventID,
+			"title":     "Send Mail",
+			"components": []TextInputRow{
+				{
+					Type: 1,
+					Components: []TextInput{
+						{
+							Type:        4,
+							CustomID:    "message",
+							Style:       2, // paragraph
+							Label:       "Message",
+							Required:    true,
+							Placeholder: "Enter your message to non-responding members...",
+							MaxLength:   1000,
+						},
+					},
+				},
+			},
+		},
+	})
+}
+
+// --- MODAL_SUBMIT: mail_event|{eventID} ---
+
+func (h *InteractionHandler) handleMailModalSubmit(c echo.Context, i *Interaction, eventID string) error {
+	discordID := interactionUserID(i)
+	ctx := c.Request().Context()
+
+	event, err := h.eventRepo.FindByID(ctx, eventID)
+	if err != nil || event == nil || event.GuildID != i.GuildID {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Event not found."))
+	}
+	if event.HostDiscordID != discordID {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Only the event host can send mail."))
+	}
+	if event.ModMailSentAt != nil {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Mail has already been sent for this event."))
 	}
 
-	// Dispatch DMs in the background so we stay within Discord's 3-second response window.
+	message := strings.TrimSpace(getModalValue(i, "message"))
+	if message == "" {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Message cannot be empty."))
+	}
+
+	// Mark sent before dispatch to prevent double-send on rapid re-submit.
+	now := time.Now()
+	if err := h.eventRepo.MarkModMailSent(ctx, eventID, now); err != nil {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Could not lock mail. Please try again."))
+	}
+
 	capturedEvent := event
+	capturedMessage := message
 	capturedGuildID := i.GuildID
+	capturedHostName := memberDisplayName(i.Member)
 	bgLogger := c.Logger()
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// Long timeout: 500 ms gap × potentially many members.
+		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 
 		allMembers, err := h.memberRepo.FindByGuildID(bgCtx, capturedGuildID)
 		if err != nil {
-			bgLogger.Errorf("ctrl_modmail: load members %s: %v", capturedGuildID, err)
+			bgLogger.Errorf("mail: load members %s: %v", capturedGuildID, err)
 			return
 		}
 
@@ -1121,22 +1197,46 @@ func (h *InteractionHandler) handleCtrlModMail(c echo.Context, i *Interaction, e
 			responded[id] = true
 		}
 
-		msg := fmt.Sprintf(
-			"📢 Hey! The **%s** event needs your RSVP. Head to the event channel and let us know if you're Attending, Not Attending, or Maybe!",
-			capturedEvent.Title,
-		)
-
-		sent := 0
-		for _, m := range allMembers {
-			if m.Status == repositories.MemberStatusActive && !responded[m.DiscordID] && !m.NotificationsOptOut {
-				if err := h.botClient.SendDMToUser(bgCtx, m.DiscordID, msg); err != nil {
-					bgLogger.Errorf("ctrl_modmail: DM to %s: %v", m.DiscordID, err)
-				} else {
-					sent++
-				}
-			}
+		epoch := capturedEvent.ScheduledAt.Unix()
+		fields := []EmbedField{
+			{Name: "📅 Scheduled", Value: fmt.Sprintf("<t:%d:F>", epoch), Inline: true},
 		}
-		bgLogger.Infof("ctrl_modmail: sent %d mail DMs for event %s", sent, capturedEvent.ID)
+		if capturedEvent.AnnouncementMessageID != "" && capturedEvent.ChannelID != "" {
+			link := fmt.Sprintf("https://discord.com/channels/%s/%s/%s", capturedGuildID, capturedEvent.ChannelID, capturedEvent.AnnouncementMessageID)
+			fields = append(fields, EmbedField{Name: "📌 Announcement", Value: "[Jump to event](" + link + ")", Inline: true})
+		}
+		embed := Embed{
+			Title:       "📢 " + capturedEvent.Title + " — RSVP Reminder",
+			Description: capturedMessage,
+			Color:       0x5865F2,
+			Fields:      fields,
+			Footer:      &EmbedFooter{Text: "Hosted by " + capturedHostName},
+		}
+
+		sent, blocked, failed := 0, 0, 0
+		for _, m := range allMembers {
+			if m.Status != repositories.MemberStatusActive || responded[m.DiscordID] || m.NotificationsOptOut {
+				continue
+			}
+			if err := h.botClient.SendEmbedDMToUser(bgCtx, m.DiscordID, embed); err != nil {
+				e := err.Error()
+				switch {
+				case strings.Contains(e, "50278"):
+					bgLogger.Warnf("mail: skipped %s — not in a mutual guild (likely left server): %v", m.DiscordID, err)
+					blocked++
+				case strings.Contains(e, "50007") || strings.Contains(e, "status 403"):
+					bgLogger.Warnf("mail: skipped %s — DMs disabled (privacy settings): %v", m.DiscordID, err)
+					blocked++
+				default:
+					bgLogger.Errorf("mail: DM to %s failed: %v", m.DiscordID, err)
+					failed++
+				}
+			} else {
+				sent++
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		bgLogger.Infof("mail: event=%s sent=%d blocked=%d failed=%d", capturedEvent.ID, sent, blocked, failed)
 	}()
 
 	return c.JSON(http.StatusOK, ephemeralMsg("📧 Mail is being sent to non-responding active members."))
@@ -1160,8 +1260,9 @@ func (h *InteractionHandler) handleCtrlCloseChannel(c echo.Context, i *Interacti
 	}
 
 	isQuick := h.lookupIsQuick(ctx, i.GuildID, event.EventType)
-	embed := buildEventEmbed(event.EventType, isQuick, event.Description, event.HostDiscordID, eventID, event.ScheduledAt.Unix(), event.AttendingIDs, event.MaybeIDs, event.NotAttendingIDs)
+	embed := buildEventEmbed(event.EventType, isQuick, event.Description, event.HostDiscordID, eventID, string(event.Status), event.ScheduledAt.Unix(), event.AttendingIDs, event.MaybeIDs, event.NotAttendingIDs)
 
+	capturedEventID := eventID
 	capturedGuildID := i.GuildID
 	capturedVoiceChannelID := event.VoiceChannelID
 	capturedVoiceMemberIDs := event.VoiceMemberIDs
@@ -1169,6 +1270,7 @@ func (h *InteractionHandler) handleCtrlCloseChannel(c echo.Context, i *Interacti
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		defer func() { _ = h.eventRepo.Delete(bgCtx, capturedEventID) }()
 
 		if capturedVoiceChannelID == "" {
 			return

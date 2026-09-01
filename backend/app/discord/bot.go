@@ -224,46 +224,62 @@ func (c *BotClient) SendChannelMessage(ctx context.Context, channelID, content s
 	return nil
 }
 
-// SendDMToUser sends a Discord direct message to a user identified by their Discord user ID.
-// Opens (or reuses) a DM channel via POST /users/@me/channels, then sends the message.
-func (c *BotClient) SendDMToUser(ctx context.Context, userDiscordID, content string) error {
+// openDMChannel opens (or reuses) a DM channel with a user and returns the channel ID.
+func (c *BotClient) openDMChannel(ctx context.Context, userDiscordID string) (string, error) {
 	dmPayload, err := json.Marshal(map[string]string{"recipient_id": userDiscordID})
 	if err != nil {
-		return err
+		return "", err
 	}
-
 	dmReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		c.apiBaseURL+"/users/@me/channels",
 		bytes.NewReader(dmPayload),
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 	dmReq.Header.Set("Authorization", "Bot "+c.botToken)
 	dmReq.Header.Set("Content-Type", "application/json")
 
 	dmResp, err := c.httpClient.Do(dmReq)
 	if err != nil {
-		return err
+		return "", err
 	}
 	dmRaw, _ := io.ReadAll(dmResp.Body)
 	dmResp.Body.Close()
 
 	if dmResp.StatusCode != http.StatusOK && dmResp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("failed to open DM channel for user %s: status %d", userDiscordID, dmResp.StatusCode)
+		return "", fmt.Errorf("failed to open DM channel for user %s: status %d body %s", userDiscordID, dmResp.StatusCode, string(dmRaw))
 	}
 
 	var dmChannel struct {
 		ID string `json:"id"`
 	}
 	if err := json.Unmarshal(dmRaw, &dmChannel); err != nil {
-		return fmt.Errorf("failed to parse DM channel response: %w", err)
+		return "", fmt.Errorf("failed to parse DM channel response: %w", err)
 	}
 	if dmChannel.ID == "" {
-		return fmt.Errorf("empty DM channel ID for user %s", userDiscordID)
+		return "", fmt.Errorf("empty DM channel ID for user %s", userDiscordID)
 	}
+	return dmChannel.ID, nil
+}
 
-	return c.SendChannelMessage(ctx, dmChannel.ID, content)
+// SendDMToUser sends a plain-text direct message to a user.
+func (c *BotClient) SendDMToUser(ctx context.Context, userDiscordID, content string) error {
+	channelID, err := c.openDMChannel(ctx, userDiscordID)
+	if err != nil {
+		return err
+	}
+	return c.SendChannelMessage(ctx, channelID, content)
+}
+
+// SendEmbedDMToUser sends a rich embed direct message to a user.
+func (c *BotClient) SendEmbedDMToUser(ctx context.Context, userDiscordID string, embed Embed) error {
+	channelID, err := c.openDMChannel(ctx, userDiscordID)
+	if err != nil {
+		return err
+	}
+	_, err = c.PostEmbedMessage(ctx, channelID, "", []Embed{embed}, nil)
+	return err
 }
 
 // PostEmbedMessage posts a message with rich embeds and interactive components to a channel.

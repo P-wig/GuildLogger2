@@ -65,16 +65,11 @@ func validateEventLogHandler(
 
 		ctx := c.Request().Context()
 
-		// Verify the event still exists, belongs to the correct guild, and is not closed.
+		// Verify the event still exists and belongs to the correct guild.
 		event, err := eventRepo.FindByID(ctx, claims.EventID)
 		if err != nil || event == nil || event.GuildID != claims.GuildID {
 			return c.JSON(http.StatusOK, map[string]interface{}{
 				"ok": false, "reason": "not_found",
-			})
-		}
-		if event.Status == repositories.EventStatusClosed {
-			return c.JSON(http.StatusOK, map[string]interface{}{
-				"ok": false, "reason": "already_submitted",
 			})
 		}
 
@@ -143,16 +138,11 @@ func submitEventLogHandler(
 
 		ctx := c.Request().Context()
 
-		// Re-validate event state to prevent replay on closed/deleted events.
+		// Re-validate event state to prevent replay on deleted events.
 		event, err := eventRepo.FindByID(ctx, claims.EventID)
 		if err != nil || event == nil || event.GuildID != claims.GuildID {
 			return c.JSON(http.StatusNotFound, map[string]interface{}{
 				"ok": false, "reason": "not_found",
-			})
-		}
-		if event.Status == repositories.EventStatusClosed {
-			return c.JSON(http.StatusConflict, map[string]interface{}{
-				"ok": false, "reason": "already_submitted",
 			})
 		}
 
@@ -191,9 +181,6 @@ func submitEventLogHandler(
 				"ok": false, "error": "failed to save event log",
 			})
 		}
-
-		// Delete the live event — it is now fully logged.
-		_ = eventRepo.Delete(ctx, claims.EventID)
 
 		// Post embed to the configured logs channel in the background.
 		capturedEvent := event

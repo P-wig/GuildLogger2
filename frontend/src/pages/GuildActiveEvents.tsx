@@ -47,7 +47,10 @@ export const GuildActiveEvents = () => {
     guildsApi
       .listActiveEvents(guildId)
       .then((res) => setEvents(res.data.events ?? []))
-      .catch(() => setError("Failed to load active events. You may not have moderator access."))
+      .catch((err) => {
+        const msg = err?.response?.data?.error;
+        setError(msg ? `Failed to load active events: ${msg}` : "Failed to load active events. Check your connection or permissions.");
+      })
       .finally(() => setLoading(false));
   }, [guildId]);
 
