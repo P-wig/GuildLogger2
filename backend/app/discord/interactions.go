@@ -148,6 +148,7 @@ type Interaction struct {
 	ApplicationID string                    `json:"application_id"`
 	Type          int                       `json:"type"`
 	GuildID       string                    `json:"guild_id"`
+	ChannelID     string                    `json:"channel_id"`
 	Member        *InteractionMember        `json:"member"`
 	Token         string                    `json:"token"`
 	Data          *InteractionData          `json:"data"`
@@ -185,7 +186,8 @@ func VerifyRequest(r *http.Request, body []byte, publicKeyHex string) error {
 
 // buildEventEmbed constructs the RSVP announcement embed displayed in the events channel.
 // maybeIDs and notAttendingIDs are only shown for Skirmish events.
-func buildEventEmbed(eventType string, isQuick bool, description, hostID, eventID string, epochSecs int64, attendingIDs, maybeIDs, notAttendingIDs []string) Embed {
+func buildEventEmbed(eventType string, isQuick bool, description, hostID, eventID, status string, epochSecs int64, attendingIDs, maybeIDs, notAttendingIDs []string) Embed {
+	ended := status == "closed" || status == "done"
 	attendeeText := "*No one yet — be the first!*"
 	if len(attendingIDs) > 0 {
 		parts := make([]string, len(attendingIDs))
@@ -210,7 +212,10 @@ func buildEventEmbed(eventType string, isQuick bool, description, hostID, eventI
 	color := 0x57F287 // green (quick event default)
 	footerText := "Click Attending below to register"
 
-	if !isQuick {
+	if ended {
+		color = 0x747F8D // grey when ended
+		footerText = "Event ended"
+	} else if !isQuick {
 		color = 0xFEE75C // gold for large events
 		footerText = "RSVP below — Maybe attendees get a 1-hour DM reminder"
 
@@ -242,7 +247,12 @@ func buildEventEmbed(eventType string, isQuick bool, description, hostID, eventI
 	}
 
 	return Embed{
-		Title:  "🎮 " + eventType,
+		Title: func() string {
+			if ended {
+				return "✅ " + eventType + " — Ended"
+			}
+			return "🎮 " + eventType
+		}(),
 		Color:  color,
 		Fields: fields,
 		Footer: &EmbedFooter{Text: footerText + " • ID: " + eventID},

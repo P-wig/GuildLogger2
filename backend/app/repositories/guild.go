@@ -66,6 +66,9 @@ type GuildEventConfig struct {
 	LobbyChannelID string `bson:"lobbyChannelId"  json:"lobbyChannelId"`
 	// LogsChannelID is the Discord channel where a copy of every submitted event log is posted.
 	LogsChannelID string `bson:"logsChannelId"   json:"logsChannelId"`
+	// CommandChannelID is the only Discord text channel from which slash commands are accepted.
+	// Leave empty to allow commands from any channel.
+	CommandChannelID string `bson:"commandChannelId" json:"commandChannelId"`
 }
 
 // Guild is the aggregate root for guild configuration and role hierarchy.

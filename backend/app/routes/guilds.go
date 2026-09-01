@@ -872,9 +872,10 @@ func updateEventConfigHandler(guildRepo repositories.GuildRepository) echo.Handl
 				ChannelID    string `json:"channelId"`
 				IsQuickEvent bool   `json:"isQuickEvent"`
 			} `json:"eventTypes"`
-			VoiceCategoryID string `json:"voiceCategoryId"`
-			LobbyChannelID  string `json:"lobbyChannelId"`
-			LogsChannelID   string `json:"logsChannelId"`
+			VoiceCategoryID  string `json:"voiceCategoryId"`
+			LobbyChannelID   string `json:"lobbyChannelId"`
+			LogsChannelID    string `json:"logsChannelId"`
+			CommandChannelID string `json:"commandChannelId"`
 		}
 		if err := c.Bind(&in); err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "invalid request body"})
@@ -902,10 +903,11 @@ func updateEventConfigHandler(guildRepo repositories.GuildRepository) echo.Handl
 			}
 		}
 		cfg := repositories.GuildEventConfig{
-			EventTypes:      cleanTypes,
-			VoiceCategoryID: strings.TrimSpace(in.VoiceCategoryID),
-			LobbyChannelID:  strings.TrimSpace(in.LobbyChannelID),
-			LogsChannelID:   strings.TrimSpace(in.LogsChannelID),
+			EventTypes:       cleanTypes,
+			VoiceCategoryID:  strings.TrimSpace(in.VoiceCategoryID),
+			LobbyChannelID:   strings.TrimSpace(in.LobbyChannelID),
+			LogsChannelID:    strings.TrimSpace(in.LogsChannelID),
+			CommandChannelID: strings.TrimSpace(in.CommandChannelID),
 		}
 		if err := guildRepo.UpdateEventConfig(ctx, guildID, cfg); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to save event config"})
@@ -1273,8 +1275,8 @@ func listGuildActiveEventsHandler(guildRepo repositories.GuildRepository, member
 		if guild == nil {
 			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "guild not found"})
 		}
-		if getGuildMemberTier(ctx, memberRepo, guildID, guild, claims.DiscordID) < tierModerator {
-			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "access denied: moderator role required"})
+		if getGuildMemberTier(ctx, memberRepo, guildID, guild, claims.DiscordID) < tierMember {
+			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "access denied: must be a synced guild member"})
 		}
 		all, err := eventRepo.FindByGuildID(ctx, guildID)
 		if err != nil {
@@ -1282,7 +1284,7 @@ func listGuildActiveEventsHandler(guildRepo repositories.GuildRepository, member
 		}
 		active := make([]repositories.Event, 0)
 		for _, e := range all {
-			if e.Status == repositories.EventStatusOpen || e.Status == repositories.EventStatusActive {
+			if e.Status == repositories.EventStatusOpen || e.Status == repositories.EventStatusActive || e.Status == repositories.EventStatusClosed {
 				active = append(active, e)
 			}
 		}

@@ -53,6 +53,7 @@ type ConfigSavedUpdates = {
   voiceCategoryId: string;
   lobbyChannelId: string;
   logsChannelId: string;
+  commandChannelId: string;
 };
 
 const ConfigDialog = ({
@@ -80,6 +81,7 @@ const ConfigDialog = ({
   const [cfgVoiceCategoryId, setCfgVoiceCategoryId] = useState("");
   const [cfgLobbyChannelId, setCfgLobbyChannelId] = useState("");
   const [cfgLogsChannelId, setCfgLogsChannelId] = useState("");
+  const [cfgCommandChannelId, setCfgCommandChannelId] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,6 +96,7 @@ const ConfigDialog = ({
     setCfgVoiceCategoryId(guild.eventConfig?.voiceCategoryId ?? "");
     setCfgLobbyChannelId(guild.eventConfig?.lobbyChannelId ?? "");
     setCfgLogsChannelId(guild.eventConfig?.logsChannelId ?? "");
+    setCfgCommandChannelId(guild.eventConfig?.commandChannelId ?? "");
     setCfgNewEventTypeName("");
     setCfgNewEventTypeChannelId("");
     setError(null);
@@ -116,6 +119,7 @@ const ConfigDialog = ({
           voiceCategoryId: cfgVoiceCategoryId,
           lobbyChannelId: cfgLobbyChannelId,
           logsChannelId: cfgLogsChannelId,
+          commandChannelId: cfgCommandChannelId,
         }),
       ]);
       onSaved({
@@ -127,6 +131,7 @@ const ConfigDialog = ({
         voiceCategoryId: cfgVoiceCategoryId,
         lobbyChannelId: cfgLobbyChannelId,
         logsChannelId: cfgLogsChannelId,
+        commandChannelId: cfgCommandChannelId,
       });
       onClose();
     } catch (err) {
@@ -401,6 +406,24 @@ const ConfigDialog = ({
               fullWidth
               value={cfgLogsChannelId}
               onChange={(e) => setCfgLogsChannelId(e.target.value)}
+            />
+          </Box>
+
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>
+              Command Channel
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+              When set, slash commands (e.g. <code>/event create</code>) are only accepted from this channel.
+              Leave blank to allow commands from any channel. Lock the channel in Discord to control who can use it.
+            </Typography>
+            <TextField
+              label="Command Channel ID"
+              placeholder="Text channel ID for slash commands (optional)"
+              size="small"
+              fullWidth
+              value={cfgCommandChannelId}
+              onChange={(e) => setCfgCommandChannelId(e.target.value)}
             />
           </Box>
 
@@ -1441,6 +1464,7 @@ export const GuildDashboard = () => {
                       voiceCategoryId: updates.voiceCategoryId,
                       lobbyChannelId: updates.lobbyChannelId,
                       logsChannelId: updates.logsChannelId,
+                      commandChannelId: updates.commandChannelId,
                     },
                   },
                 }
