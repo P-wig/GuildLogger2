@@ -117,15 +117,16 @@ func StartReminderScheduler(ctx context.Context, eventRepo repositories.EventRep
 	}()
 }
 
-// fireRemindersOnce runs one reminder pass: queries for Skirmish events in the
-// next hour and sends DMs to their MaybeIDs. Called by both the scheduler and
+// fireRemindersOnce runs one reminder pass: queries for events starting in the
+// next hour that have maybe RSVPs and sends DMs to their MaybeIDs. Called by both
+// the scheduler and
 // the manual HTTP trigger.
 func fireRemindersOnce(ctx context.Context, eventRepo repositories.EventRepository, botClient *discord.BotClient, logger echo.Logger) {
 	bgCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	now := time.Now().UTC()
-	events, err := eventRepo.FindUpcomingSkirmishForReminders(bgCtx, now, now.Add(time.Hour))
+	events, err := eventRepo.FindUpcomingForReminders(bgCtx, now, now.Add(time.Hour))
 	if err != nil {
 		logger.Errorf("reminder scheduler: query failed: %v", err)
 		return
@@ -149,7 +150,7 @@ func fireRemindersOnce(ctx context.Context, eventRepo repositories.EventReposito
 	}
 }
 
-// runEventRemindersHandler sends DM reminders to "maybe" attendees for Skirmish events
+// runEventRemindersHandler sends DM reminders to "maybe" attendees for events
 // that start within the next hour and have not yet received a reminder.
 func runEventRemindersHandler(eventRepo repositories.EventRepository, memberRepo repositories.MemberRepository, botClient *discord.BotClient) echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -157,7 +158,7 @@ func runEventRemindersHandler(eventRepo repositories.EventRepository, memberRepo
 		now := time.Now().UTC()
 		cutoff := now.Add(time.Hour)
 
-		events, err := eventRepo.FindUpcomingSkirmishForReminders(ctx, now, cutoff)
+		events, err := eventRepo.FindUpcomingForReminders(ctx, now, cutoff)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]interface{}{
 				"ok":    false,

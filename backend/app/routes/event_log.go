@@ -190,13 +190,10 @@ func submitEventLogHandler(
 			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			guild, gErr := guildRepo.FindByGuildID(bgCtx, capturedReport.GuildID)
-			if gErr != nil || guild == nil || guild.EventConfig.LogsChannelID == "" {
+			if gErr != nil || guild == nil {
 				return
 			}
-			embed := buildEventLogEmbed(capturedEvent, capturedReport)
-			if _, err := botClient.PostEmbedMessage(bgCtx, guild.EventConfig.LogsChannelID, "", []discord.Embed{embed}, nil); err != nil {
-				capturedLogger.Errorf("event-log: post to logs channel %s: %v", guild.EventConfig.LogsChannelID, err)
-			}
+			syncEventLogEmbed(bgCtx, capturedLogger, guild.EventConfig.LogsChannelID, eventReportRepo, botClient, capturedEvent, capturedReport)
 		}()
 
 		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true})
@@ -204,7 +201,7 @@ func submitEventLogHandler(
 }
 
 // buildEventLogEmbed constructs the Discord embed posted to the guild's logs channel.
-// Field order: header (Event Type / Date / Host inline) → Summary → Participants → Footer.
+// event is nil for logs created directly in the dashboard, which have no source event.
 func buildEventLogEmbed(event *repositories.Event, report *repositories.EventReport) discord.Embed {
 	mentions := make([]string, len(report.ParticipantIDs))
 	for i, id := range report.ParticipantIDs {
@@ -218,25 +215,71 @@ func buildEventLogEmbed(event *repositories.Event, report *repositories.EventRep
 		participantValue = participantValue[:1021] + "…"
 	}
 
-	title := event.Title
-	if title == "" {
-		title = event.EventType
+	title := "Event Log"
+	fields := make([]discord.EmbedField, 0, 5)
+	if event != nil {
+		if event.Title != "" {
+			title = event.Title
+		} else if event.EventType != "" {
+			title = event.EventType
+		}
+		fields = append(fields, discord.EmbedField{Name: "Event Type", Value: event.EventType, Inline: true})
 	}
+	fields = append(fields,
+		discord.EmbedField{Name: "Date", Value: report.EventDate.UTC().Format("January 2, 2006"), Inline: true},
+		discord.EmbedField{Name: "Host", Value: "<@" + report.HostDiscordID + ">", Inline: true},
+		discord.EmbedField{Name: "Summary", Value: report.Summary},
+		discord.EmbedField{Name: fmt.Sprintf("Participants (%d)", len(report.ParticipantIDs)), Value: participantValue},
+	)
 
 	return discord.Embed{
-		Title: title,
-		Color: 0x5865F2, // Discord blurple
-		Fields: []discord.EmbedField{
-			{Name: "Event Type", Value: event.EventType, Inline: true},
-			{Name: "Date", Value: report.EventDate.UTC().Format("January 2, 2006"), Inline: true},
-			{Name: "Host", Value: "<@" + report.HostDiscordID + ">", Inline: true},
-			{Name: "Summary", Value: report.Summary},
-			{Name: fmt.Sprintf("Participants (%d)", len(report.ParticipantIDs)), Value: participantValue},
-		},
+		Title:  title,
+		Color:  0x5865F2, // Discord blurple
+		Fields: fields,
 		Footer: &discord.EmbedFooter{
 			Text: "Logged " + report.SubmittedAt.UTC().Format("Jan 2, 2006 15:04 UTC"),
 		},
 	}
+}
+
+// syncEventLogEmbed upserts the report's embed in the logs channel: it edits the existing
+// message when one is known and reposts otherwise, storing the new message reference.
+func syncEventLogEmbed(
+	ctx context.Context,
+	logger echo.Logger,
+	channelID string,
+	reportRepo repositories.EventReportRepository,
+	botClient *discord.BotClient,
+	event *repositories.Event,
+	report *repositories.EventReport,
+) {
+	if channelID == "" || report == nil {
+		return
+	}
+	embed := buildEventLogEmbed(event, report)
+
+	if report.LogsChannelID == channelID && report.LogsMessageID != "" {
+		err := botClient.EditMessage(ctx, channelID, report.LogsMessageID, []discord.Embed{embed}, nil)
+		if err == nil {
+			return
+		}
+		logger.Warnf("event-log sync: edit failed for %s/%s, reposting: %v", channelID, report.LogsMessageID, err)
+	}
+
+	msgID, err := botClient.PostEmbedMessage(ctx, channelID, "", []discord.Embed{embed}, nil)
+	if err != nil {
+		logger.Errorf("event-log sync: post to %s failed: %v", channelID, err)
+		return
+	}
+	if report.ID == "" {
+		return
+	}
+	if err := reportRepo.SetLogMessageRef(ctx, report.ID, channelID, msgID); err != nil {
+		logger.Errorf("event-log sync: failed to save message ref for %s: %v", report.ID, err)
+		return
+	}
+	report.LogsChannelID = channelID
+	report.LogsMessageID = msgID
 }
 
 // preSelectedIDs returns the best available participant list for the event log form.

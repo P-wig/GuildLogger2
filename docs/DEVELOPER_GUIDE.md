@@ -25,6 +25,8 @@ Recommended branch naming:
 - Resolve modules: go mod tidy
 - Compile check: go build ./...
 - Keep package boundaries clear (config, db, routes, schemas).
+- Event lifecycle logic belongs in `app/discord/event_service.go`, not in route or interaction
+  handlers. Both transports must call the service so Discord and the web API cannot drift.
 - Keep main entrypoint thin; app wiring belongs in app package.
 
 ## Frontend Standards (TypeScript)

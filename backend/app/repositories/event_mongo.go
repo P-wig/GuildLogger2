@@ -444,13 +444,13 @@ func (r *MongoEventRepository) RemoveDecline(ctx context.Context, eventID, disco
 	return r.removeFromList(ctx, eventID, discordID, "notAttendingIds", ErrNotDeclined)
 }
 
-func (r *MongoEventRepository) FindUpcomingSkirmishForReminders(ctx context.Context, now, cutoff time.Time) ([]Event, error) {
+func (r *MongoEventRepository) FindUpcomingForReminders(ctx context.Context, now, cutoff time.Time) ([]Event, error) {
 	filter := bson.M{
-		"eventType":       bson.M{"$regex": "skirmish", "$options": "i"},
 		"scheduledAt":     bson.M{"$gt": now, "$lte": cutoff},
 		"reminderEnabled": true,
 		"reminderSentAt":  nil,
 		"status":          bson.M{"$ne": EventStatusClosed},
+		"maybeIds.0":      bson.M{"$exists": true},
 	}
 	cursor, err := db.EventsCollection(r.database).Find(ctx, filter)
 	if err != nil {

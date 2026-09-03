@@ -1,11 +1,18 @@
 # API Reference
 
-GuildLogger2 backend API reference for the Go + Echo migration.
+GuildLogger2 backend API reference.
 
-## Status Legend
+Every endpoint listed here is implemented in the current backend.
 
-- Implemented: available in current backend
-- Planned: defined target contract, not fully implemented yet
+## Authorization
+
+All `/api` routes except the service root, health check, auth endpoints, the Discord
+interaction webhook, and the token-based event-log endpoints require
+`Authorization: Bearer <token>`.
+
+A valid token establishes identity only. Guild-scoped and event-scoped endpoints
+additionally check the caller's membership tier in the target guild — see
+[Event Operations](#event-operations) for the tier table.
 
 ## Current Base URL
 
@@ -300,6 +307,50 @@ Response (401): missing, invalid, or expired token.
 Response (403): authenticated user does not own this guild.
 Response (404): guild not found.
 
+#### PUT /api/guilds/:guildId/config/event
+
+Sets the guild's event-type list and the channels used by the event lifecycle.
+Only the guild owner can configure.
+
+Request body:
+```json
+{
+  "eventTypes": [
+    { "name": "Raids", "channelId": "discord_text_channel_id", "isQuickEvent": true },
+    { "name": "Skirms", "channelId": "discord_text_channel_id", "isQuickEvent": false }
+  ],
+  "voiceCategoryId": "discord_category_id",
+  "lobbyChannelId": "discord_voice_channel_id",
+  "logsChannelId": "discord_text_channel_id",
+  "commandChannelId": "discord_text_channel_id"
+}
+```
+
+- `eventTypes` (required): the guild's event types. Entries with a blank `name` are dropped.
+  - `name`: displayed in `/event create` autocomplete and used as the event title.
+  - `channelId`: where this type's announcement is posted. Also gates `/event create <name>` —
+    the command is rejected outside this channel.
+  - `isQuickEvent`: `true` gives a 2-button uncapped embed with no description; `false` gives a
+    3-button embed (including Maybe) capped at 99 attendees.
+- `voiceCategoryId` (optional): category under which event voice channels are created on start.
+  Voice channel creation is skipped when unset.
+- `lobbyChannelId` (optional): voice channel members are returned to when an event's channel is closed.
+- `logsChannelId` (optional): text channel where submitted event logs are posted as embeds.
+  Log embeds are edited in place when a log is updated and deleted when a log is deleted.
+- `commandChannelId` (optional): when set, **all** slash commands are rejected outside this
+  channel. Leave blank to allow commands anywhere. This is a coarser gate than the per-event-type
+  `channelId` above and applies in addition to it.
+
+Response (200):
+```json
+{ "ok": true }
+```
+
+Response (400): invalid request body.
+Response (401): missing, invalid, or expired token.
+Response (403): authenticated user does not own this guild.
+Response (404): guild not found.
+
 #### GET /api/guilds/:guildId/members/sync-status
 
 Returns member sync status for a guild.
@@ -511,101 +562,122 @@ Response (404): guild or event log not found.
 
 All event endpoints require `Authorization: Bearer <token>`.
 
+**Authorization model.** A valid session is never sufficient on its own. Every endpoint in
+this section additionally resolves the caller's membership tier in the event's guild:
+
+| Tier | Who | Event access |
+|------|-----|--------------|
+| `member` | any synced, active guild member | read events, RSVP, run the lifecycle on events they host |
+| `moderator` | holds a role in `moderatorRoleIds` | additionally may send mod mail |
+| `owner` | guild owner | full access |
+
+Callers who are not members of the target guild receive `403`. Host-only actions (start,
+end, close-channel) additionally require the caller to be the event host.
+
 #### Event Type Behavior
 
-The `eventType` field on an event controls the Discord embed button set and available RSVP options:
+Event types are **configured per guild** in `eventConfig.eventTypes`. Each entry has a
+`name`, a `channelId`, and an `isQuickEvent` flag. There are no built-in type names.
 
-| Event Type | Buttons | Maybe Tracking | Reminder DMs | Mod Mail |
-|------------|---------|---------------|--------------|----------|
-| **Raid** | ✅ Attending \| ❌ Not Attending | No | No | No |
-| **Skirmish** | ✅ Attending \| ❌ Not Attending \| ❓ Maybe | Yes (`maybeIds`) | Yes (1h before event, to `maybeIds`) | Yes (non-responders) |
+`isQuickEvent` controls the embed button set and the event's shape:
 
-**Non-responders** are guild members not present in `attendingIds`, `notAttendingIds`, or `maybeIds`. Moderators can trigger a mod-mail DM blast to this group for Skirmish events to drive headcount.
+| `isQuickEvent` | RSVP buttons | Capacity | Description field |
+|----------------|--------------|----------|-------------------|
+| `true` | ✅ Attending \| ❌ Not Attending | uncapped | not used — the announcement line is the message |
+| `false` | ✅ Attending \| ❌ Not Attending \| ❓ Maybe | 99 | host-supplied rally message |
 
-Event type values are configured per-guild in `eventConfig.eventTypes` and selected via the `/event create` slash command autocomplete.
+The `channelId` on each event type is authoritative: `/event create <type>` is only accepted
+in that channel, and both the slash command and `POST /api/events` post the announcement
+there. Callers do not choose the channel or capacity.
 
-#### POST /api/events/:eventId/start
+**Non-responders** are guild members not present in `attendingIds`, `notAttendingIds`, or
+`maybeIds`. Moderators can trigger a mod-mail DM blast to this group to drive headcount.
 
-Transitions an event from `open` to `active`. Only the event host can start the event.
+#### Shared lifecycle
 
-Response (200):
-```json
-{ "ok": true }
+The Discord bot and this REST API are two transports over one implementation
+(`discord.EventService`), so both produce identical side effects:
+
+```
+open ──start──▶ active ──end──▶ closed ──close-channel──▶ (event deleted)
 ```
 
-Response (400): missing or invalid `eventId`.
-Response (401): missing, invalid, or expired token.
-Response (403): authenticated user is not the event host.
-Response (404): event not found.
-Response (409): event is not currently in `open` status.
+- **create** — writes the event and posts the RSVP announcement, storing its message ID
+- **RSVP** — mutates the roster and re-renders the announcement embed in place
+- **start** — creates the event voice channel, moves the host in, refreshes the embed
+- **end** — snapshots the voice roster, marks the event `closed`, refreshes the embed
+- **close-channel** — returns members to the lobby, deletes the voice channel, deletes the event
 
-#### POST /api/events/:eventId/close
-
-Transitions an event from `active` to `closed` and creates a permanent EventReport record.
-Only the event host can close the event.
-
-Request body:
-```json
-{
-  "summary": "Event wrap-up notes",
-  "participantIds": ["1234567890", "0987654321"],
-  "eventDate": "2026-06-04T20:00:00Z"
-}
-```
-
-Response (200):
-```json
-{
-  "ok": true,
-  "report": {
-    "id": "...",
-    "eventId": "...",
-    "guildId": "...",
-    "hostDiscordId": "...",
-    "eventDate": "2026-06-04T20:00:00Z",
-    "participantIds": ["1234567890", "0987654321"],
-    "summary": "Event wrap-up notes",
-    "submittedAt": "..."
-  }
-}
-```
-
-Response (400): invalid request body or missing `eventId`.
-Response (401): missing, invalid, or expired token.
-Response (403): authenticated user is not the event host.
-Response (404): event not found.
-Response (409): event is not currently in `active` status.
+The event log is submitted separately via `POST /api/event-log/submit`. The **EventReport**
+is the permanent record and outlives the event document.
 
 #### POST /api/events
 
-Creates a new event for a guild. The authenticated user becomes the host.
+Creates an event and posts its Discord announcement. Equivalent to `/event create` in Discord.
 
-`eventType` drives the Discord embed button set — use `"Raid"` for a 2-button embed or `"Skirmish"` for a 3-button embed with Maybe. Other configured event types default to Raid behavior.
+The announcement channel and capacity are resolved from the guild's configuration for
+`eventType` — they are not accepted from the client.
 
 Request body:
 ```json
 {
   "guildId": "...",
-  "title": "Raid Night",
-  "eventType": "Raid",
-  "description": "Optional description, max 3000 characters",
-  "scheduledAt": "2026-06-10T20:00:00Z",
-  "channelId": "...",
-  "reminderEnabled": true,
-  "capacity": 20,
-  "cutoffAt": "2026-06-10T19:00:00Z"
+  "eventType": "Skirms",
+  "description": "Optional rally message; ignored for quick event types",
+  "scheduledAt": "2026-06-10T20:00:00Z"
 }
 ```
 
-- `eventType` (optional): `"Raid"` or `"Skirmish"`. Defaults to `"Raid"` behavior when omitted.
-
 Response (200):
 ```json
-{ "ok": true, "event": { "id": "...", "guildId": "...", "title": "Raid Night", "eventType": "Raid", "status": "open", "attendingIds": [], "maybeIds": [], "notAttendingIds": [] } }
+{ "ok": true, "event": { "id": "...", "guildId": "...", "eventType": "Skirms", "status": "open", "channelId": "...", "announcementMessageId": "...", "attendingIds": [], "maybeIds": [], "notAttendingIds": [] } }
 ```
 
-Response (400): `guildId` or `title` missing.
+Response (200, announcement failed): `{ "ok": true, "event": {...}, "warning": "event created but the Discord announcement failed" }`
+
+Response (400): `guildId`, `eventType`, or `scheduledAt` missing, or no channel configured for the event type.
 Response (401): missing, invalid, or expired token.
+Response (403): caller is not a member of the guild.
+
+#### POST /api/events/:eventId/start
+
+Transitions an event from `open` to `active`, creates the event voice channel, moves the
+host into it, and refreshes the announcement embed. Only the event host can start the event.
+
+Response (200): `{ "ok": true }`
+
+Response (401): missing, invalid, or expired token.
+Response (403): caller is not a guild member, or is not the event host.
+Response (404): event not found.
+Response (409): event is not currently in `open` status.
+
+#### POST /api/events/:eventId/end
+
+Transitions an event from `active` to `closed`, snapshots the voice-channel roster into
+`voiceMemberIds` (used to pre-fill the log form), and refreshes the announcement embed so
+the Close Channel control becomes available. Only the event host can end the event.
+
+Submit the log afterwards via `POST /api/event-log/submit`.
+
+Response (200): `{ "ok": true }`
+
+Response (401): missing, invalid, or expired token.
+Response (403): caller is not a guild member, or is not the event host.
+Response (404): event not found.
+Response (409): event is not in `active` status, or has already been logged.
+
+#### POST /api/events/:eventId/close-channel
+
+Final lifecycle step. Returns members to the configured lobby channel, deletes the event
+voice channel, and deletes the event document. The EventReport remains as the permanent
+record. Only the event host can close the channel.
+
+Response (200): `{ "ok": true }`
+
+Response (401): missing, invalid, or expired token.
+Response (403): caller is not a guild member, or is not the event host.
+Response (404): event not found.
+Response (409): event is not in `closed` status.
 
 #### GET /api/events
 
@@ -621,6 +693,7 @@ Response (200):
 
 Response (400): `guildId` query parameter missing.
 Response (401): missing, invalid, or expired token.
+Response (403): caller is not a member of the guild.
 
 #### GET /api/events/:eventId
 
@@ -634,8 +707,8 @@ Response (200):
     "id": "...",
     "guildId": "...",
     "hostDiscordId": "...",
-    "title": "Skirmish Saturday",
-    "eventType": "Skirmish",
+    "title": "Skirms",
+    "eventType": "Skirms",
     "description": "...",
     "scheduledAt": "2026-06-10T20:00:00Z",
     "status": "open",
@@ -644,6 +717,9 @@ Response (200):
     "maybeIds": ["0987654321"],
     "notAttendingIds": [],
     "capacity": 0,
+    "announcementMessageId": "...",
+    "voiceChannelId": "...",
+    "voiceMemberIds": [],
     "reminderEnabled": true,
     "reminderSentAt": null,
     "cutoffAt": null,
@@ -654,94 +730,46 @@ Response (200):
 ```
 
 Field notes:
-- `maybeIds`: Discord IDs of members who responded "Maybe" (Skirmish only; always empty for Raid).
+- `maybeIds`: Discord IDs of members who responded "Maybe" (non-quick event types only; always empty when `isQuickEvent` is true).
 - `notAttendingIds`: Discord IDs of members who explicitly declined.
+- `announcementMessageId`: Discord message ID of the RSVP embed; used to re-render it in place.
+- `voiceChannelId` / `voiceMemberIds`: set when the event is started and snapshotted when it ends.
 - `reminderSentAt`: set when 1-hour reminder DMs have been dispatched to `maybeIds`.
 
 Response (401): missing, invalid, or expired token.
+Response (403): caller is not a member of the event's guild.
 Response (404): event not found.
 
-#### POST /api/events/:eventId/register
+#### RSVP endpoints
 
-Registers the authenticated user for an event using their Discord ID from the session token.
+All six RSVP actions share the same behavior: they mutate the caller's own attendance using
+the Discord ID from the session token, then re-render the Discord announcement embed so the
+roster shown in Discord matches the web UI immediately.
+
+| Endpoint | Effect |
+|----------|--------|
+| `POST /api/events/:eventId/register` | adds to `attendingIds` |
+| `POST /api/events/:eventId/unregister` | removes from `attendingIds` |
+| `POST /api/events/:eventId/maybe` | adds to `maybeIds`, clears the other two lists |
+| `POST /api/events/:eventId/unmaybe` | removes from `maybeIds` |
+| `POST /api/events/:eventId/decline` | adds to `notAttendingIds`, clears the other two lists |
+| `POST /api/events/:eventId/undecline` | removes from `notAttendingIds` |
 
 Response (200):
 ```json
-{ "ok": true }
+{ "ok": true, "event": { "id": "...", "attendingIds": [], "maybeIds": [], "notAttendingIds": [] } }
 ```
 
 Response (401): missing, invalid, or expired token.
+Response (403): caller is not a member of the event's guild.
 Response (404): event not found.
-Response (409): already registered, registration is closed, or event is at capacity.
-
-#### POST /api/events/:eventId/unregister
-
-Unregisters the authenticated user from an event.
-
-Response (200):
-```json
-{ "ok": true }
-```
-
-Response (401): missing, invalid, or expired token.
-Response (404): event not found.
-Response (409): not registered for this event.
-
-#### POST /api/events/:eventId/maybe
-
-Marks the authenticated user as "Maybe" attending. Only valid for Skirmish events. Automatically removes the user from `attendingIds` and `notAttendingIds` if present.
-
-Response (200):
-```json
-{ "ok": true }
-```
-
-Response (401): missing, invalid, or expired token.
-Response (404): event not found.
-Response (409): already marked as maybe, event type does not support maybe (Raid), registration is closed, or event is at capacity.
-
-#### POST /api/events/:eventId/unmaybe
-
-Removes the authenticated user's "Maybe" response.
-
-Response (200):
-```json
-{ "ok": true }
-```
-
-Response (401): missing, invalid, or expired token.
-Response (404): event not found.
-Response (409): user is not in the maybe list.
-
-#### POST /api/events/:eventId/decline
-
-Marks the authenticated user as "Not Attending". Automatically removes the user from `attendingIds` and `maybeIds` if present.
-
-Response (200):
-```json
-{ "ok": true }
-```
-
-Response (401): missing, invalid, or expired token.
-Response (404): event not found.
-Response (409): already declined, or registration is closed.
-
-#### POST /api/events/:eventId/undecline
-
-Removes the authenticated user's "Not Attending" response.
-
-Response (200):
-```json
-{ "ok": true }
-```
-
-Response (401): missing, invalid, or expired token.
-Response (404): event not found.
-Response (409): user has not declined this event.
+Response (409): already in the requested state, not in the list being removed from, registration is closed, or event is at capacity.
 
 #### POST /api/events/:eventId/mod-mail
 
-Sends a Discord DM to every active guild member who has not yet responded to the event (not in `attendingIds`, `notAttendingIds`, or `maybeIds`). Only available for Skirmish events. Caller must hold a moderator role configured in the guild's `moderatorRoleIds`.
+Sends a Discord DM to every active guild member who has not yet responded to the event (not in `attendingIds`, `notAttendingIds`, or `maybeIds`). Available for any event type. Caller must hold a moderator role configured in the guild's `moderatorRoleIds`.
+
+Members who have opted out via `notificationsOptOut` are excluded.
 
 Request body (optional):
 ```json
@@ -762,8 +790,26 @@ Response (200):
 Response (401): missing, invalid, or expired token.
 Response (403): caller does not hold a moderator role for this guild.
 Response (404): event not found.
-Response (409): event type does not support mod mail (Raid), or event is closed.
+Response (409): event is closed.
 Response (422): no non-responding members to contact.
+
+#### GET /api/event-reports
+
+Returns all permanent event reports for a guild, newest first. Reports outlive the events
+they came from — an event document is deleted once its channel is closed, but its report
+remains.
+
+Query parameters:
+- `guildId` (required)
+
+Response (200):
+```json
+{ "ok": true, "reports": [] }
+```
+
+Response (400): `guildId` query parameter missing.
+Response (401): missing, invalid, or expired token.
+Response (403): caller is not a member of the guild.
 
 ### Member Analytics
 
@@ -827,13 +873,19 @@ Response (404): guild not found.
 Response (422): no notification channel configured for this guild.
 Response (502): one or more Discord channel messages failed to send (partial success reported in `failed` array).
 
-## Planned Endpoints (Target Contract)
-
 ### Event Notifications
 
 #### POST /api/notifications/events/reminders/run
 
-Scans all open/active Skirmish events whose `scheduledAt` falls within the next hour, and sends a Discord DM reminder to every member in the event's `maybeIds` list who has not already received one (`reminderSentAt` is null). Sets `reminderSentAt` on each event after dispatching.
+Scans all open/active events whose `scheduledAt` falls within the next hour and that have at
+least one "Maybe" RSVP, then sends a Discord DM reminder to every member in the event's
+`maybeIds` list who has not already received one (`reminderSentAt` is null). Sets
+`reminderSentAt` on each event after dispatching.
+
+Because only non-quick event types expose a Maybe button, quick events are never eligible.
+There is no event-type name filter.
+
+This also runs automatically on an hourly scheduler; the endpoint triggers a pass on demand.
 
 Request body:
 ```json
@@ -856,7 +908,6 @@ Response (200):
 - `reminded`: total DMs sent across all events.
 - `failed`: Discord IDs for which DM delivery failed.
 
-Response (200, none eligible): `{ "ok": true, "processed": 0, "reminded": 0, "skipped": "no Skirmish events starting within 1 hour" }`
 Response (400): `guildId` missing or invalid.
 Response (401): missing, invalid, or expired token.
 Response (404): guild not found.

@@ -142,24 +142,6 @@ func (r *MongoMemberRepository) FindGuildIDsByMemberDiscordID(ctx context.Contex
 	return ids, nil
 }
 
-func (r *MongoMemberRepository) UpdateRoles(ctx context.Context, guildID, discordID string, roleIDs []string) error {
-	if roleIDs == nil {
-		roleIDs = []string{}
-	}
-
-	_, err := db.MembersCollection(r.database).UpdateOne(
-		ctx,
-		bson.M{"guildId": guildID, "discordId": discordID},
-		bson.M{
-			"$set": bson.M{
-				"roleIds":   roleIDs,
-				"updatedAt": time.Now(),
-			},
-		},
-	)
-	return err
-}
-
 func (r *MongoMemberRepository) Delete(ctx context.Context, guildID, discordID string) error {
 	_, err := db.MembersCollection(r.database).DeleteOne(
 		ctx,
@@ -229,58 +211,6 @@ func (r *MongoMemberRepository) GetStats(ctx context.Context, guildID, discordID
 		FirstSyncedAt:     member.FirstSyncedAt,
 		DeactivatedAt:     member.DeactivatedAt,
 	}, nil
-}
-
-func (r *MongoMemberRepository) UpdateStatusAndRank(ctx context.Context, guildID, discordID string, status MemberStatus, rankedRoleID string) error {
-	now := time.Now()
-
-	fields := bson.M{
-		"status":       status,
-		"rankedRoleId": rankedRoleID,
-		"updatedAt":    now,
-	}
-
-	if status == MemberStatusInactive {
-		fields["deactivatedAt"] = now
-	} else {
-		fields["deactivatedAt"] = nil
-	}
-
-	_, err := db.MembersCollection(r.database).UpdateOne(
-		ctx,
-		bson.M{"guildId": guildID, "discordId": discordID},
-		bson.M{"$set": fields},
-	)
-	return err
-}
-
-func (r *MongoMemberRepository) UpdateNotificationPreference(ctx context.Context, guildID, discordID string, optOut bool) error {
-	_, err := db.MembersCollection(r.database).UpdateOne(
-		ctx,
-		bson.M{"guildId": guildID, "discordId": discordID},
-		bson.M{"$set": bson.M{
-			"notificationsOptOut": optOut,
-			"updatedAt":           time.Now(),
-		}},
-	)
-	return err
-}
-
-func (r *MongoMemberRepository) FindNotificationTargets(ctx context.Context, guildID string) ([]Member, error) {
-	cursor, err := db.MembersCollection(r.database).Find(ctx, bson.M{
-		"guildId":             guildID,
-		"notificationsOptOut": false,
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer cursor.Close(ctx)
-
-	var members []Member
-	if err := cursor.All(ctx, &members); err != nil {
-		return nil, err
-	}
-	return members, nil
 }
 
 func (r *MongoMemberRepository) FindAnniversaryMembers(ctx context.Context, guildID string, anniversaryYears []int) ([]Member, error) {

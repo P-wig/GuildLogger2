@@ -148,58 +148,6 @@ func (r *MongoGuildRepository) UpsertRole(ctx context.Context, guildID string, r
 	return r.Update(ctx, guildID, guild)
 }
 
-func (r *MongoGuildRepository) RemoveRole(ctx context.Context, guildID, discordRoleID string) error {
-	guild, err := r.FindByGuildID(ctx, guildID)
-	if err != nil {
-		return err
-	}
-	if guild == nil {
-		return ErrGuildNotFound
-	}
-
-	newRoles := make([]GuildRole, 0, len(guild.Roles))
-	for _, role := range guild.Roles {
-		if role.DiscordRoleID != discordRoleID {
-			newRoles = append(newRoles, role)
-		}
-	}
-	guild.Roles = newRoles
-	guild.UpdatedAt = time.Now()
-
-	return r.Update(ctx, guildID, guild)
-}
-
-func (r *MongoGuildRepository) ReorderRoles(ctx context.Context, guildID string, orderedRoleIDs []string) error {
-	guild, err := r.FindByGuildID(ctx, guildID)
-	if err != nil {
-		return err
-	}
-	if guild == nil {
-		return ErrGuildNotFound
-	}
-
-	// Assign positions based on order from top (index 0) to bottom.
-	// Higher position means higher hierarchy.
-	top := len(orderedRoleIDs)
-	posByID := make(map[string]int, len(orderedRoleIDs))
-	for i, roleID := range orderedRoleIDs {
-		posByID[roleID] = top - i
-	}
-
-	for i := range guild.Roles {
-		if p, ok := posByID[guild.Roles[i].DiscordRoleID]; ok {
-			guild.Roles[i].Position = p
-		}
-	}
-
-	sort.SliceStable(guild.Roles, func(i, j int) bool {
-		return guild.Roles[i].Position > guild.Roles[j].Position
-	})
-
-	guild.UpdatedAt = time.Now()
-	return r.Update(ctx, guildID, guild)
-}
-
 func (r *MongoGuildRepository) UpdateStatusRoleConfig(ctx context.Context, guildID string, cfg GuildStatusRoleConfig) error {
 	guild, err := r.FindByGuildID(ctx, guildID)
 	if err != nil {
@@ -210,31 +158,6 @@ func (r *MongoGuildRepository) UpdateStatusRoleConfig(ctx context.Context, guild
 	}
 
 	guild.NotificationConfig.StatusRoles = cfg
-	guild.UpdatedAt = time.Now()
-
-	return r.Update(ctx, guildID, guild)
-}
-
-func (r *MongoGuildRepository) UpdateMilestoneNotificationConfig(ctx context.Context, guildID string, cfg GuildMilestoneNotificationConfig) error {
-	guild, err := r.FindByGuildID(ctx, guildID)
-	if err != nil {
-		return err
-	}
-	if guild == nil {
-		return ErrGuildNotFound
-	}
-
-	if cfg.AnniversaryYears == nil {
-		cfg.AnniversaryYears = []int{}
-	}
-	if cfg.HostedEventCounts == nil {
-		cfg.HostedEventCounts = []int{}
-	}
-	if cfg.AttendedEventCounts == nil {
-		cfg.AttendedEventCounts = []int{}
-	}
-
-	guild.NotificationConfig.MilestoneNotifications = cfg
 	guild.UpdatedAt = time.Now()
 
 	return r.Update(ctx, guildID, guild)
