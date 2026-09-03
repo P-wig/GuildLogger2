@@ -59,9 +59,9 @@ func RegisterGuildsProtected(
 	g.PUT("/guilds/:guildId/config/event", updateEventConfigHandler(guildRepo))
 	g.DELETE("/guilds/:guildId", deleteGuildHandler(guildRepo, memberRepo))
 	g.GET("/guilds/:guildId/event-logs", listGuildEventLogsHandler(guildRepo, memberRepo, eventReportRepo))
-	g.POST("/guilds/:guildId/event-logs", createGuildEventLogHandler(guildRepo, memberRepo, eventReportRepo))
-	g.PUT("/guilds/:guildId/event-logs/:logId", updateGuildEventLogHandler(guildRepo, memberRepo, eventReportRepo))
-	g.DELETE("/guilds/:guildId/event-logs/:logId", deleteGuildEventLogHandler(guildRepo, memberRepo, eventReportRepo))
+	g.POST("/guilds/:guildId/event-logs", createGuildEventLogHandler(guildRepo, memberRepo, eventReportRepo, botClient))
+	g.PUT("/guilds/:guildId/event-logs/:logId", updateGuildEventLogHandler(guildRepo, memberRepo, eventReportRepo, botClient))
+	g.DELETE("/guilds/:guildId/event-logs/:logId", deleteGuildEventLogHandler(guildRepo, memberRepo, eventReportRepo, botClient))
 	g.GET("/guilds/:guildId/active-events", listGuildActiveEventsHandler(guildRepo, memberRepo, eventRepo))
 	g.DELETE("/guilds/:guildId/active-events/:eventId", deleteGuildActiveEventHandler(guildRepo, memberRepo, eventRepo))
 }
@@ -1084,7 +1084,7 @@ func listGuildEventLogsHandler(guildRepo repositories.GuildRepository, memberRep
 	}
 }
 
-func createGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository, reportRepo repositories.EventReportRepository) echo.HandlerFunc {
+func createGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository, reportRepo repositories.EventReportRepository, botClient *discord.BotClient) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		claims, ok := c.Get("user").(*session.Claims)
 		if !ok || claims == nil {
@@ -1148,11 +1148,20 @@ func createGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to create event log"})
 		}
 
+		capturedChannelID := guild.EventConfig.LogsChannelID
+		capturedReport := *report
+		capturedLogger := c.Logger()
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			syncEventLogEmbed(bgCtx, capturedLogger, capturedChannelID, reportRepo, botClient, nil, &capturedReport)
+		}()
+
 		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true, "log": report})
 	}
 }
 
-func updateGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository, reportRepo repositories.EventReportRepository) echo.HandlerFunc {
+func updateGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository, reportRepo repositories.EventReportRepository, botClient *discord.BotClient) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		claims, ok := c.Get("user").(*session.Claims)
 		if !ok || claims == nil {
@@ -1195,6 +1204,14 @@ func updateGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "access denied"})
 		}
 
+		existing, err := reportRepo.FindByID(ctx, logID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
+		}
+		if existing == nil || existing.GuildID != guildID {
+			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "event log not found"})
+		}
+
 		hostID := strings.TrimSpace(in.HostDiscordID)
 		if hostID == "" {
 			hostID = claims.DiscordID
@@ -1216,11 +1233,24 @@ func updateGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to update event log"})
 		}
 
+		updated := *existing
+		updated.HostDiscordID = hostID
+		updated.EventDate = in.EventDate
+		updated.ParticipantIDs = in.ParticipantIDs
+		updated.Summary = in.Summary
+		capturedChannelID := guild.EventConfig.LogsChannelID
+		capturedLogger := c.Logger()
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			syncEventLogEmbed(bgCtx, capturedLogger, capturedChannelID, reportRepo, botClient, nil, &updated)
+		}()
+
 		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true})
 	}
 }
 
-func deleteGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository, reportRepo repositories.EventReportRepository) echo.HandlerFunc {
+func deleteGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository, reportRepo repositories.EventReportRepository, botClient *discord.BotClient) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		claims, ok := c.Get("user").(*session.Claims)
 		if !ok || claims == nil {
@@ -1246,11 +1276,32 @@ func deleteGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 			return c.JSON(http.StatusForbidden, map[string]interface{}{"ok": false, "error": "access denied"})
 		}
 
+		existing, err := reportRepo.FindByID(ctx, logID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
+		}
+		if existing == nil || existing.GuildID != guildID {
+			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "event log not found"})
+		}
+
 		if err := reportRepo.Delete(ctx, logID); err != nil {
 			if errors.Is(err, repositories.ErrReportNotFound) {
 				return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "event log not found"})
 			}
 			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to delete event log"})
+		}
+
+		if existing.LogsChannelID != "" && existing.LogsMessageID != "" {
+			capturedChannelID := existing.LogsChannelID
+			capturedMessageID := existing.LogsMessageID
+			capturedLogger := c.Logger()
+			go func() {
+				bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if err := botClient.DeleteMessage(bgCtx, capturedChannelID, capturedMessageID); err != nil {
+					capturedLogger.Errorf("guild event-log sync: delete failed for %s/%s: %v", capturedChannelID, capturedMessageID, err)
+				}
+			}()
 		}
 
 		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true})

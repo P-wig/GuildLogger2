@@ -517,51 +517,6 @@ func (c *BotClient) MoveGuildMember(ctx context.Context, guildID, userID, channe
 	return nil
 }
 
-// SetVoiceChannelLock updates the @everyone permission overwrite on a voice channel.
-// locked=true: deny VIEW_CHANNEL + CONNECT (private).
-// locked=false: allow VIEW_CHANNEL + CONNECT + SPEAK (open to all).
-func (c *BotClient) SetVoiceChannelLock(ctx context.Context, channelID, guildID string, locked bool) error {
-	var allow, deny string
-	if locked {
-		allow = "0"
-		deny = fmt.Sprintf("%d", permViewChannel|permConnect)
-	} else {
-		allow = fmt.Sprintf("%d", permViewChannel|permConnect|permSpeak)
-		deny = "0"
-	}
-	body, err := json.Marshal(map[string]interface{}{
-		"allow": allow,
-		"deny":  deny,
-		"type":  0,
-	})
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
-		c.apiBaseURL+"/channels/"+channelID+"/permissions/"+guildID,
-		bytes.NewReader(body),
-	)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bot "+c.botToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("set channel permissions failed: status %d body %s", resp.StatusCode, string(raw))
-	}
-	return nil
-}
-
 // VoiceState represents a single Discord guild voice-state entry.
 type VoiceState struct {
 	UserID    string `json:"user_id"`
@@ -652,6 +607,33 @@ func (c *BotClient) DeleteChannel(ctx context.Context, channelID string) error {
 	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("delete channel failed: status %d body %s", resp.StatusCode, string(raw))
+	}
+	return nil
+}
+
+// DeleteMessage removes a channel message. A 404 is treated as success since the
+// desired end state (message gone) already holds.
+func (c *BotClient) DeleteMessage(ctx context.Context, channelID, messageID string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete,
+		c.apiBaseURL+"/channels/"+channelID+"/messages/"+messageID,
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bot "+c.botToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
+		return fmt.Errorf("delete message failed: status %d body %s", resp.StatusCode, string(raw))
 	}
 	return nil
 }

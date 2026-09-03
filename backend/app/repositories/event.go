@@ -38,6 +38,8 @@ type EventReport struct {
 	Summary              string    `bson:"summary" json:"summary"`
 	SubmittedAt          time.Time `bson:"submittedAt" json:"submittedAt"`
 	SubmittedByDiscordID string    `bson:"submittedByDiscordId" json:"submittedByDiscordId"`
+	LogsChannelID        string    `bson:"logsChannelId,omitempty" json:"logsChannelId,omitempty"`
+	LogsMessageID        string    `bson:"logsMessageId,omitempty" json:"logsMessageId,omitempty"`
 }
 
 // Event is the aggregate root for a scheduled guild event.
@@ -122,9 +124,9 @@ type EventRepository interface {
 	// GetLiveEventCounts returns count of open/active events from the events collection.
 	GetLiveEventCounts(ctx context.Context, guildID string) (openOrActiveCount int64, err error)
 
-	// FindUpcomingSkirmishForReminders returns Skirmish events with scheduledAt in (now, cutoff)
-	// that have not yet had a reminder sent (reminderSentAt == nil).
-	FindUpcomingSkirmishForReminders(ctx context.Context, now, cutoff time.Time) ([]Event, error)
+	// FindUpcomingForReminders returns events with scheduledAt in (now, cutoff) that have at
+	// least one maybe RSVP and have not yet had a reminder sent (reminderSentAt == nil).
+	FindUpcomingForReminders(ctx context.Context, now, cutoff time.Time) ([]Event, error)
 
 	// MarkReminderSent sets reminderSentAt on an event to record that reminders were dispatched.
 	MarkReminderSent(ctx context.Context, eventID string, sentAt time.Time) error
@@ -140,6 +142,10 @@ type EventReportRepository interface {
 	// Create inserts a new report. SubmittedAt is set by the implementation.
 	Create(ctx context.Context, report *EventReport) error
 
+	// FindByID retrieves a report by its log ID.
+	// Returns (nil, nil) if not found.
+	FindByID(ctx context.Context, logID string) (*EventReport, error)
+
 	// FindByEventID retrieves the report for a specific event.
 	// Returns (nil, nil) if not found.
 	FindByEventID(ctx context.Context, eventID string) (*EventReport, error)
@@ -153,9 +159,6 @@ type EventReportRepository interface {
 	// GetGuildMemberActivity returns hosted/attended aggregates per member for leaderboard/table enrichment.
 	GetGuildMemberActivity(ctx context.Context, guildID string) ([]GuildDashboardLeaderboardEntry, error)
 
-	// GetGuildParticipationStats returns participant slot totals and unique reported event count.
-	GetGuildParticipationStats(ctx context.Context, guildID string) (participantSlots int64, uniqueReportedEvents int64, err error)
-
 	// FindDashboardEvents retrieves and filters event reports for dashboard display.
 	// Returns rows containing event summaries and participant info, suitable for search/filter UI.
 	FindDashboardEvents(ctx context.Context, guildID string, filter GuildDashboardEventFilter) ([]GuildDashboardEventRow, error)
@@ -167,6 +170,9 @@ type EventReportRepository interface {
 	// Delete removes a report by its ID.
 	// Returns ErrReportNotFound if no document matches logID.
 	Delete(ctx context.Context, logID string) error
+
+	// SetLogMessageRef stores the Discord log channel/message IDs used for embed synchronization.
+	SetLogMessageRef(ctx context.Context, logID, channelID, messageID string) error
 
 	EnsureIndexes(ctx context.Context) error
 }

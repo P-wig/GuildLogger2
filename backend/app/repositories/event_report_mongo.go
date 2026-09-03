@@ -25,6 +25,8 @@ type eventReportDoc struct {
 	SummaryCompressed    []byte    `bson:"summary"`
 	SubmittedAt          time.Time `bson:"submittedAt"`
 	SubmittedByDiscordID string    `bson:"submittedByDiscordId"`
+	LogsChannelID        string    `bson:"logsChannelId,omitempty"`
+	LogsMessageID        string    `bson:"logsMessageId,omitempty"`
 }
 
 func toEventReportDoc(report *EventReport) (*eventReportDoc, error) {
@@ -42,6 +44,8 @@ func toEventReportDoc(report *EventReport) (*eventReportDoc, error) {
 		SummaryCompressed:    compressed,
 		SubmittedAt:          report.SubmittedAt,
 		SubmittedByDiscordID: report.SubmittedByDiscordID,
+		LogsChannelID:        report.LogsChannelID,
+		LogsMessageID:        report.LogsMessageID,
 	}, nil
 }
 
@@ -60,6 +64,8 @@ func fromEventReportDoc(doc *eventReportDoc) (*EventReport, error) {
 		Summary:              summary,
 		SubmittedAt:          doc.SubmittedAt,
 		SubmittedByDiscordID: doc.SubmittedByDiscordID,
+		LogsChannelID:        doc.LogsChannelID,
+		LogsMessageID:        doc.LogsMessageID,
 	}, nil
 }
 
@@ -146,6 +152,18 @@ func (r *MongoEventReportRepository) Create(ctx context.Context, report *EventRe
 	return err
 }
 
+func (r *MongoEventReportRepository) FindByID(ctx context.Context, logID string) (*EventReport, error) {
+	var doc eventReportDoc
+	err := db.EventReportsCollection(r.database).FindOne(ctx, bson.M{"_id": logID}).Decode(&doc)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return fromEventReportDoc(&doc)
+}
+
 func (r *MongoEventReportRepository) FindByEventID(ctx context.Context, eventID string) (*EventReport, error) {
 	var doc eventReportDoc
 	err := db.EventReportsCollection(r.database).FindOne(ctx, bson.M{"eventId": eventID}).Decode(&doc)
@@ -156,6 +174,23 @@ func (r *MongoEventReportRepository) FindByEventID(ctx context.Context, eventID 
 		return nil, err
 	}
 	return fromEventReportDoc(&doc)
+}
+
+func (r *MongoEventReportRepository) SetLogMessageRef(ctx context.Context, logID, channelID, messageID string) error {
+	result, err := db.EventReportsCollection(r.database).UpdateOne(ctx,
+		bson.M{"_id": logID},
+		bson.M{"$set": bson.M{
+			"logsChannelId": channelID,
+			"logsMessageId": messageID,
+		}},
+	)
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount == 0 {
+		return ErrReportNotFound
+	}
+	return nil
 }
 
 func (r *MongoEventReportRepository) FindByGuildID(ctx context.Context, guildID string) ([]EventReport, error) {
@@ -235,37 +270,6 @@ func (r *MongoEventReportRepository) GetGuildMemberActivity(ctx context.Context,
 		out = append(out, *entry)
 	}
 	return out, nil
-}
-
-func (r *MongoEventReportRepository) GetGuildParticipationStats(ctx context.Context, guildID string) (int64, int64, error) {
-	pipeline := bson.A{
-		bson.M{"$match": bson.M{"guildId": guildID}},
-		bson.M{"$group": bson.M{
-			"_id": bson.M{"$const": 1},
-			"participantSlots": bson.M{"$sum": bson.M{
-				"$size": bson.M{"$ifNull": bson.A{"$participantIds", bson.A{}}},
-			}},
-			"uniqueReportedEvents": bson.M{"$sum": 1},
-		}},
-	}
-
-	cursor, err := db.EventReportsCollection(r.database).Aggregate(ctx, pipeline)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer cursor.Close(ctx)
-
-	var result struct {
-		ParticipantSlots     int64 `bson:"participantSlots"`
-		UniqueReportedEvents int64 `bson:"uniqueReportedEvents"`
-	}
-	if cursor.Next(ctx) {
-		if err := cursor.Decode(&result); err != nil {
-			return 0, 0, err
-		}
-	}
-
-	return result.ParticipantSlots, result.UniqueReportedEvents, nil
 }
 
 func (r *MongoEventReportRepository) FindDashboardEvents(ctx context.Context, guildID string, filter GuildDashboardEventFilter) ([]GuildDashboardEventRow, error) {

@@ -101,12 +101,9 @@ type GuildRepository interface {
 
 	// Role operations
 	UpsertRole(ctx context.Context, guildID string, role GuildRole) error
-	RemoveRole(ctx context.Context, guildID, discordRoleID string) error
-	ReorderRoles(ctx context.Context, guildID string, orderedRoleIDs []string) error
 
 	// Guild-level configuration
 	UpdateStatusRoleConfig(ctx context.Context, guildID string, cfg GuildStatusRoleConfig) error
-	UpdateMilestoneNotificationConfig(ctx context.Context, guildID string, cfg GuildMilestoneNotificationConfig) error
 	UpdateConfigAndRoles(ctx context.Context, guildID string, cfg GuildStatusRoleConfig, roles []GuildRole) error
 	// UpdateEventConfig saves the guild's events channel ID and event type list.
 	UpdateEventConfig(ctx context.Context, guildID string, cfg GuildEventConfig) error

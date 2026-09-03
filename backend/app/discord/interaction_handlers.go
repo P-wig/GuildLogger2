@@ -24,6 +24,7 @@ type InteractionHandler struct {
 	eventRepo       repositories.EventRepository
 	eventReportRepo repositories.EventReportRepository
 	botClient       *BotClient
+	events          *EventService
 	publicKey       string // hex-encoded Ed25519 public key; empty = skip verification (dev)
 	secretKey       string // JWT signing key used to generate event-log tokens
 	appURL          string // frontend base URL, e.g. "https://app.example.com"
@@ -36,6 +37,7 @@ func NewInteractionHandler(
 	eventRepo repositories.EventRepository,
 	eventReportRepo repositories.EventReportRepository,
 	botClient *BotClient,
+	events *EventService,
 	publicKey string,
 	secretKey string,
 	appURL string,
@@ -46,6 +48,7 @@ func NewInteractionHandler(
 		eventRepo:       eventRepo,
 		eventReportRepo: eventReportRepo,
 		botClient:       botClient,
+		events:          events,
 		publicKey:       publicKey,
 		secretKey:       secretKey,
 		appURL:          appURL,
@@ -329,114 +332,6 @@ func (h *InteractionHandler) handleEventLog(c echo.Context, i *Interaction) erro
 	})
 }
 
-func (h *InteractionHandler) handleEventList(c echo.Context, i *Interaction) error {
-	ctx := c.Request().Context()
-	allEvents, err := h.eventRepo.FindByGuildID(ctx, i.GuildID)
-	if err != nil {
-		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Failed to retrieve events."))
-	}
-
-	// Filter to open/active only, sort by ScheduledAt ascending.
-	var upcoming []repositories.Event
-	for _, e := range allEvents {
-		if e.Status == repositories.EventStatusOpen || e.Status == repositories.EventStatusActive {
-			upcoming = append(upcoming, e)
-		}
-	}
-	for i := 1; i < len(upcoming); i++ {
-		for j := i; j > 0 && upcoming[j].ScheduledAt.Before(upcoming[j-1].ScheduledAt); j-- {
-			upcoming[j], upcoming[j-1] = upcoming[j-1], upcoming[j]
-		}
-	}
-
-	if len(upcoming) == 0 {
-		return c.JSON(http.StatusOK, ephemeralMsg("No upcoming events scheduled."))
-	}
-
-	const maxShown = 10
-	shown := upcoming
-	footerText := fmt.Sprintf("%d event(s) scheduled", len(upcoming))
-	if len(upcoming) > maxShown {
-		shown = upcoming[:maxShown]
-		footerText = fmt.Sprintf("Showing %d of %d upcoming events", maxShown, len(upcoming))
-	}
-
-	fields := make([]EmbedField, 0, len(shown))
-	for _, e := range shown {
-		attendees := len(e.AttendingIDs)
-		capStr := "∞"
-		if e.Capacity > 0 {
-			capStr = strconv.Itoa(e.Capacity)
-		}
-		statusEmoji := "🟢"
-		if e.Status == repositories.EventStatusActive {
-			statusEmoji = "🔵"
-		}
-		fields = append(fields, EmbedField{
-			Name: statusEmoji + " " + e.Title,
-			Value: fmt.Sprintf(
-				"Host: <@%s>\nStarts: <t:%d:F>\nAttending: %d / %s",
-				e.HostDiscordID,
-				e.ScheduledAt.Unix(),
-				attendees,
-				capStr,
-			),
-		})
-	}
-
-	return c.JSON(http.StatusOK, interactionResponse{
-		Type: InteractionResponseChannelMessage,
-		Data: map[string]interface{}{
-			"flags": MessageFlagEphemeral,
-			"embeds": []Embed{{
-				Title:  "📅 Upcoming Events",
-				Color:  0x5865F2, // Discord blurple
-				Fields: fields,
-				Footer: &EmbedFooter{Text: footerText},
-			}},
-		},
-	})
-}
-
-// --- APPLICATION_COMMAND: /log ---
-
-func (h *InteractionHandler) handleLog(c echo.Context, i *Interaction) error {
-	discordID := interactionUserID(i)
-	ctx := c.Request().Context()
-	member, err := h.memberRepo.FindByGuildAndDiscordID(ctx, i.GuildID, discordID)
-	if err != nil || member == nil || member.Status != repositories.MemberStatusActive {
-		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ You must be a registered active member of this guild to log events."))
-	}
-
-	return c.JSON(http.StatusOK, interactionResponse{
-		Type: InteractionResponseModal,
-		Data: map[string]interface{}{
-			"custom_id": "log_event",
-			"title":     "Log Completed Event",
-			"components": []TextInputRow{
-				{Type: 1, Components: []TextInput{{
-					Type:        4,
-					CustomID:    "date",
-					Style:       1,
-					Label:       "Event Date",
-					Required:    true,
-					Placeholder: "YYYY-MM-DD",
-					MaxLength:   10,
-				}}},
-				{Type: 1, Components: []TextInput{{
-					Type:        4,
-					CustomID:    "summary",
-					Style:       2,
-					Label:       "Summary",
-					Required:    true,
-					Placeholder: "What happened at this event?",
-					MaxLength:   1000,
-				}}},
-			},
-		},
-	})
-}
-
 // --- APPLICATION_COMMAND: /stats ---
 
 func (h *InteractionHandler) handleStats(c echo.Context, i *Interaction) error {
@@ -553,46 +448,6 @@ func (h *InteractionHandler) handleHelp(c echo.Context, i *Interaction) error {
 	})
 }
 
-// --- MODAL_SUBMIT: log_event ---
-
-func (h *InteractionHandler) handleLogModalSubmit(c echo.Context, i *Interaction, eventID string) error {
-	dateStr := strings.TrimSpace(getModalValue(i, "date"))
-	summary := strings.TrimSpace(getModalValue(i, "summary"))
-	if dateStr == "" || summary == "" {
-		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Date and summary are required."))
-	}
-
-	eventDate, err := time.Parse("2006-01-02", dateStr)
-	if err != nil {
-		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Invalid date format. Use YYYY-MM-DD."))
-	}
-
-	ctx := c.Request().Context()
-	discordID := interactionUserID(i)
-
-	// Use the event's host if found; fall back to the submitter.
-	hostID := discordID
-	if event, err := h.eventRepo.FindByID(ctx, eventID); err == nil && event != nil {
-		hostID = event.HostDiscordID
-	}
-
-	report := &repositories.EventReport{
-		EventID:              eventID,
-		GuildID:              i.GuildID,
-		HostDiscordID:        hostID,
-		EventDate:            eventDate.UTC(),
-		ParticipantIDs:       []string{},
-		Summary:              summary,
-		SubmittedByDiscordID: discordID,
-	}
-
-	if err := h.eventReportRepo.Create(ctx, report); err != nil {
-		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Failed to save event log."))
-	}
-
-	return c.JSON(http.StatusOK, ephemeralMsg(fmt.Sprintf("✅ Event logged for %s.", eventDate.Format("January 2, 2006"))))
-}
-
 // --- APPLICATION_COMMAND_AUTOCOMPLETE: /event create eventtype ---
 
 func (h *InteractionHandler) handleAutocomplete(c echo.Context, i *Interaction) error {
@@ -636,9 +491,6 @@ func (h *InteractionHandler) handleModalSubmit(c echo.Context, i *Interaction) e
 		return c.JSON(http.StatusOK, ephemeralMsg("Something went wrong."))
 	}
 
-	if eventID, ok := strings.CutPrefix(i.Data.CustomID, "log_event|"); ok {
-		return h.handleLogModalSubmit(c, i, eventID)
-	}
 	if eventID, ok := strings.CutPrefix(i.Data.CustomID, "mail_event|"); ok {
 		return h.handleMailModalSubmit(c, i, eventID)
 	}
@@ -650,7 +502,6 @@ func (h *InteractionHandler) handleModalSubmit(c echo.Context, i *Interaction) e
 
 	startTimeStr := getModalValue(i, "start_time")
 	description := strings.TrimSpace(getModalValue(i, "message"))
-	capacity := 0
 
 	// Validate start time before acknowledging — cheap, no I/O.
 	startTime, err := parseStartTime(startTimeStr)
@@ -666,7 +517,6 @@ func (h *InteractionHandler) handleModalSubmit(c echo.Context, i *Interaction) e
 	guildID := i.GuildID
 	hostID := interactionUserID(i)
 	// Capture parsed values for the goroutine (closures over loop-free vars are safe).
-	capturedCapacity := capacity
 	capturedDesc := description
 	capturedStart := startTime
 	capturedType := eventType
@@ -679,86 +529,25 @@ func (h *InteractionHandler) handleModalSubmit(c echo.Context, i *Interaction) e
 			_ = h.botClient.EditInteractionResponse(ctx, appID, token, msg)
 		}
 
-		guild, err := h.guildRepo.FindByGuildID(ctx, guildID)
-		if err != nil || guild == nil {
-			editResp("⚠️ Could not find guild configuration.")
-			return
-		}
-
-		// Resolve the channel configured for this event type.
-		channelID := ""
-		isQuick := false
-		for _, et := range guild.EventConfig.EventTypes {
-			if strings.EqualFold(et.Name, capturedType) {
-				channelID = et.ChannelID
-				isQuick = et.IsQuickEvent
-				break
-			}
-		}
-		if channelID == "" {
+		event, err := h.events.CreateEvent(ctx, CreateEventParams{
+			GuildID:     guildID,
+			HostID:      hostID,
+			EventType:   capturedType,
+			Description: capturedDesc,
+			ScheduledAt: capturedStart,
+		})
+		switch {
+		case errors.Is(err, ErrNoChannelConfigured):
 			editResp("⚠️ No channel configured for event type \"" + capturedType + "\". Set one in the GuildLogger dashboard under Guild Configuration.")
-			return
-		}
-
-		// Large events use a fixed capacity of 99.
-		if !isQuick {
-			capturedCapacity = 99
-		}
-
-		// Build the announcement message content that appears above the embed.
-		// This must be plain text (not inside the embed) so the @role mention
-		// fires a push notification for both quick and non-quick event types.
-		epoch := capturedStart.Unix()
-		activeRoleID := guild.NotificationConfig.StatusRoles.ActiveRoleID
-		typeName := strings.ToLower(capturedType)
-		messageContent := ""
-		if activeRoleID != "" {
-			messageContent = fmt.Sprintf("<@%s> is hosting a %s at <t:%d:t> <t:%d:R>", hostID, typeName, epoch, epoch)
-			// comment out the role mention to avoid unnecessary pings during testing ONLY, switch back later
-			//messageContent = fmt.Sprintf("<@&%s> <@%s> is hosting a %s at <t:%d:t> <t:%d:R>", activeRoleID, hostID, typeName, epoch, epoch)
-		} else {
-			messageContent = fmt.Sprintf("<@%s> is hosting a %s at <t:%d:t> <t:%d:R>", hostID, typeName, epoch, epoch)
-			//messageContent = fmt.Sprintf("<@&%s> <@%s> is hosting a %s at <t:%d:t> <t:%d:R>", activeRoleID, hostID, typeName, epoch, epoch)
-		}
-		if isQuick {
-			capturedDesc = "" // Quick events carry no user description; the message content is the announcement
-		}
-
-		event := &repositories.Event{
-			GuildID:         guildID,
-			HostDiscordID:   hostID,
-			Title:           capturedType,
-			EventType:       capturedType,
-			Description:     capturedDesc,
-			ScheduledAt:     capturedStart,
-			Status:          repositories.EventStatusOpen,
-			AttendingIDs:    []string{},
-			MaybeIDs:        []string{},
-			NotAttendingIDs: []string{},
-			ChannelID:       channelID,
-			Capacity:        capturedCapacity,
-			CreatedAt:       time.Now(),
-			UpdatedAt:       time.Now(),
-		}
-		if err := h.eventRepo.Create(ctx, event); err != nil {
-			editResp("⚠️ Failed to create event record.")
-			return
-		}
-
-		embed := buildEventEmbed(capturedType, isQuick, capturedDesc, hostID, event.ID, "open", capturedStart.Unix(), []string{}, []string{}, []string{})
-		msgID, err := h.botClient.PostEmbedMessage(ctx, channelID, messageContent, []Embed{embed}, buildRSVPButtons(event.ID, isQuick, "open"))
-		if err != nil {
-			// Event created but announcement failed — still usable via API.
+		case errors.Is(err, ErrGuildNotConfigured):
+			editResp("⚠️ Could not find guild configuration.")
+		case errors.Is(err, ErrAnnouncementFailed):
 			editResp(fmt.Sprintf("✅ Event created (ID: %s) but announcement post failed: %v", event.ID, err))
-			return
+		case err != nil:
+			editResp("⚠️ Failed to create event record.")
+		default:
+			editResp(fmt.Sprintf("✅ **%s** event posted in <#%s>.", capturedType, event.ChannelID))
 		}
-
-		// Persist the Discord message ID so the embed can be updated when attendees change.
-		event.AnnouncementMessageID = msgID
-		event.UpdatedAt = time.Now()
-		_ = h.eventRepo.Update(ctx, event.ID, event)
-
-		editResp(fmt.Sprintf("✅ **%s** event posted in <#%s>.", capturedType, channelID))
 	}()
 
 	// Return the deferred ephemeral acknowledgement immediately.
@@ -803,21 +592,7 @@ func (h *InteractionHandler) handleComponent(c echo.Context, i *Interaction) err
 		return c.JSON(http.StatusOK, interactionResponse{Type: InteractionResponsePong})
 	}
 
-	var repoErr error
-	switch action {
-	case "join":
-		repoErr = h.eventRepo.AddAttendee(ctx, eventID, discordID)
-	case "leave":
-		repoErr = h.eventRepo.RemoveAttendee(ctx, eventID, discordID)
-	case "maybe":
-		repoErr = h.eventRepo.AddMaybe(ctx, eventID, discordID)
-	case "unmaybe":
-		repoErr = h.eventRepo.RemoveMaybe(ctx, eventID, discordID)
-	case "decline":
-		repoErr = h.eventRepo.AddDecline(ctx, eventID, discordID)
-	case "undecline":
-		repoErr = h.eventRepo.RemoveDecline(ctx, eventID, discordID)
-	}
+	updated, repoErr := h.events.SetRSVP(ctx, eventID, discordID, action)
 
 	switch {
 	case repoErr == nil:
@@ -838,7 +613,7 @@ func (h *InteractionHandler) handleComponent(c echo.Context, i *Interaction) err
 		if err != nil || event == nil {
 			return c.JSON(http.StatusOK, interactionResponse{Type: InteractionResponseDeferredUpdate})
 		}
-		isQuick := h.lookupIsQuick(ctx, i.GuildID, event.EventType)
+		isQuick := h.events.IsQuickEvent(ctx, i.GuildID, event.EventType)
 		noop := buildEventEmbed(event.EventType, isQuick, event.Description, event.HostDiscordID, eventID, string(event.Status), event.ScheduledAt.Unix(), event.AttendingIDs, event.MaybeIDs, event.NotAttendingIDs)
 		return c.JSON(http.StatusOK, interactionResponse{
 			Type: InteractionResponseUpdateMessage,
@@ -851,12 +626,12 @@ func (h *InteractionHandler) handleComponent(c echo.Context, i *Interaction) err
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Failed to update attendance. Please try again."))
 	}
 
-	event, err := h.eventRepo.FindByID(ctx, eventID)
-	if err != nil || event == nil {
+	event := updated
+	if event == nil {
 		return c.JSON(http.StatusOK, interactionResponse{Type: InteractionResponseDeferredUpdate})
 	}
 
-	isQuick := h.lookupIsQuick(ctx, i.GuildID, event.EventType)
+	isQuick := h.events.IsQuickEvent(ctx, i.GuildID, event.EventType)
 	embed := buildEventEmbed(event.EventType, isQuick, event.Description, event.HostDiscordID, eventID, string(event.Status), event.ScheduledAt.Unix(), event.AttendingIDs, event.MaybeIDs, event.NotAttendingIDs)
 
 	// UPDATE_MESSAGE replaces the original RSVP embed in place, visible to all users in the channel.
@@ -871,113 +646,29 @@ func (h *InteractionHandler) handleComponent(c echo.Context, i *Interaction) err
 
 // --- MESSAGE_COMPONENT: ctrl_start|{eventID} ---
 
-// collectVoiceChannelMembers returns the user IDs currently in channelID.
-// It first tries the guild-wide voice-states endpoint; if that returns an
-// error or no members in the target channel it falls back to querying each
-// candidate user individually (attendees + maybe-RSVPs).
-func (h *InteractionHandler) collectVoiceChannelMembers(
-	ctx context.Context,
-	guildID, channelID string,
-	candidates []string,
-	logger echo.Logger,
-) []string {
-	// Attempt bulk lookup.
-	states, err := h.botClient.GetGuildVoiceStates(ctx, guildID)
-	if err == nil {
-		var ids []string
-		for _, vs := range states {
-			if vs.ChannelID == channelID && vs.UserID != "" {
-				ids = append(ids, vs.UserID)
-			}
-		}
-		if len(ids) > 0 {
-			return ids
-		}
-		logger.Infof("collectVoiceChannelMembers: bulk endpoint returned 0 members in %s — falling back to per-user lookup", channelID)
-	} else {
-		logger.Errorf("collectVoiceChannelMembers: bulk endpoint error: %v — falling back to per-user lookup", err)
-	}
-
-	// Per-user fallback: check every candidate (attendees + maybe RSVPs).
-	var ids []string
-	for _, uid := range candidates {
-		vs, vsErr := h.botClient.GetUserVoiceState(ctx, guildID, uid)
-		if vsErr != nil {
-			logger.Errorf("collectVoiceChannelMembers: GetUserVoiceState %s: %v", uid, vsErr)
-			continue
-		}
-		if vs != nil && vs.ChannelID == channelID {
-			ids = append(ids, uid)
-		}
-	}
-	return ids
-}
-
 func (h *InteractionHandler) handleCtrlStart(c echo.Context, i *Interaction, eventID string) error {
 	discordID := interactionUserID(i)
 	ctx := c.Request().Context()
 
-	event, err := h.eventRepo.FindByID(ctx, eventID)
-	if err != nil || event == nil || event.GuildID != i.GuildID {
+	event, err := h.events.StartEvent(ctx, eventID, i.GuildID, discordID)
+	switch {
+	case errors.Is(err, repositories.ErrEventNotFound) || errors.Is(err, ErrEventNotInGuild):
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Event not found."))
-	}
-	if event.HostDiscordID != discordID {
+	case errors.Is(err, ErrNotHost):
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Only the event host can start this event."))
-	}
-	if event.Status != repositories.EventStatusOpen {
+	case errors.Is(err, repositories.ErrInvalidStatusTransition):
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ This event has already been started or closed."))
-	}
-
-	// Transition event to active (fast DB write — must succeed before responding).
-	if err := h.eventRepo.Start(ctx, eventID); err != nil {
+	case err != nil:
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Failed to start event. Please try again."))
 	}
 
-	// Run all Discord API work in a background goroutine so we respond to Discord
-	// within the 3-second interaction deadline.
+	// Discord API work runs in the background so we stay inside the 3-second deadline.
 	hostName := memberDisplayName(i.Member)
-	capturedGuildID := i.GuildID
-	capturedChannelID := event.ChannelID
-	capturedMsgID := event.AnnouncementMessageID
-	capturedEventID := event.ID
-	capturedHostID := discordID
-	capturedEventType := event.EventType
 	startLogger := c.Logger()
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 14*time.Second)
 		defer cancel()
-
-		// Create the voice channel now that the event has started.
-		guild, gErr := h.guildRepo.FindByGuildID(bgCtx, capturedGuildID)
-		if gErr != nil || guild == nil {
-			startLogger.Errorf("ctrl_start: guild lookup failed for %s: %v", capturedGuildID, gErr)
-		} else if guild.EventConfig.VoiceCategoryID == "" {
-			startLogger.Errorf("ctrl_start: guild %s has no VoiceCategoryID configured — skipping voice channel creation", capturedGuildID)
-		} else {
-			channelName := memberChannelName(hostName, capturedEventType)
-			vcID, vcErr := h.botClient.CreateEventVoiceChannel(bgCtx, capturedGuildID, channelName, guild.EventConfig.VoiceCategoryID, capturedHostID)
-			if vcErr != nil {
-				startLogger.Errorf("ctrl_start: CreateEventVoiceChannel failed: %v", vcErr)
-			} else {
-				if ev, fErr := h.eventRepo.FindByID(bgCtx, capturedEventID); fErr == nil && ev != nil {
-					ev.VoiceChannelID = vcID
-					ev.UpdatedAt = time.Now()
-					if err := h.eventRepo.Update(bgCtx, capturedEventID, ev); err != nil {
-						startLogger.Errorf("ctrl_start: failed to save VoiceChannelID %s: %v", vcID, err)
-					}
-				}
-				_ = h.botClient.MoveGuildMember(bgCtx, capturedGuildID, capturedHostID, vcID)
-			}
-		}
-
-		if capturedMsgID != "" {
-			updatedEvent, fErr := h.eventRepo.FindByID(bgCtx, capturedEventID)
-			if fErr == nil && updatedEvent != nil {
-				isQuick := h.lookupIsQuick(bgCtx, capturedGuildID, updatedEvent.EventType)
-				embed := buildEventEmbed(updatedEvent.EventType, isQuick, updatedEvent.Description, updatedEvent.HostDiscordID, capturedEventID, string(updatedEvent.Status), updatedEvent.ScheduledAt.Unix(), updatedEvent.AttendingIDs, updatedEvent.MaybeIDs, updatedEvent.NotAttendingIDs)
-				_ = h.botClient.EditMessage(bgCtx, capturedChannelID, capturedMsgID, []Embed{embed}, buildRSVPButtons(updatedEvent.ID, isQuick, string(updatedEvent.Status)))
-			}
-		}
+		h.events.ApplyStartEffects(bgCtx, event, hostName, startLogger)
 	}()
 
 	return c.JSON(http.StatusOK, ephemeralMsg("▶️ Event started! The voice channel is now open."))
@@ -989,85 +680,32 @@ func (h *InteractionHandler) handleCtrlEnd(c echo.Context, i *Interaction, event
 	discordID := interactionUserID(i)
 	ctx := c.Request().Context()
 
-	event, err := h.eventRepo.FindByID(ctx, eventID)
-	if err != nil || event == nil || event.GuildID != i.GuildID {
-		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Event not found."))
-	}
-	if event.HostDiscordID != discordID {
-		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Only the event host can end this event."))
-	}
-	if event.Status != repositories.EventStatusActive {
-		if event.Status == repositories.EventStatusClosed {
-			return c.JSON(http.StatusOK, ephemeralMsg("⚠️ This event is already closed."))
-		}
-		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Start the event before ending it."))
-	}
-
-	// Block early if a report already exists.
-	existing, _ := h.eventReportRepo.FindByEventID(ctx, eventID)
-	if existing != nil {
-		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ This event has already been logged."))
-	}
-
-	// Generate the log token synchronously (no I/O — stays well within the 3s deadline).
+	// Generate the log token first so a signing failure never leaves a closed event
+	// without a way to submit its log.
 	token, err := session.SignEventLog(eventID, i.GuildID, discordID, h.secretKey)
 	if err != nil {
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Failed to generate log link. Please try again."))
 	}
 
-	// Snapshot who is in the voice channel now so the log form can pre-fill participants.
-	if event.VoiceChannelID != "" {
-		candidates := append(event.AttendingIDs, event.MaybeIDs...)
-		ids := h.collectVoiceChannelMembers(ctx, i.GuildID, event.VoiceChannelID, candidates, c.Logger())
-		if len(ids) > 0 {
-			event.VoiceMemberIDs = ids
-			event.UpdatedAt = time.Now()
-			_ = h.eventRepo.Update(ctx, event.ID, event)
-		}
-	}
-
-	// Transition to closed so the Close Channel button becomes enabled.
-	if err := h.eventRepo.Close(ctx, eventID); err != nil {
+	event, err := h.events.EndEvent(ctx, eventID, i.GuildID, discordID, c.Logger())
+	switch {
+	case errors.Is(err, repositories.ErrEventNotFound) || errors.Is(err, ErrEventNotInGuild):
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Event not found."))
+	case errors.Is(err, ErrNotHost):
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Only the event host can end this event."))
+	case errors.Is(err, ErrAlreadyLogged):
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ This event has already been logged."))
+	case errors.Is(err, repositories.ErrInvalidStatusTransition):
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Start the event before ending it."))
+	case err != nil:
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Failed to close event. Please try again."))
 	}
 
-	capturedVoiceChannelID := event.VoiceChannelID
-	capturedGuildID := i.GuildID
-	capturedEventID := eventID
-	capturedMsgID := event.AnnouncementMessageID
-	capturedChannelID := event.ChannelID
 	bgLogger := c.Logger()
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 14*time.Second)
 		defer cancel()
-
-		// ctrl_start goroutine may not have written VoiceChannelID yet — re-fetch and snapshot.
-		if capturedVoiceChannelID == "" {
-			ev, err := h.eventRepo.FindByID(bgCtx, capturedEventID)
-			if err == nil && ev != nil && ev.VoiceChannelID != "" {
-				candidates := append(ev.AttendingIDs, ev.MaybeIDs...)
-				memberIDs := h.collectVoiceChannelMembers(bgCtx, capturedGuildID, ev.VoiceChannelID, candidates, bgLogger)
-				if len(memberIDs) > 0 {
-					ev.VoiceMemberIDs = memberIDs
-					ev.UpdatedAt = time.Now()
-					_ = h.eventRepo.Update(bgCtx, capturedEventID, ev)
-				}
-			}
-		}
-
-		if capturedMsgID == "" {
-			bgLogger.Warnf("ctrl_end: no AnnouncementMessageID for event %s — Close Channel button will not be enabled", capturedEventID)
-			return
-		}
-		ev, fErr := h.eventRepo.FindByID(bgCtx, capturedEventID)
-		if fErr != nil || ev == nil {
-			return
-		}
-		isQuick := h.lookupIsQuick(bgCtx, capturedGuildID, ev.EventType)
-		embed := buildEventEmbed(ev.EventType, isQuick, ev.Description, ev.HostDiscordID, capturedEventID, string(ev.Status), ev.ScheduledAt.Unix(), ev.AttendingIDs, ev.MaybeIDs, ev.NotAttendingIDs)
-		if err := h.botClient.EditMessage(bgCtx, capturedChannelID, capturedMsgID, []Embed{embed}, buildRSVPButtons(capturedEventID, isQuick, "closed")); err != nil {
-			bgLogger.Errorf("ctrl_end: EditMessage %s/%s: %v", capturedChannelID, capturedMsgID, err)
-		}
+		h.events.ApplyEndEffects(bgCtx, event, bgLogger)
 	}()
 
 	logURL := h.appURL + "/log-event?token=" + token
@@ -1248,47 +886,26 @@ func (h *InteractionHandler) handleCtrlCloseChannel(c echo.Context, i *Interacti
 	discordID := interactionUserID(i)
 	ctx := c.Request().Context()
 
-	event, err := h.eventRepo.FindByID(ctx, eventID)
-	if err != nil || event == nil || event.GuildID != i.GuildID {
+	event, err := h.events.CloseEventChannel(ctx, eventID, i.GuildID, discordID)
+	switch {
+	case errors.Is(err, repositories.ErrEventNotFound) || errors.Is(err, ErrEventNotInGuild):
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Event not found."))
-	}
-	if event.HostDiscordID != discordID {
+	case errors.Is(err, ErrNotHost):
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Only the event host can close the channel."))
-	}
-	if event.Status != repositories.EventStatusClosed {
+	case errors.Is(err, repositories.ErrInvalidStatusTransition):
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ End the event before closing the channel."))
+	case err != nil:
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Failed to close the channel. Please try again."))
 	}
 
-	isQuick := h.lookupIsQuick(ctx, i.GuildID, event.EventType)
+	isQuick := h.events.IsQuickEvent(ctx, i.GuildID, event.EventType)
 	embed := buildEventEmbed(event.EventType, isQuick, event.Description, event.HostDiscordID, eventID, string(event.Status), event.ScheduledAt.Unix(), event.AttendingIDs, event.MaybeIDs, event.NotAttendingIDs)
 
-	capturedEventID := eventID
-	capturedGuildID := i.GuildID
-	capturedVoiceChannelID := event.VoiceChannelID
-	capturedVoiceMemberIDs := event.VoiceMemberIDs
 	bgLogger := c.Logger()
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		defer func() { _ = h.eventRepo.Delete(bgCtx, capturedEventID) }()
-
-		if capturedVoiceChannelID == "" {
-			return
-		}
-		lobbyID := ""
-		if guild, gErr := h.guildRepo.FindByGuildID(bgCtx, capturedGuildID); gErr == nil && guild != nil {
-			lobbyID = guild.EventConfig.LobbyChannelID
-		}
-		if lobbyID != "" {
-			for _, uid := range capturedVoiceMemberIDs {
-				if err := h.botClient.MoveGuildMember(bgCtx, capturedGuildID, uid, lobbyID); err != nil {
-					bgLogger.Errorf("ctrl_close_channel: MoveGuildMember %s: %v", uid, err)
-				}
-			}
-		}
-		if err := h.botClient.DeleteChannel(bgCtx, capturedVoiceChannelID); err != nil {
-			bgLogger.Errorf("ctrl_close_channel: DeleteChannel %s: %v", capturedVoiceChannelID, err)
-		}
+		h.events.ApplyCloseChannelEffects(bgCtx, event, bgLogger)
 	}()
 
 	return c.JSON(http.StatusOK, interactionResponse{
@@ -1308,18 +925,4 @@ func memberChannelName(hostName, eventType string) string {
 		name = name[:100]
 	}
 	return name
-}
-
-// lookupIsQuick returns true if the given eventType is configured as a quick event in the guild.
-func (h *InteractionHandler) lookupIsQuick(ctx context.Context, guildID, eventType string) bool {
-	guild, err := h.guildRepo.FindByGuildID(ctx, guildID)
-	if err != nil || guild == nil {
-		return false
-	}
-	for _, et := range guild.EventConfig.EventTypes {
-		if strings.EqualFold(et.Name, eventType) {
-			return et.IsQuickEvent
-		}
-	}
-	return false
 }

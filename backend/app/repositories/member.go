@@ -53,13 +53,6 @@ type MemberRepository interface {
 	FindByGuildAndDiscordID(ctx context.Context, guildID, discordID string) (*Member, error)
 	FindByGuildID(ctx context.Context, guildID string) ([]Member, error)
 
-	UpdateRoles(ctx context.Context, guildID, discordID string, roleIDs []string) error
-	UpdateStatusAndRank(ctx context.Context, guildID, discordID string, status MemberStatus, rankedRoleID string) error
-	UpdateNotificationPreference(ctx context.Context, guildID, discordID string, optOut bool) error
-
-	// Members eligible for announcements/newsletters.
-	FindNotificationTargets(ctx context.Context, guildID string) ([]Member, error)
-
 	Delete(ctx context.Context, guildID, discordID string) error
 	DeleteAllByGuildID(ctx context.Context, guildID string) error
 

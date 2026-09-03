@@ -65,6 +65,9 @@ The system supports Discord-authenticated users, guild onboarding, member sync, 
 
 ## Current Implementation Status
 
-- Fully implemented: Go backend with all core domains — auth, guild management, member sync, event logs, analytics, and anniversary notifications.
+- Fully implemented: Go backend with all core domains — auth, guild management, member sync,
+  the full event lifecycle, event logs, analytics, anniversary notifications, and event
+  reminder notifications (hourly scheduler plus on-demand endpoint).
 - Flask-to-Go migration complete.
-- Remaining planned work: event reminder notifications (POST /api/notifications/events/reminders/run).
+- The event lifecycle is exposed through two transports (Discord bot and REST API) backed by
+  a single shared service, so both interfaces stay behaviourally identical.
