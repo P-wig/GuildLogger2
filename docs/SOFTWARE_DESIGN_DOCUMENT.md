@@ -22,7 +22,7 @@ GuildLogger2 uses a web frontend and API backend with MongoDB persistence and Di
 
 - app/config: environment configuration
 - app/db: Mongo connection and collection accessors
-- app/discord: Discord OAuth2 client, bot API client, interaction webhook handlers, and the shared event lifecycle service
+- app/discord: Discord OAuth2 client, bot API client, interaction webhook handlers, the shared event lifecycle service, and the member stats read model
 - app/middleware: JWT validation middleware
 - app/repositories: data access interfaces and MongoDB implementations
 - app/routes: HTTP route modules
@@ -58,6 +58,32 @@ Discord stale, so neither is permitted to.
 The service lives in `app/discord` rather than a separate package so it can use the
 unexported embed and button builders without exporting them, and because `app/routes`
 already imports `app/discord` (no import cycle).
+
+### Shared Read Models
+
+Not every shared concern needs a lifecycle service. `EventService` exists because both
+transports **mutate** state that must stay consistent with external Discord side effects.
+Read-only features have no side effects to keep consistent — but the two transports must
+still agree on what the data *means*.
+
+Those use a **read model**: a single composition function with no writes, wrapped by
+transport-specific presentation.
+
+| | Lifecycle service | Read model |
+|---|---|---|
+| Example | `discord.EventService` | `discord.StatsService` |
+| Problem | keep DB and Discord consistent on write | keep transports agreeing on a derived read |
+| Structure | transition + effects phases | one composition function |
+| Per-transport | error mapping, deadline handling | presentation only (embed vs JSON) |
+
+`StatsService` composes a member's `MemberProfile` from the member record, the
+`event_reports` aggregate, and the guild's mirrored role list (to resolve a rank ID into a
+display name). It needs no bot client — only `MemberRepository` and `GuildRepository` — so
+it is a read model despite living alongside the Discord code.
+
+**Decision rule.** Two transports touching the same domain need shared code when they must
+agree on either *state transitions plus side effects* (lifecycle service) or *derived data
+semantics* (read model). Presentation always stays in the transport.
 
 ### Event Lifecycle
 

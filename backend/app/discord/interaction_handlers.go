@@ -25,6 +25,7 @@ type InteractionHandler struct {
 	eventReportRepo repositories.EventReportRepository
 	botClient       *BotClient
 	events          *EventService
+	stats           *StatsService
 	publicKey       string // hex-encoded Ed25519 public key; empty = skip verification (dev)
 	secretKey       string // JWT signing key used to generate event-log tokens
 	appURL          string // frontend base URL, e.g. "https://app.example.com"
@@ -38,6 +39,7 @@ func NewInteractionHandler(
 	eventReportRepo repositories.EventReportRepository,
 	botClient *BotClient,
 	events *EventService,
+	statsService *StatsService,
 	publicKey string,
 	secretKey string,
 	appURL string,
@@ -49,6 +51,7 @@ func NewInteractionHandler(
 		eventReportRepo: eventReportRepo,
 		botClient:       botClient,
 		events:          events,
+		stats:           statsService,
 		publicKey:       publicKey,
 		secretKey:       secretKey,
 		appURL:          appURL,
@@ -351,15 +354,42 @@ func (h *InteractionHandler) handleStats(c echo.Context, i *Interaction) error {
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Could not determine the target member."))
 	}
 
-	stats, err := h.memberRepo.GetStats(ctx, i.GuildID, targetID)
-	if err != nil || stats == nil {
-		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Could not find stats for that member. They may not be registered."))
+	profile, err := h.stats.MemberProfile(ctx, i.GuildID, targetID)
+	if errors.Is(err, ErrMemberNotFound) {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ <@"+targetID+"> is not a registered member of this guild."))
+	}
+	if err != nil {
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Could not load stats. Please try again."))
+	}
+
+	rank := profile.RankName
+	if rank == "" {
+		rank = "_Unranked_"
+	}
+	status := "✅ Active"
+	if profile.Status != repositories.MemberStatusActive {
+		status = "💤 Inactive"
 	}
 
 	fields := []EmbedField{
-		{Name: "Events Hosted", Value: strconv.FormatInt(stats.HostedCount, 10), Inline: true},
-		{Name: "Events Attended", Value: strconv.FormatInt(stats.ParticipatedCount, 10), Inline: true},
-		{Name: "Discord Joined", Value: "<t:" + strconv.FormatInt(stats.DiscordJoinedAt.Unix(), 10) + ":D>", Inline: false},
+		{Name: "Rank", Value: rank, Inline: true},
+		{Name: "Status", Value: status, Inline: true},
+		{Name: "Events Hosted", Value: strconv.FormatInt(profile.HostedCount, 10), Inline: true},
+		{Name: "Events Attended", Value: strconv.FormatInt(profile.ParticipatedCount, 10), Inline: true},
+	}
+	if !profile.DiscordJoinedAt.IsZero() {
+		fields = append(fields, EmbedField{
+			Name:   "Joined Server",
+			Value:  fmt.Sprintf("<t:%d:D> (%d days)", profile.DiscordJoinedAt.Unix(), profile.TenureDays()),
+			Inline: false,
+		})
+	}
+	if !profile.FirstSyncedAt.IsZero() {
+		fields = append(fields, EmbedField{
+			Name:   "Tracked Since",
+			Value:  fmt.Sprintf("<t:%d:D>", profile.FirstSyncedAt.Unix()),
+			Inline: false,
+		})
 	}
 
 	return c.JSON(http.StatusOK, interactionResponse{
@@ -367,9 +397,11 @@ func (h *InteractionHandler) handleStats(c echo.Context, i *Interaction) error {
 		Data: map[string]interface{}{
 			"flags": MessageFlagEphemeral,
 			"embeds": []Embed{{
-				Title:  "📊 Stats for <@" + targetID + ">",
-				Color:  0x5865F2,
-				Fields: fields,
+				Title: "📊 Member Stats",
+				// Embed titles render mentions as raw text, so the mention goes in the description.
+				Description: "<@" + profile.DiscordID + ">",
+				Color:       0x5865F2,
+				Fields:      fields,
 			}},
 		},
 	})
@@ -430,7 +462,7 @@ func (h *InteractionHandler) handleHelp(c echo.Context, i *Interaction) error {
 	fields := []EmbedField{
 		{Name: "/event create [eventtype]", Value: "Create a new event and post an RSVP announcement."},
 		{Name: "/event log [eventid]", Value: "Log a completed event and create a permanent record."},
-		{Name: "/stats [@member]", Value: "View event participation stats (defaults to yourself)."},
+		{Name: "/stats [@member]", Value: "View rank, tenure, and event participation (defaults to yourself)."},
 		{Name: "/anniversary", Value: "Trigger anniversary milestone notifications."},
 		{Name: "/help", Value: "Show this help message."},
 	}

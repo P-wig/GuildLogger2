@@ -161,11 +161,13 @@ func CreateApp() (*echo.Echo, func() error, error) {
 
 	// eventService owns the event lifecycle shared by the Discord bot and the REST API.
 	eventService := discord.NewEventService(eventsRepo, eventReportRepo, guildRepo, botClient)
+	// statsService composes member activity profiles for both transports.
+	statsService := discord.NewStatsService(memberRepo, guildRepo)
 
 	// Register Discord interaction webhook.
 	// POST /api/interactions handles slash command responses, modal submits, and button clicks.
 	// Authenticated via Ed25519 signature (not JWT) — must be registered before the JWT group.
-	interactionHandler := discord.NewInteractionHandler(guildRepo, memberRepo, eventsRepo, eventReportRepo, botClient, eventService, cfg.DiscordPublicKey, cfg.SecretKey, cfg.AppURL)
+	interactionHandler := discord.NewInteractionHandler(guildRepo, memberRepo, eventsRepo, eventReportRepo, botClient, eventService, statsService, cfg.DiscordPublicKey, cfg.SecretKey, cfg.AppURL)
 	routes.RegisterInteractions(e, interactionHandler)
 
 	// jwtMiddleware guards any route group that requires an authenticated session.
@@ -184,7 +186,7 @@ func CreateApp() (*echo.Echo, func() error, error) {
 	routes.RegisterAuthProtected(protected, userRepo)
 	routes.RegisterGuildsProtected(protected, guildRepo, memberRepo, eventsRepo, eventReportRepo, userRepo, oauthClient, botClient)
 	routes.RegisterEventsProtected(protected, eventsRepo, eventReportRepo, guildRepo, memberRepo, botClient, eventService)
-	routes.RegisterMembersProtected(protected, memberRepo)
+	routes.RegisterMembersProtected(protected, guildRepo, memberRepo, statsService)
 	routes.RegisterNotificationsProtected(protected, guildRepo, memberRepo, botClient, eventsRepo)
 
 	// Start the hourly reminder scheduler. It aligns its first tick to the top of
