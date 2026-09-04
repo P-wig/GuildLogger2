@@ -817,7 +817,12 @@ All member endpoints require `Authorization: Bearer <token>`.
 
 #### GET /api/members/:discordId/stats
 
-Returns aggregated stats for a member within a guild. Includes hosted and participation counts derived from the `event_reports` collection, plus tenure timestamps.
+Returns a member's activity profile within a guild: identity, rank, membership status,
+hosted and participation counts derived from the `event_reports` collection, and tenure
+timestamps.
+
+This is the same data rendered by the `/stats` slash command — both are composed by the
+shared stats read model, so the numbers cannot disagree between Discord and the dashboard.
 
 Query parameters:
 - `guildId` (required)
@@ -827,6 +832,12 @@ Response (200):
 {
   "ok": true,
   "stats": {
+    "discordId": "1234567890",
+    "username": "picklewig",
+    "avatarHash": "a1b2c3...",
+    "status": "active",
+    "rankRoleId": "849077098538205214",
+    "rankName": "Veteran",
     "hostedCount": 5,
     "participatedCount": 12,
     "discordJoinedAt": "2023-06-08T00:00:00Z",
@@ -836,9 +847,16 @@ Response (200):
 }
 ```
 
-Response (400): `discordId` or `guildId` missing.
+- `rankRoleId` / `rankName`: the member's single app-selected ranked role. Both are omitted
+  when the member holds no ranked role.
+- `hostedCount`: reports where this member is `hostDiscordId`.
+- `participatedCount`: reports where this member appears in `participantIds`.
+- `deactivatedAt`: set when the member's status went `inactive`; `null` while active.
+
+Response (400): `discordId` missing.
 Response (401): missing, invalid, or expired token.
-Response (404): member not found.
+Response (403): caller is not a member of the target guild.
+Response (404): member not found in this guild.
 
 ### Notifications
 
