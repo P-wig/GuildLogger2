@@ -29,10 +29,13 @@ const (
 // EventReport is a permanent record submitted by the host when closing an event.
 // Stored in its own collection and outlives the source event document.
 type EventReport struct {
-	ID                   string    `bson:"_id,omitempty" json:"id"`
-	EventID              string    `bson:"eventId,omitempty" json:"eventId,omitempty"`
-	GuildID              string    `bson:"guildId" json:"guildId"`
-	HostDiscordID        string    `bson:"hostDiscordId" json:"hostDiscordId"`
+	ID            string `bson:"_id,omitempty" json:"id"`
+	EventID       string `bson:"eventId,omitempty" json:"eventId,omitempty"`
+	GuildID       string `bson:"guildId" json:"guildId"`
+	HostDiscordID string `bson:"hostDiscordId" json:"hostDiscordId"`
+	// EventType is copied from the source event so the report keeps its identity after the
+	// event document is deleted. Empty for older reports and untyped manual logs.
+	EventType            string    `bson:"eventType,omitempty" json:"eventType,omitempty"`
 	EventDate            time.Time `bson:"eventDate" json:"eventDate"`
 	ParticipantIDs       []string  `bson:"participantIds" json:"participantIds"`
 	Summary              string    `bson:"summary" json:"summary"`
@@ -65,6 +68,7 @@ type Event struct {
 	CutoffAt              *time.Time  `bson:"cutoffAt,omitempty"               json:"cutoffAt,omitempty"`
 	ReminderSentAt        *time.Time  `bson:"reminderSentAt,omitempty"         json:"reminderSentAt,omitempty"`
 	ModMailSentAt         *time.Time  `bson:"modMailSentAt,omitempty"          json:"modMailSentAt,omitempty"`
+	ModMailCount          int         `bson:"modMailCount"                     json:"modMailCount"`
 	StartedAt             *time.Time  `bson:"startedAt,omitempty"              json:"startedAt,omitempty"`
 	ClosedAt              *time.Time  `bson:"closedAt,omitempty"               json:"closedAt,omitempty"`
 	CreatedAt             time.Time   `bson:"createdAt"                        json:"createdAt"`
@@ -131,8 +135,10 @@ type EventRepository interface {
 	// MarkReminderSent sets reminderSentAt on an event to record that reminders were dispatched.
 	MarkReminderSent(ctx context.Context, eventID string, sentAt time.Time) error
 
-	// MarkModMailSent sets modMailSentAt to prevent the host from triggering a second wave.
-	MarkModMailSent(ctx context.Context, eventID string, sentAt time.Time) error
+	// TryRecordModMailSend atomically increments modMailCount when it is below limit and
+	// stamps modMailSentAt. Returns false when the limit has already been reached, which
+	// makes it safe against concurrent button presses.
+	TryRecordModMailSend(ctx context.Context, eventID string, limit int, sentAt time.Time) (bool, error)
 
 	EnsureIndexes(ctx context.Context) error
 }

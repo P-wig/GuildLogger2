@@ -489,10 +489,15 @@ Response (404): guild not found.
 
 Creates a manual event log record. Does not require a linked event document — used for logging events tracked outside the automated flow.
 
+Like a bot-submitted log, the created record is mirrored to the guild's configured
+`logsChannelId` as an embed, and its Discord message ID is stored so later edits and deletes
+stay in sync.
+
 Request body:
 ```json
 {
   "summary": "Event wrap-up notes",
+  "eventType": "Skirms",
   "eventDate": "2026-06-14T20:00:00Z",
   "participantIds": ["1234567890", "0987654321"],
   "hostDiscordId": "1234567890"
@@ -500,6 +505,8 @@ Request body:
 ```
 
 - `summary` (required): wrap-up text for the event.
+- `eventType` (optional): one of the guild's configured event type names. Shown as the embed
+  title and an Event Type field; omitted entirely when blank.
 - `eventDate` (required): RFC3339 timestamp for when the event occurred.
 - `participantIds` (optional): list of attendee Discord IDs.
 - `hostDiscordId` (optional): Discord ID of the host. Defaults to the authenticated user.
@@ -512,6 +519,7 @@ Response (200):
     "id": "...",
     "guildId": "...",
     "hostDiscordId": "...",
+    "eventType": "Skirms",
     "eventDate": "2026-06-14T20:00:00Z",
     "participantIds": ["1234567890", "0987654321"],
     "summary": "Event wrap-up notes",
@@ -533,13 +541,15 @@ Request body:
 ```json
 {
   "summary": "Updated wrap-up notes",
+  "eventType": "Skirms",
   "eventDate": "2026-06-14T20:00:00Z",
   "participantIds": ["1234567890", "0987654321"],
   "hostDiscordId": "1234567890"
 }
 ```
 
-All fields follow the same rules as `POST /api/guilds/:guildId/event-logs`.
+All fields follow the same rules as `POST /api/guilds/:guildId/event-logs`. Omitting
+`eventType` preserves the existing value rather than clearing it.
 
 Response (200): `{ "ok": true }`
 
@@ -581,10 +591,13 @@ Event types are **configured per guild** in `eventConfig.eventTypes`. Each entry
 
 `isQuickEvent` controls the embed button set and the event's shape:
 
-| `isQuickEvent` | RSVP buttons | Capacity | Description field |
-|----------------|--------------|----------|-------------------|
-| `true` | ✅ Attending \| ❌ Not Attending | uncapped | not used — the announcement line is the message |
-| `false` | ✅ Attending \| ❌ Not Attending \| ❓ Maybe | 99 | host-supplied rally message |
+| `isQuickEvent` | RSVP buttons | Capacity | Mod mail |
+|----------------|--------------|----------|----------|
+| `true` | ✅ Attending \| ❌ Not Attending | uncapped | not available |
+| `false` | ✅ Attending \| ❌ Not Attending \| ❓ Maybe | 99 | available, max 2 sends per event |
+
+Both kinds accept an optional rally message and a start time when created, and both render
+the rally message on the announcement embed.
 
 The `channelId` on each event type is authoritative: `/event create <type>` is only accepted
 in that channel, and both the slash command and `POST /api/events` post the announcement
@@ -771,6 +784,9 @@ Sends a Discord DM to every active guild member who has not yet responded to the
 
 Members who have opted out via `notificationsOptOut` are excluded.
 
+Each event allows at most **2** mod-mail sends. The counter is incremented atomically, so
+concurrent requests cannot exceed the cap.
+
 Request body (optional):
 ```json
 {
@@ -791,6 +807,7 @@ Response (401): missing, invalid, or expired token.
 Response (403): caller does not hold a moderator role for this guild.
 Response (404): event not found.
 Response (409): event is closed.
+Response (409): the 2-send mod-mail limit for this event has been reached.
 Response (422): no non-responding members to contact.
 
 #### GET /api/event-reports

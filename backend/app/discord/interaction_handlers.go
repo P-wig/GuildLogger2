@@ -222,12 +222,10 @@ func (h *InteractionHandler) handleEventCreate(c echo.Context, i *Interaction) e
 		))
 	}
 
-	// Look up whether this event type is configured as a quick event (minimal modal, auto-message).
-	isQuick := false
+	// Every event type is announced in its own configured channel.
 	if guild, gErr := h.guildRepo.FindByGuildID(ctx, i.GuildID); gErr == nil && guild != nil {
 		for _, et := range guild.EventConfig.EventTypes {
 			if strings.EqualFold(et.Name, eventType) {
-				isQuick = et.IsQuickEvent
 				if et.ChannelID != "" && i.ChannelID != et.ChannelID {
 					return c.JSON(http.StatusOK, ephemeralMsg(
 						fmt.Sprintf("⚠️ /event create %s can only be used in <#%s>.", eventType, et.ChannelID),
@@ -247,19 +245,15 @@ func (h *InteractionHandler) handleEventCreate(c echo.Context, i *Interaction) e
 			Placeholder: "Unix epoch or YYYY-MM-DD HH:MM (24h, UTC)",
 			MaxLength:   30,
 		}}},
-	}
-	if !isQuick {
-		modalFields = append(modalFields,
-			TextInputRow{Type: 1, Components: []TextInput{{
-				Type:        4,
-				CustomID:    "message",
-				Style:       2,
-				Label:       "Rally Message",
-				Required:    false,
-				Placeholder: "Motivate your team! (optional)",
-				MaxLength:   500,
-			}}},
-		)
+		{Type: 1, Components: []TextInput{{
+			Type:        4,
+			CustomID:    "message",
+			Style:       2,
+			Label:       "Rally Message",
+			Required:    false,
+			Placeholder: "Motivate your team! (optional)",
+			MaxLength:   500,
+		}}},
 	}
 	// Respond with a modal — only the invoking user sees it.
 	return c.JSON(http.StatusOK, interactionResponse{
@@ -770,6 +764,9 @@ func memberDisplayName(m *InteractionMember) string {
 	return "event"
 }
 
+// maxModMailSends caps how many times a host may blast non-responders for one event.
+const maxModMailSends = 2
+
 // --- MESSAGE_COMPONENT: ctrl_modmail|{eventID} ---
 
 func (h *InteractionHandler) handleCtrlModMail(c echo.Context, i *Interaction, eventID string) error {
@@ -783,8 +780,8 @@ func (h *InteractionHandler) handleCtrlModMail(c echo.Context, i *Interaction, e
 	if event.HostDiscordID != discordID {
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Only the event host can send mail."))
 	}
-	if event.ModMailSentAt != nil {
-		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Mail has already been sent for this event."))
+	if event.ModMailCount >= maxModMailSends {
+		return c.JSON(http.StatusOK, ephemeralMsg(fmt.Sprintf("⚠️ Mail has already been sent %d times for this event (the maximum).", maxModMailSends)))
 	}
 
 	return c.JSON(http.StatusOK, interactionResponse{
@@ -825,20 +822,23 @@ func (h *InteractionHandler) handleMailModalSubmit(c echo.Context, i *Interactio
 	if event.HostDiscordID != discordID {
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Only the event host can send mail."))
 	}
-	if event.ModMailSentAt != nil {
-		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Mail has already been sent for this event."))
-	}
 
 	message := strings.TrimSpace(getModalValue(i, "message"))
 	if message == "" {
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Message cannot be empty."))
 	}
 
-	// Mark sent before dispatch to prevent double-send on rapid re-submit.
-	now := time.Now()
-	if err := h.eventRepo.MarkModMailSent(ctx, eventID, now); err != nil {
+	// Claim a send slot before dispatching. The update is atomic, so two rapid submits
+	// cannot both pass the limit.
+	claimed, err := h.eventRepo.TryRecordModMailSend(ctx, eventID, maxModMailSends, time.Now())
+	if err != nil {
 		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Could not lock mail. Please try again."))
 	}
+	if !claimed {
+		return c.JSON(http.StatusOK, ephemeralMsg(fmt.Sprintf("⚠️ Mail has already been sent %d times for this event (the maximum).", maxModMailSends)))
+	}
+
+	sendsRemaining := maxModMailSends - (event.ModMailCount + 1)
 
 	capturedEvent := event
 	capturedMessage := message
@@ -909,7 +909,7 @@ func (h *InteractionHandler) handleMailModalSubmit(c echo.Context, i *Interactio
 		bgLogger.Infof("mail: event=%s sent=%d blocked=%d failed=%d", capturedEvent.ID, sent, blocked, failed)
 	}()
 
-	return c.JSON(http.StatusOK, ephemeralMsg("📧 Mail is being sent to non-responding active members."))
+	return c.JSON(http.StatusOK, ephemeralMsg(fmt.Sprintf("📧 Mail is being sent to non-responding active members. %d send(s) remaining for this event.", sendsRemaining)))
 }
 
 // --- MESSAGE_COMPONENT: ctrl_close_channel|{eventID} ---

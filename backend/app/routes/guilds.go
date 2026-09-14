@@ -1098,6 +1098,7 @@ func createGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 
 		var in struct {
 			Summary        string    `json:"summary"`
+			EventType      string    `json:"eventType"`
 			EventDate      time.Time `json:"eventDate"`
 			ParticipantIDs []string  `json:"participantIds"`
 			HostDiscordID  string    `json:"hostDiscordId"`
@@ -1139,6 +1140,7 @@ func createGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 			EventID:              "",
 			GuildID:              guildID,
 			HostDiscordID:        hostID,
+			EventType:            strings.TrimSpace(in.EventType),
 			EventDate:            in.EventDate,
 			ParticipantIDs:       in.ParticipantIDs,
 			Summary:              in.Summary,
@@ -1154,7 +1156,7 @@ func createGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 		go func() {
 			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			syncEventLogEmbed(bgCtx, capturedLogger, capturedChannelID, reportRepo, botClient, nil, &capturedReport)
+			syncEventLogEmbed(bgCtx, capturedLogger, capturedChannelID, reportRepo, botClient, &capturedReport)
 		}()
 
 		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true, "log": report})
@@ -1176,6 +1178,7 @@ func updateGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 
 		var in struct {
 			Summary        string    `json:"summary"`
+			EventType      string    `json:"eventType"`
 			EventDate      time.Time `json:"eventDate"`
 			ParticipantIDs []string  `json:"participantIds"`
 			HostDiscordID  string    `json:"hostDiscordId"`
@@ -1220,8 +1223,15 @@ func updateGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 			in.ParticipantIDs = []string{}
 		}
 
+		// An omitted eventType keeps the existing value rather than clearing it.
+		eventType := strings.TrimSpace(in.EventType)
+		if eventType == "" {
+			eventType = existing.EventType
+		}
+
 		report := &repositories.EventReport{
 			HostDiscordID:  hostID,
+			EventType:      eventType,
 			EventDate:      in.EventDate,
 			ParticipantIDs: in.ParticipantIDs,
 			Summary:        in.Summary,
@@ -1235,6 +1245,7 @@ func updateGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 
 		updated := *existing
 		updated.HostDiscordID = hostID
+		updated.EventType = eventType
 		updated.EventDate = in.EventDate
 		updated.ParticipantIDs = in.ParticipantIDs
 		updated.Summary = in.Summary
@@ -1243,7 +1254,7 @@ func updateGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 		go func() {
 			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			syncEventLogEmbed(bgCtx, capturedLogger, capturedChannelID, reportRepo, botClient, nil, &updated)
+			syncEventLogEmbed(bgCtx, capturedLogger, capturedChannelID, reportRepo, botClient, &updated)
 		}()
 
 		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true})

@@ -16,6 +16,7 @@ import Collapse from "@mui/material/Collapse";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
+import MenuItem from "@mui/material/MenuItem";
 import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
@@ -90,6 +91,7 @@ export const GuildEvents = () => {
   const [logSaving, setLogSaving] = useState(false);
   const [logError, setLogError] = useState<string | null>(null);
   const [logSummary, setLogSummary] = useState("");
+  const [logEventType, setLogEventType] = useState("");
   const [logDate, setLogDate] = useState("");
   const [logHost, setLogHost] = useState<GuildDashboardMemberRow | null>(null);
   const [logSelectedMembers, setLogSelectedMembers] = useState<GuildDashboardMemberRow[]>([]);
@@ -136,6 +138,7 @@ export const GuildEvents = () => {
     setLogMode("create");
     setEditingLogId(null);
     setLogSummary("");
+    setLogEventType("");
     setLogDate(new Date().toISOString().slice(0, 10));
     setLogHost(null);
     setLogSelectedMembers([]);
@@ -147,6 +150,7 @@ export const GuildEvents = () => {
     setLogMode("edit");
     setEditingLogId(log.id);
     setLogSummary(log.summary);
+    setLogEventType(log.eventType ?? "");
     setLogDate(log.eventDate ? new Date(log.eventDate).toISOString().slice(0, 10) : "");
     setLogHost(memberMap.get(log.hostDiscordId) ?? null);
     setLogSelectedMembers(
@@ -163,6 +167,7 @@ export const GuildEvents = () => {
 
     const payload = {
       summary: logSummary.trim(),
+      eventType: logEventType,
       eventDate: new Date(logDate + "T12:00:00").toISOString(),
       hostDiscordId: logHost.discordId,
       participantIds: logSelectedMembers.map((m) => m.discordId),
@@ -510,6 +515,24 @@ export const GuildEvents = () => {
               required
               slotProps={{ inputLabel: { shrink: true } }}
             />
+            <TextField
+              select
+              label="Event Type"
+              value={logEventType}
+              onChange={(e) => setLogEventType(e.target.value)}
+              size="small"
+              fullWidth
+              helperText="Shown on the embed posted to the event logs channel."
+            >
+              <MenuItem value="">
+                <em>None</em>
+              </MenuItem>
+              {(guild?.eventConfig?.eventTypes ?? []).map((t) => (
+                <MenuItem key={t.name} value={t.name}>
+                  {t.name}
+                </MenuItem>
+              ))}
+            </TextField>
             <TextField
               label="Summary / Description"
               value={logSummary}

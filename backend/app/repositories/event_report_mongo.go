@@ -20,6 +20,7 @@ type eventReportDoc struct {
 	EventID              string    `bson:"eventId,omitempty"`
 	GuildID              string    `bson:"guildId"`
 	HostDiscordID        string    `bson:"hostDiscordId"`
+	EventType            string    `bson:"eventType,omitempty"`
 	EventDate            time.Time `bson:"eventDate"`
 	ParticipantIDs       []string  `bson:"participantIds"`
 	SummaryCompressed    []byte    `bson:"summary"`
@@ -39,6 +40,7 @@ func toEventReportDoc(report *EventReport) (*eventReportDoc, error) {
 		EventID:              report.EventID,
 		GuildID:              report.GuildID,
 		HostDiscordID:        report.HostDiscordID,
+		EventType:            report.EventType,
 		EventDate:            report.EventDate,
 		ParticipantIDs:       report.ParticipantIDs,
 		SummaryCompressed:    compressed,
@@ -59,6 +61,7 @@ func fromEventReportDoc(doc *eventReportDoc) (*EventReport, error) {
 		EventID:              doc.EventID,
 		GuildID:              doc.GuildID,
 		HostDiscordID:        doc.HostDiscordID,
+		EventType:            doc.EventType,
 		EventDate:            doc.EventDate,
 		ParticipantIDs:       doc.ParticipantIDs,
 		Summary:              summary,
@@ -116,6 +119,7 @@ func (r *MongoEventReportRepository) Update(ctx context.Context, logID string, r
 		bson.M{"_id": logID},
 		bson.M{"$set": bson.M{
 			"hostDiscordId":  report.HostDiscordID,
+			"eventType":      report.EventType,
 			"eventDate":      report.EventDate,
 			"participantIds": report.ParticipantIDs,
 			"summary":        compressed,

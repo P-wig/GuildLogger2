@@ -26,7 +26,6 @@ GuildLogger2 uses a web frontend and API backend with MongoDB persistence and Di
 - app/middleware: JWT validation middleware
 - app/repositories: data access interfaces and MongoDB implementations
 - app/routes: HTTP route modules
-- app/schemas: request/response payload structures
 - app/session: JWT signing, verification, and claims types
 
 ### Dual-Transport Event Lifecycle
@@ -205,6 +204,7 @@ Repositories expose typed error sentinels for expected domain failures:
 | `eventId` | string (optional) | Links to a bot-managed `Event` document; absent for manual logs |
 | `guildId` | string | Discord guild snowflake ID |
 | `hostDiscordId` | string | Discord ID of the event host |
+| `eventType` | string (optional) | Copied from the source event so the report keeps its identity after the event document is deleted; set manually for dashboard logs |
 | `eventDate` | time | When the event occurred |
 | `participantIds` | []string | Discord IDs of attendees |
 | `summary` | []byte | Event wrap-up text, stored zlib-compressed in MongoDB |

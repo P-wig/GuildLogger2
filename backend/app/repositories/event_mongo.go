@@ -40,6 +40,7 @@ type eventDoc struct {
 	CutoffAt              *time.Time  `bson:"cutoffAt,omitempty"`
 	ReminderSentAt        *time.Time  `bson:"reminderSentAt,omitempty"`
 	ModMailSentAt         *time.Time  `bson:"modMailSentAt,omitempty"`
+	ModMailCount          int         `bson:"modMailCount"`
 	StartedAt             *time.Time  `bson:"startedAt,omitempty"`
 	ClosedAt              *time.Time  `bson:"closedAt,omitempty"`
 	VoiceChannelID        string      `bson:"voiceChannelId,omitempty"`
@@ -98,6 +99,7 @@ func toEventDoc(event *Event) (*eventDoc, error) {
 		CutoffAt:              event.CutoffAt,
 		ReminderSentAt:        event.ReminderSentAt,
 		ModMailSentAt:         event.ModMailSentAt,
+		ModMailCount:          event.ModMailCount,
 		StartedAt:             event.StartedAt,
 		ClosedAt:              event.ClosedAt,
 		VoiceChannelID:        event.VoiceChannelID,
@@ -139,6 +141,7 @@ func fromEventDoc(doc *eventDoc) (*Event, error) {
 		CutoffAt:              doc.CutoffAt,
 		ReminderSentAt:        doc.ReminderSentAt,
 		ModMailSentAt:         doc.ModMailSentAt,
+		ModMailCount:          doc.ModMailCount,
 		StartedAt:             doc.StartedAt,
 		ClosedAt:              doc.ClosedAt,
 		VoiceChannelID:        doc.VoiceChannelID,
@@ -482,11 +485,23 @@ func (r *MongoEventRepository) MarkReminderSent(ctx context.Context, eventID str
 	return err
 }
 
-func (r *MongoEventRepository) MarkModMailSent(ctx context.Context, eventID string, sentAt time.Time) error {
-	_, err := db.EventsCollection(r.database).UpdateOne(
+func (r *MongoEventRepository) TryRecordModMailSend(ctx context.Context, eventID string, limit int, sentAt time.Time) (bool, error) {
+	// $lt alone would skip documents written before modMailCount existed, since Mongo's
+	// comparison operators do not match a missing field.
+	filter := bson.M{"_id": eventID, "$or": bson.A{
+		bson.M{"modMailCount": bson.M{"$exists": false}},
+		bson.M{"modMailCount": bson.M{"$lt": limit}},
+	}}
+	result, err := db.EventsCollection(r.database).UpdateOne(
 		ctx,
-		bson.M{"_id": eventID},
-		bson.M{"$set": bson.M{"modMailSentAt": sentAt, "updatedAt": time.Now()}},
+		filter,
+		bson.M{
+			"$inc": bson.M{"modMailCount": 1},
+			"$set": bson.M{"modMailSentAt": sentAt, "updatedAt": time.Now()},
+		},
 	)
-	return err
+	if err != nil {
+		return false, err
+	}
+	return result.MatchedCount > 0, nil
 }

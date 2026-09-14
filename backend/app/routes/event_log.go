@@ -169,6 +169,7 @@ func submitEventLogHandler(
 			EventID:              claims.EventID,
 			GuildID:              claims.GuildID,
 			HostDiscordID:        claims.HostDiscordID,
+			EventType:            event.EventType,
 			EventDate:            event.ScheduledAt,
 			ParticipantIDs:       in.ParticipantIDs,
 			Summary:              summary,
@@ -183,7 +184,6 @@ func submitEventLogHandler(
 		}
 
 		// Post embed to the configured logs channel in the background.
-		capturedEvent := event
 		capturedReport := report
 		capturedLogger := c.Logger()
 		go func() {
@@ -193,7 +193,7 @@ func submitEventLogHandler(
 			if gErr != nil || guild == nil {
 				return
 			}
-			syncEventLogEmbed(bgCtx, capturedLogger, guild.EventConfig.LogsChannelID, eventReportRepo, botClient, capturedEvent, capturedReport)
+			syncEventLogEmbed(bgCtx, capturedLogger, guild.EventConfig.LogsChannelID, eventReportRepo, botClient, capturedReport)
 		}()
 
 		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true})
@@ -201,8 +201,9 @@ func submitEventLogHandler(
 }
 
 // buildEventLogEmbed constructs the Discord embed posted to the guild's logs channel.
-// event is nil for logs created directly in the dashboard, which have no source event.
-func buildEventLogEmbed(event *repositories.Event, report *repositories.EventReport) discord.Embed {
+// EventType is read from the report itself, so the embed survives deletion of the source
+// event and looks the same whether the log came from the bot or the dashboard.
+func buildEventLogEmbed(report *repositories.EventReport) discord.Embed {
 	mentions := make([]string, len(report.ParticipantIDs))
 	for i, id := range report.ParticipantIDs {
 		mentions[i] = "<@" + id + ">"
@@ -217,13 +218,9 @@ func buildEventLogEmbed(event *repositories.Event, report *repositories.EventRep
 
 	title := "Event Log"
 	fields := make([]discord.EmbedField, 0, 5)
-	if event != nil {
-		if event.Title != "" {
-			title = event.Title
-		} else if event.EventType != "" {
-			title = event.EventType
-		}
-		fields = append(fields, discord.EmbedField{Name: "Event Type", Value: event.EventType, Inline: true})
+	if report.EventType != "" {
+		title = report.EventType
+		fields = append(fields, discord.EmbedField{Name: "Event Type", Value: report.EventType, Inline: true})
 	}
 	fields = append(fields,
 		discord.EmbedField{Name: "Date", Value: report.EventDate.UTC().Format("January 2, 2006"), Inline: true},
@@ -250,13 +247,12 @@ func syncEventLogEmbed(
 	channelID string,
 	reportRepo repositories.EventReportRepository,
 	botClient *discord.BotClient,
-	event *repositories.Event,
 	report *repositories.EventReport,
 ) {
 	if channelID == "" || report == nil {
 		return
 	}
-	embed := buildEventLogEmbed(event, report)
+	embed := buildEventLogEmbed(report)
 
 	if report.LogsChannelID == channelID && report.LogsMessageID != "" {
 		err := botClient.EditMessage(ctx, channelID, report.LogsMessageID, []discord.Embed{embed}, nil)

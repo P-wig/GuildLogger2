@@ -114,9 +114,7 @@ func (s *EventService) CreateEvent(ctx context.Context, p CreateEventParams) (*r
 
 	description := strings.TrimSpace(p.Description)
 	capacity := 0
-	if isQuick {
-		description = "" // quick events carry no description; the content line is the announcement
-	} else {
+	if !isQuick {
 		capacity = largeEventCapacity
 	}
 

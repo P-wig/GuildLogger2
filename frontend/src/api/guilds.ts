@@ -120,6 +120,7 @@ export type EventLog = {
   eventId: string;
   guildId: string;
   hostDiscordId: string;
+  eventType?: string;
   eventDate: string;
   participantIds: string[];
   summary: string;
@@ -187,9 +188,9 @@ export const guildsApi = {
     api.delete<{ ok: boolean }>(`/guilds/${guildId}`),
   getEventLogs: (guildId: string) =>
     api.get<{ ok: boolean; logs: EventLog[] }>(`/guilds/${guildId}/event-logs`),
-  createEventLog: (guildId: string, payload: { summary: string; eventDate: string; participantIds: string[]; hostDiscordId?: string }) =>
+  createEventLog: (guildId: string, payload: { summary: string; eventDate: string; participantIds: string[]; hostDiscordId?: string; eventType?: string }) =>
     api.post<{ ok: boolean; log: EventLog }>(`/guilds/${guildId}/event-logs`, payload),
-  updateEventLog: (guildId: string, logId: string, payload: { summary: string; eventDate: string; participantIds: string[]; hostDiscordId?: string }) =>
+  updateEventLog: (guildId: string, logId: string, payload: { summary: string; eventDate: string; participantIds: string[]; hostDiscordId?: string; eventType?: string }) =>
     api.put<{ ok: boolean }>(`/guilds/${guildId}/event-logs/${logId}`, payload),
   deleteEventLog: (guildId: string, logId: string) =>
     api.delete<{ ok: boolean }>(`/guilds/${guildId}/event-logs/${logId}`),
