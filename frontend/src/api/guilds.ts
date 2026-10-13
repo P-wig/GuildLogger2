@@ -178,6 +178,11 @@ export const guildsApi = {
     ),
   syncMembers: (guildId: string) =>
     api.post<{ ok: boolean; synced: number }>(`/guilds/${guildId}/members/sync`),
+  mergeMembers: (guildId: string, payload: { fromDiscordId: string; toDiscordId: string }) =>
+    api.post<{
+      ok: boolean;
+      result: { hostedTransferred: number; participationTransferred: number; duplicatesResolved: number };
+    }>(`/guilds/${guildId}/members/merge`, payload),
   setMemberRole: (guildId: string, roleId: string) =>
     api.put<{ ok: boolean }>(`/guilds/${guildId}/config/member-role`, { roleId }),
   updateGuildConfig: (guildId: string, config: { activeRoleId: string; inactiveRoleId?: string; rankedRoleIds?: string[]; moderatorRoleIds?: string[] }) =>

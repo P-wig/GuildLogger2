@@ -45,6 +45,13 @@ type EventReport struct {
 	LogsMessageID        string    `bson:"logsMessageId,omitempty" json:"logsMessageId,omitempty"`
 }
 
+// MemberMergeResult summarizes the reports touched by reassigning one member to another.
+type MemberMergeResult struct {
+	HostedTransferred        int64 `json:"hostedTransferred"`
+	ParticipationTransferred int64 `json:"participationTransferred"`
+	DuplicatesResolved       int64 `json:"duplicatesResolved"`
+}
+
 // Event is the aggregate root for a scheduled guild event.
 // Events may be deleted after closing; reports are the permanent record.
 type Event struct {
@@ -179,6 +186,10 @@ type EventReportRepository interface {
 
 	// SetLogMessageRef stores the Discord log channel/message IDs used for embed synchronization.
 	SetLogMessageRef(ctx context.Context, logID, channelID, messageID string) error
+
+	// ReassignMember rewrites every report reference in a guild from one Discord ID to
+	// another, used when a member replaces their Discord account.
+	ReassignMember(ctx context.Context, guildID, fromDiscordID, toDiscordID string) (*MemberMergeResult, error)
 
 	EnsureIndexes(ctx context.Context) error
 }

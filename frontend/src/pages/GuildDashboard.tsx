@@ -460,6 +460,12 @@ export const GuildDashboard = () => {
   const [statsModalMember, setStatsModalMember] = useState<GuildDashboardMemberRow | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeFrom, setMergeFrom] = useState("");
+  const [mergeTo, setMergeTo] = useState("");
+  const [merging, setMerging] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+  const [mergeDone, setMergeDone] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
   const [disconnectConfirm, setDisconnectConfirm] = useState("");
   const [memberSearch, setMemberSearch] = useState("");
@@ -702,6 +708,28 @@ export const GuildDashboard = () => {
 
   const handleOpenConfig = () => setConfigOpen(true);
 
+  const handleMergeMembers = async () => {
+    if (!guildId || !mergeFrom || !mergeTo || mergeFrom === mergeTo) return;
+    setMerging(true);
+    setMergeError(null);
+    try {
+      const res = await guildsApi.mergeMembers(guildId, { fromDiscordId: mergeFrom, toDiscordId: mergeTo });
+      const r = res.data.result;
+      setMergeDone(
+        `Transferred ${r.hostedTransferred} hosted and ${r.participationTransferred} attended event(s).` +
+          (r.duplicatesResolved > 0 ? ` Resolved ${r.duplicatesResolved} overlapping record(s).` : "")
+      );
+      // Stats and member list both changed — reload rather than patch locally.
+      const dashRes = await guildsApi.getDashboard(guildId);
+      setDashboard(dashRes.data.dashboard);
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ error?: string }>;
+      setMergeError(axiosErr.response?.data?.error ?? "Failed to merge members.");
+    } finally {
+      setMerging(false);
+    }
+  };
+
   const handleDisconnect = async () => {
     if (!guildId) return;
     setDisconnecting(true);
@@ -761,6 +789,14 @@ export const GuildDashboard = () => {
               sx={{ mr: 1 }}
             >
               Disconnect
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => { setMergeFrom(""); setMergeTo(""); setMergeError(null); setMergeDone(null); setMergeOpen(true); }}
+              sx={{ mr: 1 }}
+            >
+              Merge Member
             </Button>
             <Button
               variant="outlined"
@@ -1529,6 +1565,64 @@ export const GuildDashboard = () => {
       </Dialog>
 
       {/* Disconnect Confirmation Dialog */}
+      <Dialog open={mergeOpen} onClose={() => !merging && setMergeOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Merge Member Stats</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Moves every hosted and attended event from an old Discord account onto a replacement
+              account, keeping the earlier join date. The old profile is removed once its history
+              has been transferred.
+            </Typography>
+            <TextField
+              select
+              label="Old account (history moves from here)"
+              value={mergeFrom}
+              onChange={(e) => setMergeFrom(e.target.value)}
+              size="small"
+              fullWidth
+            >
+              {(dashboard?.members ?? []).map((m) => (
+                <MenuItem key={m.discordId} value={m.discordId}>
+                  {m.username}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              label="New account (history moves to here)"
+              value={mergeTo}
+              onChange={(e) => setMergeTo(e.target.value)}
+              size="small"
+              fullWidth
+              error={mergeTo !== "" && mergeTo === mergeFrom}
+              helperText={mergeTo !== "" && mergeTo === mergeFrom ? "Pick two different members." : undefined}
+            >
+              {(dashboard?.members ?? []).map((m) => (
+                <MenuItem key={m.discordId} value={m.discordId}>
+                  {m.username}
+                </MenuItem>
+              ))}
+            </TextField>
+            {mergeError && <Alert severity="error">{mergeError}</Alert>}
+            {mergeDone && <Alert severity="success">{mergeDone}</Alert>}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setMergeOpen(false)} disabled={merging}>
+            Close
+          </Button>
+          <LoadingButton
+            variant="contained"
+            loading={merging}
+            onClick={handleMergeMembers}
+            disabled={!mergeFrom || !mergeTo || mergeFrom === mergeTo}
+          >
+            Merge
+          </LoadingButton>
+        </DialogActions>
+      </Dialog>
+
       <Dialog open={disconnectOpen} onClose={() => !disconnecting && (setDisconnectOpen(false), setDisconnectConfirm(""))} maxWidth="xs" fullWidth>
         <DialogTitle>Disconnect Guild?</DialogTitle>
         <DialogContent>

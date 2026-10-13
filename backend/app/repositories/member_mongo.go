@@ -150,6 +150,19 @@ func (r *MongoMemberRepository) Delete(ctx context.Context, guildID, discordID s
 	return err
 }
 
+func (r *MongoMemberRepository) SetTenure(ctx context.Context, guildID, discordID string, discordJoinedAt, firstSyncedAt time.Time) error {
+	_, err := db.MembersCollection(r.database).UpdateOne(
+		ctx,
+		bson.M{"guildId": guildID, "discordId": discordID},
+		bson.M{"$set": bson.M{
+			"discordJoinedAt": discordJoinedAt,
+			"firstSyncedAt":   firstSyncedAt,
+			"updatedAt":       time.Now(),
+		}},
+	)
+	return err
+}
+
 func (r *MongoMemberRepository) DeleteAllByGuildID(ctx context.Context, guildID string) error {
 	_, err := db.MembersCollection(r.database).DeleteMany(
 		ctx,

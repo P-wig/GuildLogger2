@@ -227,6 +227,7 @@ has gone missing), and deleting a log deletes the message.
 4. Event lifecycle: create → RSVP → start → end → submit log → close channel, driven identically from Discord buttons or the REST API
 5. Scheduled reminders and anniversary notifications
 6. Manual event log CRUD: moderator submits a log from the dashboard → stored as `EventReport` without a linked `eventId` → mirrored to the guild's logs channel as an embed that is kept in sync on edit and delete
+7. Member merge (owner only): rewrite every report's `hostDiscordId`, `participantIds`, and `submittedByDiscordId` from an old Discord account to a replacement → carry over the earlier join date → delete the old member record. Reports naming both accounts drop the old ID instead of renaming it, so attendance is never double-counted.
 
 ## Deployment Model
 

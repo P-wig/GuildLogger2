@@ -351,6 +351,53 @@ Response (401): missing, invalid, or expired token.
 Response (403): authenticated user does not own this guild.
 Response (404): guild not found.
 
+#### POST /api/guilds/:guildId/members/merge
+
+Transfers one member's event history onto another member's Discord account, for the case
+where someone replaces their Discord account. **Owner only.**
+
+Both members must already be synced into the guild. The operation rewrites every event
+report in the guild so that `hostDiscordId`, `participantIds`, and `submittedByDiscordId`
+point at the target account, then:
+
+- sets the target's `discordJoinedAt` and `firstSyncedAt` to the earlier of the two values,
+  so the person's tenure survives the account change;
+- deletes the source member record, since its history now belongs to the target.
+
+Reports listing **both** accounts have the old ID removed rather than renamed, so attendance
+is never double-counted. The operation is idempotent — repeating it finds nothing to move.
+
+Live events in the `events` collection are not rewritten; the replacement account should
+re-RSVP to anything still open.
+
+Request body:
+```json
+{
+  "fromDiscordId": "1111111111",
+  "toDiscordId": "2222222222"
+}
+```
+
+- `fromDiscordId` (required): the old account whose history moves.
+- `toDiscordId` (required): the replacement account receiving the history.
+
+Response (200):
+```json
+{
+  "ok": true,
+  "result": {
+    "hostedTransferred": 12,
+    "participationTransferred": 47,
+    "duplicatesResolved": 1
+  }
+}
+```
+
+Response (400): a Discord ID is missing, or both IDs are the same.
+Response (401): missing, invalid, or expired token.
+Response (403): authenticated user does not own this guild.
+Response (404): guild not found, or either member is not synced into this guild.
+
 #### GET /api/guilds/:guildId/members/sync-status
 
 Returns member sync status for a guild.

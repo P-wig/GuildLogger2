@@ -180,6 +180,50 @@ func (r *MongoEventReportRepository) FindByEventID(ctx context.Context, eventID 
 	return fromEventReportDoc(&doc)
 }
 
+func (r *MongoEventReportRepository) ReassignMember(ctx context.Context, guildID, fromDiscordID, toDiscordID string) (*MemberMergeResult, error) {
+	coll := db.EventReportsCollection(r.database)
+	out := &MemberMergeResult{}
+
+	hostRes, err := coll.UpdateMany(ctx,
+		bson.M{"guildId": guildID, "hostDiscordId": fromDiscordID},
+		bson.M{"$set": bson.M{"hostDiscordId": toDiscordID}},
+	)
+	if err != nil {
+		return nil, err
+	}
+	out.HostedTransferred = hostRes.ModifiedCount
+
+	// A report listing both accounts would end up with the new ID twice and double-count
+	// attendance, so drop the old ID from those before renaming the rest.
+	dupRes, err := coll.UpdateMany(ctx,
+		bson.M{"guildId": guildID, "participantIds": bson.M{"$all": bson.A{fromDiscordID, toDiscordID}}},
+		bson.M{"$pull": bson.M{"participantIds": fromDiscordID}},
+	)
+	if err != nil {
+		return nil, err
+	}
+	out.DuplicatesResolved = dupRes.ModifiedCount
+
+	// Remaining matches cannot also contain the new ID, so a positional rename is safe.
+	partRes, err := coll.UpdateMany(ctx,
+		bson.M{"guildId": guildID, "participantIds": fromDiscordID},
+		bson.M{"$set": bson.M{"participantIds.$": toDiscordID}},
+	)
+	if err != nil {
+		return nil, err
+	}
+	out.ParticipationTransferred = partRes.ModifiedCount
+
+	if _, err := coll.UpdateMany(ctx,
+		bson.M{"guildId": guildID, "submittedByDiscordId": fromDiscordID},
+		bson.M{"$set": bson.M{"submittedByDiscordId": toDiscordID}},
+	); err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
 func (r *MongoEventReportRepository) SetLogMessageRef(ctx context.Context, logID, channelID, messageID string) error {
 	result, err := db.EventReportsCollection(r.database).UpdateOne(ctx,
 		bson.M{"_id": logID},
