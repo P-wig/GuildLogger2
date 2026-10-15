@@ -629,7 +629,7 @@ this section additionally resolves the caller's membership tier in the event's g
 | `owner` | guild owner | full access |
 
 Callers who are not members of the target guild receive `403`. Host-only actions (start,
-end, close-channel) additionally require the caller to be the event host.
+end, abort, close-channel) additionally require the caller to be the event host.
 
 #### Event Type Behavior
 
@@ -660,13 +660,20 @@ The Discord bot and this REST API are two transports over one implementation
 
 ```
 open ──start──▶ active ──end──▶ closed ──close-channel──▶ (event deleted)
+  │
+  └──abort──▶ (event deleted)
 ```
 
 - **create** — writes the event and posts the RSVP announcement, storing its message ID
 - **RSVP** — mutates the roster and re-renders the announcement embed in place
+- **abort** — cancels the headcount: pings the Maybe RSVPs, rewrites the announcement as a cancelled tombstone with its buttons stripped, and deletes the event
 - **start** — creates the event voice channel, moves the host in, refreshes the embed
 - **end** — snapshots the voice roster, marks the event `closed`, refreshes the embed
 - **close-channel** — returns members to the lobby, deletes the voice channel, deletes the event
+
+While an event is `open` no voice channel exists yet, so the host's only controls are Start
+Event and Abort. Abort is rejected once the event is `active` — a started event must be
+ended so it produces a log. An aborted event writes no EventReport.
 
 The event log is submitted separately via `POST /api/event-log/submit`. The **EventReport**
 is the permanent record and outlives the event document.
@@ -738,6 +745,21 @@ Response (401): missing, invalid, or expired token.
 Response (403): caller is not a guild member, or is not the event host.
 Response (404): event not found.
 Response (409): event is not in `closed` status.
+
+#### POST /api/events/:eventId/abort
+
+Cancels a headcount the host decided not to run. Pings the event's Maybe RSVPs with a new
+message, rewrites the announcement into a cancelled tombstone with its buttons removed, and
+deletes the event document. No EventReport is written. Only the event host can abort.
+
+Only valid while the event is `open`. Once started, use `end` followed by `close-channel`.
+
+Response (200): `{ "ok": true }`
+
+Response (401): missing, invalid, or expired token.
+Response (403): caller is not a guild member, or is not the event host.
+Response (404): event not found.
+Response (409): event is no longer in `open` status.
 
 #### GET /api/events
 

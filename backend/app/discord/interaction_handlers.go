@@ -614,6 +614,8 @@ func (h *InteractionHandler) handleComponent(c echo.Context, i *Interaction) err
 		return h.handleCtrlModMail(c, i, id)
 	} else if id, ok := strings.CutPrefix(i.Data.CustomID, "ctrl_close_channel|"); ok {
 		return h.handleCtrlCloseChannel(c, i, id)
+	} else if id, ok := strings.CutPrefix(i.Data.CustomID, "ctrl_abort|"); ok {
+		return h.handleCtrlAbort(c, i, id)
 	} else {
 		return c.JSON(http.StatusOK, interactionResponse{Type: InteractionResponsePong})
 	}
@@ -947,6 +949,35 @@ func (h *InteractionHandler) handleCtrlCloseChannel(c echo.Context, i *Interacti
 			"components": buildRSVPButtons(eventID, isQuick, "done"),
 		},
 	})
+}
+
+// --- MESSAGE_COMPONENT: ctrl_abort|{eventID} ---
+
+func (h *InteractionHandler) handleCtrlAbort(c echo.Context, i *Interaction, eventID string) error {
+	ctx := c.Request().Context()
+
+	event, err := h.events.AbortEvent(ctx, eventID, i.GuildID, interactionUserID(i))
+	switch {
+	case errors.Is(err, repositories.ErrEventNotFound) || errors.Is(err, ErrEventNotInGuild):
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Event not found."))
+	case errors.Is(err, ErrNotHost):
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Only the event host can abort this event."))
+	case errors.Is(err, repositories.ErrInvalidStatusTransition):
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ This event has already started — end it instead."))
+	case err != nil:
+		return c.JSON(http.StatusOK, ephemeralMsg("⚠️ Failed to abort the event. Please try again."))
+	}
+
+	bgLogger := c.Logger()
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		h.events.ApplyAbortEffects(bgCtx, event, bgLogger)
+	}()
+
+	// The goroutine rewrites this same message into the tombstone, so returning an embed
+	// here would race with it.
+	return c.JSON(http.StatusOK, interactionResponse{Type: InteractionResponseDeferredUpdate})
 }
 
 // memberChannelName builds a Discord voice channel name from a host display name

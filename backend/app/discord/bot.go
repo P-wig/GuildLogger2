@@ -361,14 +361,18 @@ func (c *BotClient) EditInteractionResponse(ctx context.Context, applicationID, 
 	return nil
 }
 
-// EditMessage updates an existing channel message's embeds and components in place.
-// Used to refresh the RSVP attendee list after a Join or Leave button interaction.
-func (c *BotClient) EditMessage(ctx context.Context, channelID, messageID string, embeds []Embed, components []ActionRow) error {
+// EditMessage replaces a message's content, embeds, and components in place.
+// components is always sent, so an empty slice clears the message's buttons.
+func (c *BotClient) EditMessage(ctx context.Context, channelID, messageID, content string, embeds []Embed, components []ActionRow) error {
 	type payload struct {
+		Content    string      `json:"content"`
 		Embeds     []Embed     `json:"embeds"`
-		Components []ActionRow `json:"components,omitempty"`
+		Components []ActionRow `json:"components"`
 	}
-	body, err := json.Marshal(payload{Embeds: embeds, Components: components})
+	if components == nil {
+		components = []ActionRow{}
+	}
+	body, err := json.Marshal(payload{Content: content, Embeds: embeds, Components: components})
 	if err != nil {
 		return err
 	}

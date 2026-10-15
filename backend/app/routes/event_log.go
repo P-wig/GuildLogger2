@@ -255,7 +255,7 @@ func syncEventLogEmbed(
 	embed := buildEventLogEmbed(report)
 
 	if report.LogsChannelID == channelID && report.LogsMessageID != "" {
-		err := botClient.EditMessage(ctx, channelID, report.LogsMessageID, []discord.Embed{embed}, nil)
+		err := botClient.EditMessage(ctx, channelID, report.LogsMessageID, "", []discord.Embed{embed}, nil)
 		if err == nil {
 			return
 		}

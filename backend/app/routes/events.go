@@ -47,6 +47,7 @@ func RegisterEventsProtected(
 	g.POST("/events/:eventId/start", startEventHandler(eventRepo, guildRepo, memberRepo, events))
 	g.POST("/events/:eventId/end", endEventHandler(eventRepo, guildRepo, memberRepo, events))
 	g.POST("/events/:eventId/close-channel", closeEventChannelHandler(eventRepo, guildRepo, memberRepo, events))
+	g.POST("/events/:eventId/abort", abortEventHandler(eventRepo, guildRepo, memberRepo, events))
 	g.GET("/event-reports", listEventReportsHandler(reportRepo, guildRepo, memberRepo))
 }
 
@@ -314,6 +315,29 @@ func closeEventChannelHandler(
 			return eventLifecycleError(c, err)
 		}
 		events.ApplyCloseChannelEffects(ctx, closed, c.Logger())
+		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true})
+	}
+}
+
+// abortEventHandler cancels a headcount the host decided not to run, deleting the event
+// without writing a report. Only valid while the event is still open.
+func abortEventHandler(
+	eventRepo repositories.EventRepository,
+	guildRepo repositories.GuildRepository,
+	memberRepo repositories.MemberRepository,
+	events *discord.EventService,
+) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		event, claims, resp := loadAuthorizedEvent(c, eventRepo, guildRepo, memberRepo, tierMember)
+		if resp != nil {
+			return resp
+		}
+		ctx := c.Request().Context()
+		aborted, err := events.AbortEvent(ctx, event.ID, event.GuildID, claims.DiscordID)
+		if err != nil {
+			return eventLifecycleError(c, err)
+		}
+		events.ApplyAbortEffects(ctx, aborted, c.Logger())
 		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true})
 	}
 }
