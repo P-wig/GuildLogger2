@@ -20,6 +20,7 @@ type eventReportDoc struct {
 	EventID              string    `bson:"eventId,omitempty"`
 	GuildID              string    `bson:"guildId"`
 	HostDiscordID        string    `bson:"hostDiscordId"`
+	EventType            string    `bson:"eventType,omitempty"`
 	EventDate            time.Time `bson:"eventDate"`
 	ParticipantIDs       []string  `bson:"participantIds"`
 	SummaryCompressed    []byte    `bson:"summary"`
@@ -39,6 +40,7 @@ func toEventReportDoc(report *EventReport) (*eventReportDoc, error) {
 		EventID:              report.EventID,
 		GuildID:              report.GuildID,
 		HostDiscordID:        report.HostDiscordID,
+		EventType:            report.EventType,
 		EventDate:            report.EventDate,
 		ParticipantIDs:       report.ParticipantIDs,
 		SummaryCompressed:    compressed,
@@ -59,6 +61,7 @@ func fromEventReportDoc(doc *eventReportDoc) (*EventReport, error) {
 		EventID:              doc.EventID,
 		GuildID:              doc.GuildID,
 		HostDiscordID:        doc.HostDiscordID,
+		EventType:            doc.EventType,
 		EventDate:            doc.EventDate,
 		ParticipantIDs:       doc.ParticipantIDs,
 		Summary:              summary,
@@ -116,6 +119,7 @@ func (r *MongoEventReportRepository) Update(ctx context.Context, logID string, r
 		bson.M{"_id": logID},
 		bson.M{"$set": bson.M{
 			"hostDiscordId":  report.HostDiscordID,
+			"eventType":      report.EventType,
 			"eventDate":      report.EventDate,
 			"participantIds": report.ParticipantIDs,
 			"summary":        compressed,
@@ -174,6 +178,50 @@ func (r *MongoEventReportRepository) FindByEventID(ctx context.Context, eventID 
 		return nil, err
 	}
 	return fromEventReportDoc(&doc)
+}
+
+func (r *MongoEventReportRepository) ReassignMember(ctx context.Context, guildID, fromDiscordID, toDiscordID string) (*MemberMergeResult, error) {
+	coll := db.EventReportsCollection(r.database)
+	out := &MemberMergeResult{}
+
+	hostRes, err := coll.UpdateMany(ctx,
+		bson.M{"guildId": guildID, "hostDiscordId": fromDiscordID},
+		bson.M{"$set": bson.M{"hostDiscordId": toDiscordID}},
+	)
+	if err != nil {
+		return nil, err
+	}
+	out.HostedTransferred = hostRes.ModifiedCount
+
+	// A report listing both accounts would end up with the new ID twice and double-count
+	// attendance, so drop the old ID from those before renaming the rest.
+	dupRes, err := coll.UpdateMany(ctx,
+		bson.M{"guildId": guildID, "participantIds": bson.M{"$all": bson.A{fromDiscordID, toDiscordID}}},
+		bson.M{"$pull": bson.M{"participantIds": fromDiscordID}},
+	)
+	if err != nil {
+		return nil, err
+	}
+	out.DuplicatesResolved = dupRes.ModifiedCount
+
+	// Remaining matches cannot also contain the new ID, so a positional rename is safe.
+	partRes, err := coll.UpdateMany(ctx,
+		bson.M{"guildId": guildID, "participantIds": fromDiscordID},
+		bson.M{"$set": bson.M{"participantIds.$": toDiscordID}},
+	)
+	if err != nil {
+		return nil, err
+	}
+	out.ParticipationTransferred = partRes.ModifiedCount
+
+	if _, err := coll.UpdateMany(ctx,
+		bson.M{"guildId": guildID, "submittedByDiscordId": fromDiscordID},
+		bson.M{"$set": bson.M{"submittedByDiscordId": toDiscordID}},
+	); err != nil {
+		return nil, err
+	}
+
+	return out, nil
 }
 
 func (r *MongoEventReportRepository) SetLogMessageRef(ctx context.Context, logID, channelID, messageID string) error {

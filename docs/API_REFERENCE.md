@@ -351,6 +351,53 @@ Response (401): missing, invalid, or expired token.
 Response (403): authenticated user does not own this guild.
 Response (404): guild not found.
 
+#### POST /api/guilds/:guildId/members/merge
+
+Transfers one member's event history onto another member's Discord account, for the case
+where someone replaces their Discord account. **Owner only.**
+
+Both members must already be synced into the guild. The operation rewrites every event
+report in the guild so that `hostDiscordId`, `participantIds`, and `submittedByDiscordId`
+point at the target account, then:
+
+- sets the target's `discordJoinedAt` and `firstSyncedAt` to the earlier of the two values,
+  so the person's tenure survives the account change;
+- deletes the source member record, since its history now belongs to the target.
+
+Reports listing **both** accounts have the old ID removed rather than renamed, so attendance
+is never double-counted. The operation is idempotent — repeating it finds nothing to move.
+
+Live events in the `events` collection are not rewritten; the replacement account should
+re-RSVP to anything still open.
+
+Request body:
+```json
+{
+  "fromDiscordId": "1111111111",
+  "toDiscordId": "2222222222"
+}
+```
+
+- `fromDiscordId` (required): the old account whose history moves.
+- `toDiscordId` (required): the replacement account receiving the history.
+
+Response (200):
+```json
+{
+  "ok": true,
+  "result": {
+    "hostedTransferred": 12,
+    "participationTransferred": 47,
+    "duplicatesResolved": 1
+  }
+}
+```
+
+Response (400): a Discord ID is missing, or both IDs are the same.
+Response (401): missing, invalid, or expired token.
+Response (403): authenticated user does not own this guild.
+Response (404): guild not found, or either member is not synced into this guild.
+
 #### GET /api/guilds/:guildId/members/sync-status
 
 Returns member sync status for a guild.
@@ -489,10 +536,15 @@ Response (404): guild not found.
 
 Creates a manual event log record. Does not require a linked event document — used for logging events tracked outside the automated flow.
 
+Like a bot-submitted log, the created record is mirrored to the guild's configured
+`logsChannelId` as an embed, and its Discord message ID is stored so later edits and deletes
+stay in sync.
+
 Request body:
 ```json
 {
   "summary": "Event wrap-up notes",
+  "eventType": "Skirms",
   "eventDate": "2026-06-14T20:00:00Z",
   "participantIds": ["1234567890", "0987654321"],
   "hostDiscordId": "1234567890"
@@ -500,6 +552,8 @@ Request body:
 ```
 
 - `summary` (required): wrap-up text for the event.
+- `eventType` (optional): one of the guild's configured event type names. Shown as the embed
+  title and an Event Type field; omitted entirely when blank.
 - `eventDate` (required): RFC3339 timestamp for when the event occurred.
 - `participantIds` (optional): list of attendee Discord IDs.
 - `hostDiscordId` (optional): Discord ID of the host. Defaults to the authenticated user.
@@ -512,6 +566,7 @@ Response (200):
     "id": "...",
     "guildId": "...",
     "hostDiscordId": "...",
+    "eventType": "Skirms",
     "eventDate": "2026-06-14T20:00:00Z",
     "participantIds": ["1234567890", "0987654321"],
     "summary": "Event wrap-up notes",
@@ -533,13 +588,15 @@ Request body:
 ```json
 {
   "summary": "Updated wrap-up notes",
+  "eventType": "Skirms",
   "eventDate": "2026-06-14T20:00:00Z",
   "participantIds": ["1234567890", "0987654321"],
   "hostDiscordId": "1234567890"
 }
 ```
 
-All fields follow the same rules as `POST /api/guilds/:guildId/event-logs`.
+All fields follow the same rules as `POST /api/guilds/:guildId/event-logs`. Omitting
+`eventType` preserves the existing value rather than clearing it.
 
 Response (200): `{ "ok": true }`
 
@@ -572,7 +629,7 @@ this section additionally resolves the caller's membership tier in the event's g
 | `owner` | guild owner | full access |
 
 Callers who are not members of the target guild receive `403`. Host-only actions (start,
-end, close-channel) additionally require the caller to be the event host.
+end, abort, close-channel) additionally require the caller to be the event host.
 
 #### Event Type Behavior
 
@@ -581,10 +638,13 @@ Event types are **configured per guild** in `eventConfig.eventTypes`. Each entry
 
 `isQuickEvent` controls the embed button set and the event's shape:
 
-| `isQuickEvent` | RSVP buttons | Capacity | Description field |
-|----------------|--------------|----------|-------------------|
-| `true` | ✅ Attending \| ❌ Not Attending | uncapped | not used — the announcement line is the message |
-| `false` | ✅ Attending \| ❌ Not Attending \| ❓ Maybe | 99 | host-supplied rally message |
+| `isQuickEvent` | RSVP buttons | Capacity | Mod mail |
+|----------------|--------------|----------|----------|
+| `true` | ✅ Attending \| ❌ Not Attending | uncapped | not available |
+| `false` | ✅ Attending \| ❌ Not Attending \| ❓ Maybe | 99 | available, max 2 sends per event |
+
+Both kinds accept an optional rally message and a start time when created, and both render
+the rally message on the announcement embed.
 
 The `channelId` on each event type is authoritative: `/event create <type>` is only accepted
 in that channel, and both the slash command and `POST /api/events` post the announcement
@@ -600,13 +660,20 @@ The Discord bot and this REST API are two transports over one implementation
 
 ```
 open ──start──▶ active ──end──▶ closed ──close-channel──▶ (event deleted)
+  │
+  └──abort──▶ (event deleted)
 ```
 
 - **create** — writes the event and posts the RSVP announcement, storing its message ID
 - **RSVP** — mutates the roster and re-renders the announcement embed in place
+- **abort** — cancels the headcount: pings the Maybe RSVPs, rewrites the announcement as a cancelled tombstone with its buttons stripped, and deletes the event
 - **start** — creates the event voice channel, moves the host in, refreshes the embed
 - **end** — snapshots the voice roster, marks the event `closed`, refreshes the embed
 - **close-channel** — returns members to the lobby, deletes the voice channel, deletes the event
+
+While an event is `open` no voice channel exists yet, so the host's only controls are Start
+Event and Abort. Abort is rejected once the event is `active` — a started event must be
+ended so it produces a log. An aborted event writes no EventReport.
 
 The event log is submitted separately via `POST /api/event-log/submit`. The **EventReport**
 is the permanent record and outlives the event document.
@@ -678,6 +745,21 @@ Response (401): missing, invalid, or expired token.
 Response (403): caller is not a guild member, or is not the event host.
 Response (404): event not found.
 Response (409): event is not in `closed` status.
+
+#### POST /api/events/:eventId/abort
+
+Cancels a headcount the host decided not to run. Pings the event's Maybe RSVPs with a new
+message, rewrites the announcement into a cancelled tombstone with its buttons removed, and
+deletes the event document. No EventReport is written. Only the event host can abort.
+
+Only valid while the event is `open`. Once started, use `end` followed by `close-channel`.
+
+Response (200): `{ "ok": true }`
+
+Response (401): missing, invalid, or expired token.
+Response (403): caller is not a guild member, or is not the event host.
+Response (404): event not found.
+Response (409): event is no longer in `open` status.
 
 #### GET /api/events
 
@@ -771,6 +853,9 @@ Sends a Discord DM to every active guild member who has not yet responded to the
 
 Members who have opted out via `notificationsOptOut` are excluded.
 
+Each event allows at most **2** mod-mail sends. The counter is incremented atomically, so
+concurrent requests cannot exceed the cap.
+
 Request body (optional):
 ```json
 {
@@ -791,6 +876,7 @@ Response (401): missing, invalid, or expired token.
 Response (403): caller does not hold a moderator role for this guild.
 Response (404): event not found.
 Response (409): event is closed.
+Response (409): the 2-send mod-mail limit for this event has been reached.
 Response (422): no non-responding members to contact.
 
 #### GET /api/event-reports

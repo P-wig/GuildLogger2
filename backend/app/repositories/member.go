@@ -56,6 +56,10 @@ type MemberRepository interface {
 	Delete(ctx context.Context, guildID, discordID string) error
 	DeleteAllByGuildID(ctx context.Context, guildID string) error
 
+	// SetTenure overwrites a member's join timestamps. Used when merging a member's history
+	// onto a replacement Discord account so the longer tenure is preserved.
+	SetTenure(ctx context.Context, guildID, discordID string, discordJoinedAt, firstSyncedAt time.Time) error
+
 	// Derived from events collection combined with member record.
 	GetStats(ctx context.Context, guildID, discordID string) (*MemberStats, error)
 

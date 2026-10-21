@@ -51,6 +51,7 @@ func RegisterGuildsProtected(
 	g.POST("/guilds/:guildId/bot/verify", verifyBotInstallHandler(guildRepo, botClient))
 	g.GET("/guilds/:guildId/members/sync-status", memberSyncStatusHandler(guildRepo, memberRepo))
 	g.POST("/guilds/:guildId/members/sync", syncMembersHandler(guildRepo, memberRepo, botClient))
+	g.POST("/guilds/:guildId/members/merge", mergeGuildMembersHandler(guildRepo, memberRepo, eventReportRepo))
 	g.GET("/guilds/:guildId/dashboard", guildDashboardHandler(guildRepo, memberRepo, eventRepo, eventReportRepo))
 	g.GET("/guilds/:guildId/bot/invite-url", botInviteURLHandler(guildRepo, oauthClient))
 	g.PUT("/guilds/:guildId/roles", upsertRoleHandler(guildRepo))
@@ -1048,6 +1049,89 @@ func deleteGuildHandler(guildRepo repositories.GuildRepository, memberRepo repos
 	}
 }
 
+// mergeGuildMembersHandler moves one member's event history onto another member's Discord
+// account, for the case where someone replaces their Discord account. Owner-only.
+//
+// The source member record is deleted afterwards; its history now belongs to the target, so
+// leaving it would show a duplicate profile with zero stats.
+func mergeGuildMembersHandler(
+	guildRepo repositories.GuildRepository,
+	memberRepo repositories.MemberRepository,
+	reportRepo repositories.EventReportRepository,
+) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		guildID := strings.TrimSpace(c.Param("guildId"))
+		if _, _, resp := authorizeGuild(c, guildRepo, memberRepo, guildID, tierOwner); resp != nil {
+			return resp
+		}
+
+		var in struct {
+			FromDiscordID string `json:"fromDiscordId"`
+			ToDiscordID   string `json:"toDiscordId"`
+		}
+		if err := c.Bind(&in); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "invalid request body"})
+		}
+		from := strings.TrimSpace(in.FromDiscordID)
+		to := strings.TrimSpace(in.ToDiscordID)
+		if from == "" || to == "" {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "fromDiscordId and toDiscordId are required"})
+		}
+		if from == to {
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "cannot merge a member into themselves"})
+		}
+
+		ctx := c.Request().Context()
+
+		source, err := memberRepo.FindByGuildAndDiscordID(ctx, guildID, from)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
+		}
+		if source == nil {
+			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "source member not found in this guild"})
+		}
+		target, err := memberRepo.FindByGuildAndDiscordID(ctx, guildID, to)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
+		}
+		if target == nil {
+			return c.JSON(http.StatusNotFound, map[string]interface{}{"ok": false, "error": "target member not found in this guild — sync members first"})
+		}
+
+		result, err := reportRepo.ReassignMember(ctx, guildID, from, to)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "failed to transfer event history"})
+		}
+
+		// Keep the earlier timestamps so the person's tenure survives the account change.
+		joined := earliestTime(source.DiscordJoinedAt, target.DiscordJoinedAt)
+		firstSynced := earliestTime(source.FirstSyncedAt, target.FirstSyncedAt)
+		if err := memberRepo.SetTenure(ctx, guildID, to, joined, firstSynced); err != nil {
+			c.Logger().Errorf("merge members: SetTenure %s: %v", to, err)
+		}
+
+		if err := memberRepo.Delete(ctx, guildID, from); err != nil {
+			c.Logger().Errorf("merge members: delete source %s: %v", from, err)
+		}
+
+		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true, "result": result})
+	}
+}
+
+// earliestTime returns the earlier of two timestamps, ignoring zero values.
+func earliestTime(a, b time.Time) time.Time {
+	if a.IsZero() {
+		return b
+	}
+	if b.IsZero() {
+		return a
+	}
+	if a.Before(b) {
+		return a
+	}
+	return b
+}
+
 func listGuildEventLogsHandler(guildRepo repositories.GuildRepository, memberRepo repositories.MemberRepository, reportRepo repositories.EventReportRepository) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		claims, ok := c.Get("user").(*session.Claims)
@@ -1098,6 +1182,7 @@ func createGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 
 		var in struct {
 			Summary        string    `json:"summary"`
+			EventType      string    `json:"eventType"`
 			EventDate      time.Time `json:"eventDate"`
 			ParticipantIDs []string  `json:"participantIds"`
 			HostDiscordID  string    `json:"hostDiscordId"`
@@ -1139,6 +1224,7 @@ func createGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 			EventID:              "",
 			GuildID:              guildID,
 			HostDiscordID:        hostID,
+			EventType:            strings.TrimSpace(in.EventType),
 			EventDate:            in.EventDate,
 			ParticipantIDs:       in.ParticipantIDs,
 			Summary:              in.Summary,
@@ -1154,7 +1240,7 @@ func createGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 		go func() {
 			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			syncEventLogEmbed(bgCtx, capturedLogger, capturedChannelID, reportRepo, botClient, nil, &capturedReport)
+			syncEventLogEmbed(bgCtx, capturedLogger, capturedChannelID, reportRepo, botClient, &capturedReport)
 		}()
 
 		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true, "log": report})
@@ -1176,6 +1262,7 @@ func updateGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 
 		var in struct {
 			Summary        string    `json:"summary"`
+			EventType      string    `json:"eventType"`
 			EventDate      time.Time `json:"eventDate"`
 			ParticipantIDs []string  `json:"participantIds"`
 			HostDiscordID  string    `json:"hostDiscordId"`
@@ -1220,8 +1307,15 @@ func updateGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 			in.ParticipantIDs = []string{}
 		}
 
+		// An omitted eventType keeps the existing value rather than clearing it.
+		eventType := strings.TrimSpace(in.EventType)
+		if eventType == "" {
+			eventType = existing.EventType
+		}
+
 		report := &repositories.EventReport{
 			HostDiscordID:  hostID,
+			EventType:      eventType,
 			EventDate:      in.EventDate,
 			ParticipantIDs: in.ParticipantIDs,
 			Summary:        in.Summary,
@@ -1235,6 +1329,7 @@ func updateGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 
 		updated := *existing
 		updated.HostDiscordID = hostID
+		updated.EventType = eventType
 		updated.EventDate = in.EventDate
 		updated.ParticipantIDs = in.ParticipantIDs
 		updated.Summary = in.Summary
@@ -1243,7 +1338,7 @@ func updateGuildEventLogHandler(guildRepo repositories.GuildRepository, memberRe
 		go func() {
 			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			syncEventLogEmbed(bgCtx, capturedLogger, capturedChannelID, reportRepo, botClient, nil, &updated)
+			syncEventLogEmbed(bgCtx, capturedLogger, capturedChannelID, reportRepo, botClient, &updated)
 		}()
 
 		return c.JSON(http.StatusOK, map[string]interface{}{"ok": true})

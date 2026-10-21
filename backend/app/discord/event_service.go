@@ -87,6 +87,13 @@ func announcementContent(event *repositories.Event) string {
 		event.HostDiscordID, strings.ToLower(event.EventType), epoch, epoch)
 }
 
+// cancelledContent replaces the announcement's text line once an event is aborted, so the
+// message does not keep reading as if the event is still happening.
+func cancelledContent(event *repositories.Event) string {
+	return fmt.Sprintf("~~<@%s> is hosting a %s~~ — **cancelled**",
+		event.HostDiscordID, strings.ToLower(event.EventType))
+}
+
 type CreateEventParams struct {
 	GuildID     string
 	HostID      string
@@ -114,9 +121,7 @@ func (s *EventService) CreateEvent(ctx context.Context, p CreateEventParams) (*r
 
 	description := strings.TrimSpace(p.Description)
 	capacity := 0
-	if isQuick {
-		description = "" // quick events carry no description; the content line is the announcement
-	} else {
+	if !isQuick {
 		capacity = largeEventCapacity
 	}
 
@@ -169,7 +174,7 @@ func (s *EventService) RefreshAnnouncement(ctx context.Context, event *repositor
 		event.ID, string(event.Status), event.ScheduledAt.Unix(),
 		event.AttendingIDs, event.MaybeIDs, event.NotAttendingIDs)
 	return s.bot.EditMessage(ctx, event.ChannelID, event.AnnouncementMessageID,
-		[]Embed{embed}, buildRSVPButtons(event.ID, isQuick, string(event.Status)))
+		announcementContent(event), []Embed{embed}, buildRSVPButtons(event.ID, isQuick, string(event.Status)))
 }
 
 // SetRSVP applies an RSVP action and returns the updated event.
@@ -367,6 +372,58 @@ func (s *EventService) ApplyCloseChannelEffects(ctx context.Context, event *repo
 	}
 	if err := s.bot.DeleteChannel(ctx, event.VoiceChannelID); err != nil {
 		logger.Errorf("close channel: DeleteChannel %s: %v", event.VoiceChannelID, err)
+	}
+}
+
+// AbortEvent cancels a headcount the host decided not to run. It is only valid while the
+// event is still open: once started there is a voice channel and attendees, so the host
+// must End the event instead. Call ApplyAbortEffects afterwards.
+func (s *EventService) AbortEvent(ctx context.Context, eventID, guildID, actorID string) (*repositories.Event, error) {
+	event, err := s.loadHostedEvent(ctx, eventID, guildID, actorID)
+	if err != nil {
+		return nil, err
+	}
+	if event.Status != repositories.EventStatusOpen {
+		return nil, repositories.ErrInvalidStatusTransition
+	}
+	return event, nil
+}
+
+// ApplyAbortEffects pings the Maybe RSVPs, rewrites the announcement into a cancelled
+// tombstone with its buttons stripped, and deletes the event. No voice channel exists yet
+// because aborting is only allowed before the event starts, and no report is written
+// because the event never happened.
+func (s *EventService) ApplyAbortEffects(ctx context.Context, event *repositories.Event, logger Logger) {
+	defer func() {
+		if err := s.eventRepo.Delete(ctx, event.ID); err != nil {
+			logger.Errorf("abort: delete event %s: %v", event.ID, err)
+		}
+	}()
+
+	if event.ChannelID == "" {
+		return
+	}
+
+	// Editing a message never re-triggers notifications, so the Maybe RSVPs who are still
+	// waiting on a decision are pinged with a new message. Quick events have no Maybe list.
+	if len(event.MaybeIDs) > 0 {
+		mentions := make([]string, 0, len(event.MaybeIDs))
+		for _, id := range event.MaybeIDs {
+			mentions = append(mentions, "<@"+id+">")
+		}
+		notice := fmt.Sprintf("%s — the %s you marked **Maybe** for has been cancelled by <@%s>.",
+			strings.Join(mentions, " "), strings.ToLower(event.EventType), event.HostDiscordID)
+		if err := s.bot.SendChannelMessage(ctx, event.ChannelID, notice); err != nil {
+			logger.Errorf("abort: notify maybes for %s: %v", event.ID, err)
+		}
+	}
+
+	if event.AnnouncementMessageID == "" {
+		return
+	}
+	if err := s.bot.EditMessage(ctx, event.ChannelID, event.AnnouncementMessageID,
+		cancelledContent(event), []Embed{buildCancelledEmbed(event)}, []ActionRow{}); err != nil {
+		logger.Errorf("abort: EditMessage %s: %v", event.AnnouncementMessageID, err)
 	}
 }
 

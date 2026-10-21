@@ -26,7 +26,6 @@ GuildLogger2 uses a web frontend and API backend with MongoDB persistence and Di
 - app/middleware: JWT validation middleware
 - app/repositories: data access interfaces and MongoDB implementations
 - app/routes: HTTP route modules
-- app/schemas: request/response payload structures
 - app/session: JWT signing, verification, and claims types
 
 ### Dual-Transport Event Lifecycle
@@ -52,8 +51,8 @@ Discord stale, so neither is permitted to.
 
 | Phase | Methods | Cost | Used by |
 |---|---|---|---|
-| transition | `CreateEvent`, `SetRSVP`, `StartEvent`, `EndEvent`, `CloseEventChannel` | fast, validated, DB-only | both; fits Discord's 3-second interaction deadline |
-| effects | `ApplyStartEffects`, `ApplyEndEffects`, `ApplyCloseChannelEffects`, `RefreshAnnouncement` | slow Discord API calls | Discord runs these in a goroutine after acknowledging; REST runs them inline |
+| transition | `CreateEvent`, `SetRSVP`, `StartEvent`, `EndEvent`, `CloseEventChannel`, `AbortEvent` | fast, validated, DB-only | both; fits Discord's 3-second interaction deadline |
+| effects | `ApplyStartEffects`, `ApplyEndEffects`, `ApplyCloseChannelEffects`, `ApplyAbortEffects`, `RefreshAnnouncement` | slow Discord API calls | Discord runs these in a goroutine after acknowledging; REST runs them inline |
 
 The service lives in `app/discord` rather than a separate package so it can use the
 unexported embed and button builders without exporting them, and because `app/routes`
@@ -89,15 +88,28 @@ semantics* (read model). Presentation always stays in the transport.
 
 ```
 open ──start──▶ active ──end──▶ closed ──close-channel──▶ (event document deleted)
+  │
+  └──abort──▶ (event document deleted, announcement replaced with a cancelled tombstone)
 ```
 
 | Step | State change | Discord side effects |
 |---|---|---|
 | create | event written, status `open` | announcement embed posted; `announcementMessageId` stored |
 | RSVP | roster lists updated | announcement embed re-rendered in place |
+| abort | event deleted | Maybe RSVPs pinged with a new message; announcement rewritten to a cancelled tombstone with its buttons stripped |
 | start | `open` → `active` | voice channel created under the configured category; host moved in; embed refreshed |
 | end | `active` → `closed` | voice roster snapshotted to `voiceMemberIds`; embed refreshed to enable Close Channel |
 | close-channel | event deleted | members returned to lobby; voice channel deleted |
+
+While an event is `open` it is only a headcount — no voice channel exists yet, so the host's
+only controls are Start Event and Abort. Abort is rejected once the event is `active`,
+because a started event has a channel and attendees and must be ended so it produces a log.
+An aborted event writes no `EventReport`: it never happened.
+
+Editing a Discord message never re-triggers notifications, so the tombstone alone would not
+reach anyone. Abort therefore posts a separate message mentioning the Maybe RSVPs, who are
+the only group still waiting on the host's decision. Quick events have no Maybe list, so
+this step is naturally skipped for them.
 
 The event log is submitted separately through a signed one-time token
 (`/api/event-log/submit`). The resulting `EventReport` is the permanent record and outlives
@@ -115,8 +127,8 @@ additionally resolves a membership tier via `getGuildMemberTier`:
 | `moderator` | holds a role in `moderatorRoleIds` | write event logs, send mod mail |
 | `owner` | guild owner | full access including configuration |
 
-Host-only actions (start, end, close-channel) check event ownership on top of the tier check.
-A valid session alone is never sufficient to reach another guild's data.
+Host-only actions (start, end, abort, close-channel) check event ownership on top of the
+tier check. A valid session alone is never sufficient to reach another guild's data.
 
 ### Data Access Layering
 
@@ -205,6 +217,7 @@ Repositories expose typed error sentinels for expected domain failures:
 | `eventId` | string (optional) | Links to a bot-managed `Event` document; absent for manual logs |
 | `guildId` | string | Discord guild snowflake ID |
 | `hostDiscordId` | string | Discord ID of the event host |
+| `eventType` | string (optional) | Copied from the source event so the report keeps its identity after the event document is deleted; set manually for dashboard logs |
 | `eventDate` | time | When the event occurred |
 | `participantIds` | []string | Discord IDs of attendees |
 | `summary` | []byte | Event wrap-up text, stored zlib-compressed in MongoDB |
@@ -224,9 +237,10 @@ has gone missing), and deleting a log deletes the message.
 1. Discord OAuth login
 2. Guild connect and bot installation
 3. Member sync: fetch from Discord → filter by active role → resolve ranked role → upsert → deactivate departed members
-4. Event lifecycle: create → RSVP → start → end → submit log → close channel, driven identically from Discord buttons or the REST API
+4. Event lifecycle: create → RSVP → start → end → submit log → close channel, driven identically from Discord buttons or the REST API. A host who posts a headcount and changes their mind aborts instead of starting, which deletes the event and leaves a cancelled tombstone in its place.
 5. Scheduled reminders and anniversary notifications
 6. Manual event log CRUD: moderator submits a log from the dashboard → stored as `EventReport` without a linked `eventId` → mirrored to the guild's logs channel as an embed that is kept in sync on edit and delete
+7. Member merge (owner only): rewrite every report's `hostDiscordId`, `participantIds`, and `submittedByDiscordId` from an old Discord account to a replacement → carry over the earlier join date → delete the old member record. Reports naming both accounts drop the old ID instead of renaming it, so attendance is never double-counted.
 
 ## Deployment Model
 

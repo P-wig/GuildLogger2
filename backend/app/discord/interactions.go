@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/P-wig/GuildLogger2/backend/app/repositories"
 )
 
 // Interaction type constants (Discord API).
@@ -259,9 +261,25 @@ func buildEventEmbed(eventType string, isQuick bool, description, hostID, eventI
 	}
 }
 
+// buildCancelledEmbed renders the tombstone left in place of an aborted event's
+// announcement, so RSVPs can see what happened instead of the message vanishing.
+func buildCancelledEmbed(event *repositories.Event) Embed {
+	return Embed{
+		Title:       "🚫  " + event.EventType + " — Cancelled",
+		Description: fmt.Sprintf("<@%s> called this one off before it started.", event.HostDiscordID),
+		Color:       0xED4245,
+		Fields: []EmbedField{{
+			Name:   "Was scheduled for",
+			Value:  fmt.Sprintf("<t:%d:F>", event.ScheduledAt.Unix()),
+			Inline: true,
+		}},
+		Footer: &EmbedFooter{Text: "ID: " + event.ID},
+	}
+}
+
 // buildRSVPButtons returns the component rows for an event embed.
-// status: "open" → only Start active; "active" → only End/Boost active;
-// "closed" → only Close Channel active; "done" → all disabled.
+// While the event is open it is still a headcount, so the host's only choices are to start
+// it or abort it. Once started, Abort is gone and the teardown controls take over.
 func buildRSVPButtons(eventID string, isQuick bool, status string) []ActionRow {
 	rsvpOff := status == "closed" || status == "done"
 	buttons := []Component{
@@ -273,8 +291,19 @@ func buildRSVPButtons(eventID string, isQuick bool, status string) []ActionRow {
 			Type: 2, Style: 2, Label: "❓  Maybe", CustomID: "event_maybe|" + eventID, Disabled: rsvpOff,
 		})
 	}
+
+	if status == "open" {
+		return []ActionRow{
+			{Type: 1, Components: buttons},
+			{Type: 1, Components: []Component{
+				{Type: 2, Style: 3, Label: "▶️  Start Event", CustomID: "ctrl_start|" + eventID},
+				{Type: 2, Style: 4, Label: "🚫  Abort", CustomID: "ctrl_abort|" + eventID},
+			}},
+		}
+	}
+
 	controlButtons := []Component{
-		{Type: 2, Style: 3, Label: "▶️  Start Event", CustomID: "ctrl_start|" + eventID, Disabled: status != "open"},
+		{Type: 2, Style: 3, Label: "▶️  Start Event", CustomID: "ctrl_start|" + eventID, Disabled: true},
 		{Type: 2, Style: 4, Label: "⏹️  End Event", CustomID: "ctrl_end|" + eventID, Disabled: status != "active"},
 	}
 	if !isQuick {
@@ -284,6 +313,9 @@ func buildRSVPButtons(eventID string, isQuick bool, status string) []ActionRow {
 	}
 	controlButtons = append(controlButtons, Component{
 		Type: 2, Style: 2, Label: "🔒  Close Channel", CustomID: "ctrl_close_channel|" + eventID, Disabled: status != "closed",
+	})
+	controlButtons = append(controlButtons, Component{
+		Type: 2, Style: 4, Label: "🚫  Abort", CustomID: "ctrl_abort|" + eventID, Disabled: true,
 	})
 	return []ActionRow{{Type: 1, Components: buttons}, {Type: 1, Components: controlButtons}}
 }
