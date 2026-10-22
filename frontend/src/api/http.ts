@@ -1,5 +1,11 @@
 import axios from 'axios';
 import type { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
+import { notifySessionExpired } from '../auth/authSync';
+
+// Paths where a 401 means "this one-time link is bad", not "your login died".
+// The request interceptor attaches the session JWT to every request, so without this
+// a logged-in user opening a stale event-log link would be signed out of the whole app.
+const NON_SESSION_401_PATHS = ['/event-log/'];
 
 export const api = axios.create({
   baseURL: '/api', // Uses Vite proxy from vite.config.ts to route to backend
@@ -49,9 +55,21 @@ api.interceptors.response.use(
       const status = error.response.status;
 
       if (status === 401) {
-        // Clear both keys — triggers AuthProvider storage listener which sets user to null
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('session_token');
+        const url = error.config?.url ?? '';
+        const isSessionAuth = !NON_SESSION_401_PATHS.some((p) => url.startsWith(p));
+
+        if (isSessionAuth) {
+          // Clear both keys — triggers AuthProvider storage listener which sets user to null
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('session_token');
+
+          // `reauth` marks a dead Discord authorization, which needs a different
+          // explanation than an ordinary expired login.
+          const body = error.response.data as { error?: string; reauth?: boolean } | undefined;
+          notifySessionExpired(
+            body?.reauth && body.error ? body.error : undefined,
+          );
+        }
       }
 
       if (status === 403) {

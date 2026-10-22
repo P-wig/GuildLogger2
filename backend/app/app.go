@@ -163,6 +163,8 @@ func CreateApp() (*echo.Echo, func() error, error) {
 	eventService := discord.NewEventService(eventsRepo, eventReportRepo, guildRepo, botClient)
 	// statsService composes member activity profiles for both transports.
 	statsService := discord.NewStatsService(memberRepo, guildRepo)
+	// tokenService keeps stored Discord OAuth tokens usable, refreshing them on expiry.
+	tokenService := discord.NewTokenService(userRepo, oauthClient)
 
 	// Register Discord interaction webhook.
 	// POST /api/interactions handles slash command responses, modal submits, and button clicks.
@@ -184,7 +186,7 @@ func CreateApp() (*echo.Echo, func() error, error) {
 	// Protected routes: JWT middleware is enforced by the `protected` group.
 	// Add new authenticated endpoints here as new route files are created.
 	routes.RegisterAuthProtected(protected, userRepo)
-	routes.RegisterGuildsProtected(protected, guildRepo, memberRepo, eventsRepo, eventReportRepo, userRepo, oauthClient, botClient)
+	routes.RegisterGuildsProtected(protected, guildRepo, memberRepo, eventsRepo, eventReportRepo, oauthClient, botClient, tokenService)
 	routes.RegisterEventsProtected(protected, eventsRepo, eventReportRepo, guildRepo, memberRepo, botClient, eventService)
 	routes.RegisterMembersProtected(protected, guildRepo, memberRepo, statsService)
 	routes.RegisterNotificationsProtected(protected, guildRepo, memberRepo, botClient, eventsRepo)

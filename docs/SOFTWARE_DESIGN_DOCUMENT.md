@@ -22,7 +22,7 @@ GuildLogger2 uses a web frontend and API backend with MongoDB persistence and Di
 
 - app/config: environment configuration
 - app/db: Mongo connection and collection accessors
-- app/discord: Discord OAuth2 client, bot API client, interaction webhook handlers, the shared event lifecycle service, and the member stats read model
+- app/discord: Discord OAuth2 client, bot API client, interaction webhook handlers, the shared event lifecycle service, the member stats read model, and the OAuth token refresh service
 - app/middleware: JWT validation middleware
 - app/repositories: data access interfaces and MongoDB implementations
 - app/routes: HTTP route modules
@@ -83,6 +83,36 @@ it is a read model despite living alongside the Discord code.
 **Decision rule.** Two transports touching the same domain need shared code when they must
 agree on either *state transitions plus side effects* (lifecycle service) or *derived data
 semantics* (read model). Presentation always stays in the transport.
+
+### Discord Token Refresh
+
+Discord user access tokens expire after 7 days. `discord.TokenService` is the single way to
+obtain a token for user-context Discord calls; handlers never read `user.AccessToken`
+directly.
+
+`ValidAccessToken(ctx, discordID)` returns the stored token when it is still good, and
+otherwise refreshes it, persists the new pair, and returns the fresh one. A token within
+5 minutes of expiry is treated as expired so it cannot die in flight. A zero
+`tokenExpiresAt` — every user stored before expiry tracking existed — also counts as
+expired, so those users self-heal on their next Discord call.
+
+Discord **rotates the refresh token on every use**, so the whole pair must be persisted and
+the old refresh token is dead the moment it is spent. Two concurrent refreshes would
+therefore leave one request holding a token Discord has already invalidated, logging the
+user out at random, so `TokenService` serializes refreshes per user and re-checks after
+acquiring the lock.
+
+Failures split by whether retrying could ever help:
+
+| Condition | Error | HTTP |
+|---|---|---|
+| nothing stored | `ErrNoDiscordToken` | 401 with `reauth: true` |
+| Discord rejected the grant (4xx — revoked or already rotated) | `ErrDiscordReauthRequired` | 401 with `reauth: true` |
+| Discord unreachable or 5xx | passthrough | 502 |
+
+A rejected grant is unrecoverable, so the stored credentials are cleared on the spot —
+otherwise every subsequent request would retry a token that can never work again. The 401
+is what invalidates the session client-side and sends the user back through OAuth.
 
 ### Event Lifecycle
 
@@ -168,6 +198,27 @@ repositories directly and skip the service layer.
 - Route-driven pages for auth, account, and operations.
 - API client layer centralizes backend requests.
 - Auth state managed in a shared context/provider.
+
+### Session Expiry Handling
+
+A 401 on any session-authenticated request ends the session. The response interceptor
+clears the stored tokens and calls `notifySessionExpired()`, `AuthProvider` drops the user,
+`ProtectedRoute` redirects to `/auth`, and the sign-in page explains why.
+
+The signal is a DOM `CustomEvent` rather than a BroadcastChannel message because neither
+BroadcastChannel nor the `storage` event fires in the context that triggered it — so the one
+tab guaranteed not to hear about the 401 would be the tab that received it. The provider
+re-broadcasts to other tabs after handling it locally.
+
+401s from `/event-log/*` are excluded: those endpoints are guarded by a one-time signed
+token, so their 401 means the link is stale, not that the user's login died. The request
+interceptor attaches the session JWT to every request regardless of endpoint, so without
+this exclusion a signed-in user opening an expired event-log link would be logged out.
+
+Two causes produce two messages: an ordinary expired JWT gets a generic prompt, while a 401
+carrying `reauth: true` (the stored Discord authorization was revoked and could not be
+refreshed) surfaces the server's message, since re-authorizing Discord is a different
+remedy than simply signing in again.
 
 ### Frontend Routes
 

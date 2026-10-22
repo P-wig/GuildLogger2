@@ -40,13 +40,13 @@ func RegisterGuildsProtected(
 	memberRepo repositories.MemberRepository,
 	eventRepo repositories.EventRepository,
 	eventReportRepo repositories.EventReportRepository,
-	userRepo repositories.UserRepository,
 	oauthClient *discord.OAuthClient,
 	botClient *discord.BotClient,
+	tokenService *discord.TokenService,
 ) {
 	g.GET("/guilds", listGuildsHandler(guildRepo, memberRepo))
-	g.GET("/guilds/discord", listDiscordGuildsHandler(userRepo, oauthClient))
-	g.POST("/guilds/connect", connectGuildHandler(guildRepo, userRepo, oauthClient))
+	g.GET("/guilds/discord", listDiscordGuildsHandler(tokenService, oauthClient))
+	g.POST("/guilds/connect", connectGuildHandler(guildRepo, tokenService, oauthClient))
 	g.POST("/guilds/:guildId/bot/install", installBotHandler(guildRepo))
 	g.POST("/guilds/:guildId/bot/verify", verifyBotInstallHandler(guildRepo, botClient))
 	g.GET("/guilds/:guildId/members/sync-status", memberSyncStatusHandler(guildRepo, memberRepo))
@@ -115,7 +115,26 @@ func listGuildsHandler(guildRepo repositories.GuildRepository, memberRepo reposi
 	}
 }
 
-func connectGuildHandler(guildRepo repositories.GuildRepository, userRepo repositories.UserRepository, oauthClient *discord.OAuthClient) echo.HandlerFunc {
+// discordAccessTokenFor resolves a refreshed-if-needed Discord access token for the caller.
+// When it returns a non-nil response the handler must return it unchanged: the 401 is what
+// tells the frontend to clear the session and send the user back through OAuth.
+func discordAccessTokenFor(c echo.Context, tokenService *discord.TokenService, discordID string) (string, error) {
+	token, err := tokenService.ValidAccessToken(c.Request().Context(), discordID)
+	switch {
+	case err == nil:
+		return token, nil
+	case errors.Is(err, discord.ErrNoDiscordToken):
+		return "", c.JSON(http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "no Discord access token", "reauth": true})
+	case errors.Is(err, discord.ErrDiscordReauthRequired):
+		c.Logger().Infof("discord token refresh failed for %s: %v", discordID, err)
+		return "", c.JSON(http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "Discord authorization expired, please sign in again", "reauth": true})
+	default:
+		c.Logger().Errorf("discord token refresh error for %s: %v", discordID, err)
+		return "", c.JSON(http.StatusBadGateway, map[string]interface{}{"ok": false, "error": "failed to reach Discord"})
+	}
+}
+
+func connectGuildHandler(guildRepo repositories.GuildRepository, tokenService *discord.TokenService, oauthClient *discord.OAuthClient) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		claims, ok := c.Get("user").(*session.Claims)
 		if !ok || claims == nil {
@@ -135,15 +154,12 @@ func connectGuildHandler(guildRepo repositories.GuildRepository, userRepo reposi
 
 		ctx := c.Request().Context()
 
-		user, err := userRepo.FindByDiscordID(ctx, claims.DiscordID)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
-		}
-		if user == nil || user.AccessToken == "" {
-			return c.JSON(http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "no Discord access token"})
+		accessToken, resp := discordAccessTokenFor(c, tokenService, claims.DiscordID)
+		if resp != nil {
+			return resp
 		}
 
-		discordGuilds, err := oauthClient.GetUserGuilds(ctx, user.AccessToken)
+		discordGuilds, err := oauthClient.GetUserGuilds(ctx, accessToken)
 		if err != nil {
 			return c.JSON(http.StatusBadGateway, map[string]interface{}{"ok": false, "error": "failed to verify guild membership"})
 		}
@@ -659,22 +675,19 @@ func guildDashboardHandler(
 	}
 }
 
-func listDiscordGuildsHandler(userRepo repositories.UserRepository, oauthClient *discord.OAuthClient) echo.HandlerFunc {
+func listDiscordGuildsHandler(tokenService *discord.TokenService, oauthClient *discord.OAuthClient) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		claims, ok := c.Get("user").(*session.Claims)
 		if !ok || claims == nil {
 			return c.JSON(http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "missing session"})
 		}
 
-		user, err := userRepo.FindByDiscordID(c.Request().Context(), claims.DiscordID)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "database error"})
-		}
-		if user == nil || user.AccessToken == "" {
-			return c.JSON(http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "no Discord access token"})
+		accessToken, resp := discordAccessTokenFor(c, tokenService, claims.DiscordID)
+		if resp != nil {
+			return resp
 		}
 
-		guilds, err := oauthClient.GetUserGuilds(c.Request().Context(), user.AccessToken)
+		guilds, err := oauthClient.GetUserGuilds(c.Request().Context(), accessToken)
 		if err != nil {
 			return c.JSON(http.StatusBadGateway, map[string]interface{}{"ok": false, "error": "failed to fetch Discord guilds"})
 		}

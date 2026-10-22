@@ -5,6 +5,8 @@ export type AuthContextValue = {
   user: User | null;
   isAuthenticated: boolean;
   loading: boolean;
+  /** Message to show on the sign-in page when the session ended involuntarily; null otherwise. */
+  sessionExpired: string | null;
   login: (user: User) => void;
   logout: () => void;
 };

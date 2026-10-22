@@ -36,13 +36,14 @@ func (r *MongoUserRepository) EnsureIndexes(ctx context.Context) error {
 }
 
 // CreateOrUpdateFromDiscord inserts or updates a user based on Discord ID (upsert pattern).
-func (r *MongoUserRepository) CreateOrUpdateFromDiscord(ctx context.Context, discordID, accessToken, refreshToken string) (*User, error) {
+func (r *MongoUserRepository) CreateOrUpdateFromDiscord(ctx context.Context, discordID, accessToken, refreshToken string, tokenExpiresAt time.Time) (*User, error) {
 	now := time.Now()
 	update := bson.M{
 		"$set": bson.M{
-			"accessToken":  accessToken,
-			"refreshToken": refreshToken,
-			"updatedAt":    now,
+			"accessToken":    accessToken,
+			"refreshToken":   refreshToken,
+			"tokenExpiresAt": tokenExpiresAt,
+			"updatedAt":      now,
 		},
 		"$setOnInsert": bson.M{
 			"discordId": discordID,
@@ -64,6 +65,38 @@ func (r *MongoUserRepository) CreateOrUpdateFromDiscord(ctx context.Context, dis
 		return nil, err
 	}
 	return &user, nil
+}
+
+// UpdateTokens replaces only the stored Discord credentials after a refresh.
+// A targeted $set is used instead of Update so a concurrent write to another field
+// cannot be clobbered by a stale in-memory copy of the document.
+func (r *MongoUserRepository) UpdateTokens(ctx context.Context, discordID, accessToken, refreshToken string, tokenExpiresAt time.Time) error {
+	_, err := db.UsersCollection(r.database).UpdateOne(
+		ctx,
+		bson.M{"discordId": discordID},
+		bson.M{"$set": bson.M{
+			"accessToken":    accessToken,
+			"refreshToken":   refreshToken,
+			"tokenExpiresAt": tokenExpiresAt,
+			"updatedAt":      time.Now(),
+		}},
+	)
+	return err
+}
+
+// ClearTokens wipes unusable Discord credentials so the user is prompted to re-authorize.
+func (r *MongoUserRepository) ClearTokens(ctx context.Context, discordID string) error {
+	_, err := db.UsersCollection(r.database).UpdateOne(
+		ctx,
+		bson.M{"discordId": discordID},
+		bson.M{"$set": bson.M{
+			"accessToken":    "",
+			"refreshToken":   "",
+			"tokenExpiresAt": time.Time{},
+			"updatedAt":      time.Now(),
+		}},
+	)
+	return err
 }
 
 // FindByDiscordID retrieves a user by their Discord ID.

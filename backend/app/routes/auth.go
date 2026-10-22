@@ -3,6 +3,7 @@ package routes
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/P-wig/GuildLogger2/backend/app/discord"
 	"github.com/P-wig/GuildLogger2/backend/app/repositories"
@@ -93,6 +94,7 @@ func discordLoginHandler(userRepo repositories.UserRepository, oauthClient *disc
 			discordUser.ID,
 			tokens.AccessToken,
 			tokens.RefreshToken,
+			tokens.ExpiresAt(time.Now()),
 		)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]interface{}{

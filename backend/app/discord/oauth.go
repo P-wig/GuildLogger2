@@ -3,6 +3,7 @@ package discord
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -45,6 +46,10 @@ func (c *OAuthClient) AuthorizeURL(redirectURI, state string) string {
 	return c.authBaseURL + "/authorize?" + params.Encode()
 }
 
+// ErrRefreshDenied means Discord rejected the refresh token itself — the user revoked the
+// app, or the token was already rotated away. Retrying cannot help; only re-authorization can.
+var ErrRefreshDenied = errors.New("discord refused the refresh token")
+
 // TokenResponse holds the token data returned by Discord after code exchange.
 type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
@@ -54,14 +59,16 @@ type TokenResponse struct {
 	Scope        string `json:"scope"`
 }
 
-// ExchangeCode exchanges the authorization code for Discord access + refresh tokens.
-func (c *OAuthClient) ExchangeCode(ctx context.Context, code, redirectURI string) (*TokenResponse, error) {
-	body := url.Values{}
+// ExpiresAt converts the relative expires_in into an absolute UTC instant.
+func (t *TokenResponse) ExpiresAt(now time.Time) time.Time {
+	return now.UTC().Add(time.Duration(t.ExpiresIn) * time.Second)
+}
+
+// requestToken posts to Discord's /token endpoint with client credentials attached.
+// Shared by the authorization-code exchange and the refresh-token grant.
+func (c *OAuthClient) requestToken(ctx context.Context, body url.Values) (*TokenResponse, error) {
 	body.Set("client_id", c.clientID)
 	body.Set("client_secret", c.clientSecret)
-	body.Set("grant_type", "authorization_code")
-	body.Set("code", code)
-	body.Set("redirect_uri", redirectURI)
 
 	req, err := http.NewRequestWithContext(
 		ctx,
@@ -86,7 +93,11 @@ func (c *OAuthClient) ExchangeCode(ctx context.Context, code, redirectURI string
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("discord token exchange failed: status %d body %s", resp.StatusCode, string(raw))
+		// 4xx means the grant is bad; 5xx means Discord is having a bad day and a retry may work.
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			return nil, fmt.Errorf("%w: status %d body %s", ErrRefreshDenied, resp.StatusCode, string(raw))
+		}
+		return nil, fmt.Errorf("discord token request failed: status %d body %s", resp.StatusCode, string(raw))
 	}
 
 	var tokens TokenResponse
@@ -94,6 +105,26 @@ func (c *OAuthClient) ExchangeCode(ctx context.Context, code, redirectURI string
 		return nil, err
 	}
 	return &tokens, nil
+}
+
+// ExchangeCode exchanges the authorization code for Discord access + refresh tokens.
+func (c *OAuthClient) ExchangeCode(ctx context.Context, code, redirectURI string) (*TokenResponse, error) {
+	body := url.Values{}
+	body.Set("grant_type", "authorization_code")
+	body.Set("code", code)
+	body.Set("redirect_uri", redirectURI)
+	return c.requestToken(ctx, body)
+}
+
+// RefreshToken trades a refresh token for a fresh access + refresh pair.
+// Discord rotates the refresh token on every use, so the returned pair must be persisted
+// in full — reusing the old refresh token afterwards fails.
+// Returns ErrRefreshDenied when the grant is rejected and re-authorization is required.
+func (c *OAuthClient) RefreshToken(ctx context.Context, refreshToken string) (*TokenResponse, error) {
+	body := url.Values{}
+	body.Set("grant_type", "refresh_token")
+	body.Set("refresh_token", refreshToken)
+	return c.requestToken(ctx, body)
 }
 
 // DiscordUser holds the identity fields returned by /users/@me.

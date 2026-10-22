@@ -162,6 +162,8 @@ Response (200):
 
 Returns the authenticated user's Discord server list fetched from Discord using their stored access token.
 
+If the stored access token has expired it is refreshed transparently before the call.
+
 Response (200):
 ```json
 {
@@ -172,8 +174,10 @@ Response (200):
 }
 ```
 
-Response (401): no Discord access token stored for the user.
-Response (502): Discord API unreachable or access token expired.
+Response (401): no Discord access token stored, or the stored authorization was revoked and
+could not be refreshed. The body carries `"reauth": true`; the client must clear the session
+and send the user back through the Discord OAuth flow.
+Response (502): Discord API unreachable.
 
 #### POST /api/guilds/connect
 
@@ -200,6 +204,8 @@ Response (200):
 }
 ```
 
+Response (401): the stored Discord authorization was revoked and could not be refreshed
+(body carries `"reauth": true`).
 Response (403): user is not a member of the specified Discord guild.
 Response (409): guild is already connected.
 

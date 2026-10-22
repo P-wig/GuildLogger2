@@ -19,7 +19,7 @@ const DISCORD_ERROR_MESSAGES: Record<string, string> = {
 const DEFAULT_ERROR = "Login failed. Please try again.";
 
 export const Auth = () => {
-  const { login } = useAuth();
+  const { login, sessionExpired } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
@@ -106,6 +106,12 @@ export const Auth = () => {
               ? "Completing sign-in…"
               : "Connect your Discord account to get started."}
           </Typography>
+
+          {sessionExpired && !error && !code && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              {sessionExpired}
+            </Alert>
+          )}
 
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>

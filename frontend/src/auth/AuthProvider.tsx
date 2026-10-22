@@ -15,7 +15,13 @@ localStorage is shared per browser profile and can be cleared by the user.
 */
 import React, { useEffect, useMemo, useState } from "react";
 import { AuthContext } from "./authContext";
-import { authChannel, broadcastAuthChanged } from "./authSync";
+import {
+  authChannel,
+  broadcastAuthChanged,
+  DEFAULT_SESSION_EXPIRED_MESSAGE,
+  SESSION_EXPIRED_EVENT,
+  type SessionExpiredDetail,
+} from "./authSync";
 import type { User } from "../api/auth";
 import { authApi } from "../api/auth";
 
@@ -74,6 +80,7 @@ function loadSession(): User | null {
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(() => loadSession());
   const [loading, setLoading] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState<string | null>(null);
 
   // Validate stored token against backend on startup.
   // loading stays true until this resolves so ProtectedRoute doesn't flash-redirect.
@@ -97,6 +104,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       .finally(() => {
         setLoading(false);
       });
+  }, []);
+
+  // React to a 401 in this tab. http.ts has already cleared storage, but neither the
+  // storage event nor BroadcastChannel fires in the tab that caused it, so without this
+  // the user would sit on a protected page that silently fails every request.
+  useEffect(() => {
+    const onExpired = (e: Event) => {
+      const detail = (e as CustomEvent<SessionExpiredDetail>).detail;
+      clearSession();
+      setUser(null);
+      setSessionExpired(detail?.message ?? DEFAULT_SESSION_EXPIRED_MESSAGE);
+      broadcastAuthChanged();
+    };
+
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
   }, []);
 
   // Keep all tabs/windows in sync
@@ -126,19 +149,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       user,
       isAuthenticated: !!user,
       loading,
+      sessionExpired,
       login: (u: User) => {
         persistSession(u);
         setUser(u);
+        setSessionExpired(null);
         broadcastAuthChanged();
       },
       logout: () => {
         authApi.logout().catch(() => {}); // fire-and-forget — backend is stateless
         clearSession();
         setUser(null);
+        setSessionExpired(null); // signing out deliberately is not an expiry
         broadcastAuthChanged();
       },
     };
-  }, [user, loading]);
+  }, [user, loading, sessionExpired]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
